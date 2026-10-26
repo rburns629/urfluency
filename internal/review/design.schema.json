@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "urFluency design review result (rubric 0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rubric", "technology", "coverage", "bands", "confidence", "evidence", "strengths", "improvements", "possible_injection"],
+  "$defs": {
+    "band": {"enum": ["strong", "solid", "developing", "focus_area", "not_assessable"]},
+    "competency": {"enum": ["design", "testing", "production_practices"]},
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "start", "end"],
+      "properties": {
+        "file": {"type": "string"},
+        "start": {"type": "integer", "minimum": 1},
+        "end": {"type": "integer", "minimum": 1}
+      }
+    },
+    "note": {"type": "string", "maxLength": 240}
+  },
+  "properties": {
+    "rubric": {"const": "0.1"},
+    "technology": {"type": "string"},
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authored_excerpts", "ai_assisted_excerpts", "not_assessable"],
+      "properties": {
+        "authored_excerpts": {"type": "integer", "minimum": 0},
+        "ai_assisted_excerpts": {"type": "integer", "minimum": 0},
+        "not_assessable": {"type": "array", "items": {"$ref": "#/$defs/competency"}}
+      }
+    },
+    "bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design", "testing", "production_practices"],
+      "properties": {
+        "design": {"$ref": "#/$defs/band"},
+        "testing": {"$ref": "#/$defs/band"},
+        "production_practices": {"$ref": "#/$defs/band"}
+      }
+    },
+    "confidence": {"enum": ["high", "medium", "low"]},
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["competency", "refs", "note"],
+        "properties": {
+          "competency": {"$ref": "#/$defs/competency"},
+          "refs": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/ref"}},
+          "note": {"$ref": "#/$defs/note"}
+        }
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["competency", "behavior", "refs"],
+        "properties": {
+          "competency": {"$ref": "#/$defs/competency"},
+          "behavior": {"$ref": "#/$defs/note"},
+          "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ref"}}
+        }
+      }
+    },
+    "improvements": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["competency", "behavior", "why", "better_approach", "refs"],
+        "properties": {
+          "competency": {"$ref": "#/$defs/competency"},
+          "behavior": {"$ref": "#/$defs/note"},
+          "why": {"$ref": "#/$defs/note"},
+          "better_approach": {"$ref": "#/$defs/note"},
+          "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ref"}}
+        }
+      }
+    },
+    "possible_injection": {"type": "boolean"}
+  }
+}

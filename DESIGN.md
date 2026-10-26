@@ -201,6 +201,31 @@ matches [`internal/review/schema.json`](internal/review/schema.json).
   Competencies that fail either test are not shown. Token use and cost are measured
   on the first validation run.
 
+### Design review (model-assessed, opt-in; drafted, not built)
+
+Static rules cover idioms, type safety, error handling, reliability, and security.
+Design choices, test quality, and production practices need reading. A design
+review asks a model to judge them per technology with the rubric in
+[`internal/review/design.md`](internal/review/design.md), returning JSON that
+matches [`internal/review/design.schema.json`](internal/review/design.schema.json).
+
+- **Authored code only.** Excerpts are labeled by authorship (sessions and commit
+  trailers). The model judges only lines the user wrote without an agent; accepted
+  AI code is context, never evidence of skill. Too little authored code yields
+  "not assessable", never a low band.
+- **Code leaves the machine, so stricter limits apply.** It runs only per
+  repository on explicit request, with a local model or a provider the user's
+  employer approves; the CLI repeats the employment-agreement notice first.
+  Excerpts come from owned lines only, protected files are never read, secrets are
+  redacted, and each technology is limited to a sampled set of excerpts.
+- **No duplicate measurement.** Static findings are passed in as facts; the model
+  judges three competencies (design, testing, production practices) in bands, with
+  file and line references, and no overall score or rank.
+- **Validation before release:** the repeatability thresholds of the deep review,
+  and prediction against history: files whose design or testing is banded
+  `developing` or `focus_area` should see more later bug-fix commits than files
+  banded `strong`.
+
 ## CLI
 
 ```
