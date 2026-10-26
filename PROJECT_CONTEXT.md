@@ -6,7 +6,7 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Area | Project facts, safe references, owners, or commands |
 | --- | --- |
 | Project purpose | Free tooling for engineers: a local CLI that analyzes the user's own commits and agent sessions and uploads aggregate metrics; a web app and API (later) for profiles and badges; a safety scanner for public Git URLs (later). See [DESIGN.md](DESIGN.md) |
-| Languages | Go 1.24 (module directive `go 1.24`). Analyzers for other languages are added over time |
+| Languages | Go, minimum 1.24.6 (module directive `go 1.24.6`, the first release with fixes for GO-2025-3956 and GO-2025-3750); developed with Go 1.27. Analyzers for other languages are added over time |
 | Frameworks | Standard library only for the CLI so far; add dependencies only with a stated need |
 | Runtime environment | CLI on macOS, Linux, and Windows; single static binary (`CGO_ENABLED=0`) |
 | Deployment targets | None yet. Service hosting is an open decision in DESIGN.md |
@@ -23,9 +23,9 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Trust boundaries | Repositories being analyzed are untrusted input: parse them, never execute their code, hooks, or build scripts. Git runs with hooks disabled and without external diff or text conversion |
 | Type checking | `go vet ./...` |
 | Formatting | `gofmt -l .` must print nothing |
-| Linting | `staticcheck ./...` (not installed on the host yet; run `go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` or use the container below) |
-| Testing | `gofmt -l .` and `go test -race ./...` with host Go (1.27.3). Container alternative: `docker run --rm -v "$PWD":/src -w /src golang:1.24.2-bookworm sh -c 'gofmt -l . && go vet ./... && go test -race ./...'` |
-| Security tooling | `govulncheck ./...` (not installed on the host yet; `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` or the container); secret scanning to be added |
+| Linting | `staticcheck` 2025.1.1 does not support Go 1.27, so run it in the container: `docker run --rm -v "$PWD":/src -w /src -e GOFLAGS=-buildvcs=false golang:1.24.6-bookworm sh -c 'go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...'` |
+| Testing | `gofmt -l .` and `go test -race ./...` with host Go (1.27.3) |
+| Security tooling | `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` with host Go; secret scanning to be added |
 | CLI operations | GitHub repository `rburns629/urfluency` (private), `gh` account `rburns629`. Pushes, releases, and visibility changes need approval. No cloud resources yet |
 | Auto-mode filesystem recovery | Clean tracked files use their commit as the recovery copy. Other backups go to `~/.urfluency-backups/<timestamp>/`, outside the repository. Robert Burns approves cleanup; nothing is deleted automatically |
 | Performance requirements | Not yet defined |
