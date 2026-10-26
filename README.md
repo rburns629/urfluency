@@ -41,10 +41,10 @@ code agents wrote. That share is context, not a score, and is a lower bound. Pro
 text is reduced to signals as it is read and is never stored, printed, or uploaded.
 
 `urfluency calibrate ~/Projects` checks the prompting rules against your own
-judgment. It shows a random sample of your prompts in your terminal, and you label
-each with four letters: the task type, then y/n for context, acceptance criteria,
-and a verification request (for example `f yny`; the legend is shown at every
-prompt and in `urfluency help`). It then prints how often each rule agreed with you. Nothing is saved,
+judgment. It shows a random sample of your prompts in your terminal, one at a
+time, and asks what each one is for (1-5) and up to three yes/no questions: does it
+point to specific code, say what "done" looks like, and ask for tests? It then
+prints how often the rules agreed with you. Nothing is saved,
 and the summary contains no prompt text.
 
 ## What it checks

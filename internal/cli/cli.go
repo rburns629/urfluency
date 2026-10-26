@@ -53,7 +53,7 @@ Scan flags:
 Calibrate flags:
   --sample N       Number of prompts to label (default 40)
 
-Calibrate answers:
+Calibrate:
 ` + answerHelp
 
 // errUsage marks errors caused by invalid arguments.

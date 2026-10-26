@@ -102,18 +102,29 @@ type Grades struct {
 	Rules    map[string]Tally
 }
 
-// gradedRules apply per task type; acceptance criteria apply only to ambiguous
-// work, where they measurably reduce rework. Content rules grade only the task
-// that opens a session: later prompts inherit the conversation's context.
+// signalTypes lists the task types each prompt signal is graded for; acceptance
+// criteria apply only to ambiguous work, where they measurably reduce rework.
+var signalTypes = map[string][]string{
+	"context":      {Bug, Feature, Refactor, Test},
+	"criteria":     {Feature, Refactor},
+	"verification": {Bug, Feature, Refactor},
+}
+
+// SignalApplies reports whether a signal ("context", "criteria", or
+// "verification") is graded for a task type.
+func SignalApplies(signal, taskType string) bool { return contains(signalTypes[signal], taskType) }
+
+// gradedRules apply per task type. Content rules grade only the task that opens a
+// session: later prompts inherit the conversation's context.
 var gradedRules = []struct {
 	id          string
 	types       []string
 	openingOnly bool
 	met         func(p Prompt, corrected bool) bool
 }{
-	{"prompt.no-context", []string{Bug, Feature, Refactor, Test}, true, func(p Prompt, _ bool) bool { return p.Context }},
-	{"prompt.no-acceptance-criteria", []string{Feature, Refactor}, true, func(p Prompt, _ bool) bool { return p.Criteria }},
-	{"prompt.no-verification", []string{Bug, Feature, Refactor}, true, func(p Prompt, _ bool) bool { return p.Verification }},
+	{"prompt.no-context", signalTypes["context"], true, func(p Prompt, _ bool) bool { return p.Context }},
+	{"prompt.no-acceptance-criteria", signalTypes["criteria"], true, func(p Prompt, _ bool) bool { return p.Criteria }},
+	{"prompt.no-verification", signalTypes["verification"], true, func(p Prompt, _ bool) bool { return p.Verification }},
 	{"prompt.needed-correction", []string{Bug, Feature, Refactor, Test}, false, func(_ Prompt, corrected bool) bool { return !corrected }},
 }
 

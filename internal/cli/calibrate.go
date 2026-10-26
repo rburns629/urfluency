@@ -18,17 +18,55 @@ import (
 // maxShown bounds how much of a long prompt, such as a pasted log, is displayed.
 const maxShown = 1200
 
-var typeKeys = map[byte]string{'b': sessions.Bug, 'f': sessions.Feature, 'r': sessions.Refactor, 't': sessions.Test, 'o': sessions.Other}
+const rule = "──────────────────────────────────────────────────────────"
 
-// label is the author's judgment of one prompt.
-type label struct {
-	typ                             string
-	context, criteria, verification bool
+var typeChoices = []struct{ key, typ, text string }{
+	{"1", sessions.Bug, "Fix a bug"},
+	{"2", sessions.Feature, "New feature or change"},
+	{"3", sessions.Refactor, "Refactor or cleanup"},
+	{"4", sessions.Test, "Add tests"},
+	{"5", sessions.Other, "Not a code change (question, chat, git or housekeeping)"},
 }
+
+// signalQuestions are asked in order, only when the signal is graded for the
+// chosen task type.
+var signalQuestions = []struct{ signal, question, hint string }{
+	{"context", "Does it point to specific code?", "(file, function, error message, pasted code or logs)"},
+	{"criteria", `Does it say what "done" looks like?`, "(expected behavior, edge cases, what must not change)"},
+	{"verification", "Does it ask the agent to test or check its work?", ""},
+}
+
+// answerHelp explains the flow; it is shown at the start and in help.
+const answerHelp = `Each prompt is shown with a few short questions:
+  1. What is it asking for? Pick 1-5: bug fix, feature or change, refactor or
+     cleanup, tests, or not a code change.
+  2. Then y or n: does it point to specific code, does it say what "done" looks
+     like, and does it ask the agent to test its work? Questions that do not
+     apply to the type you picked are skipped.
+  Press Enter after each answer. u goes back one step, s skips a prompt, and
+  q finishes and shows the results.
+`
+
+// label is the author's judgment of one prompt: its task type and the answers to
+// the questions asked for that type.
+type label struct {
+	typ     string
+	answers map[string]bool
+}
+
+type action int
+
+const (
+	answered action = iota
+	back
+	skip
+	quit
+)
 
 // calibrate shows a sample of the user's prompts in this terminal, asks the user
 // to label each one, and prints how often the rules agreed. Nothing is saved, and
-// the summary contains no prompt text.
+// the summary contains no prompt text. The rules' answers are not shown until the
+// end, so they cannot sway the labels.
 func calibrate(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("calibrate", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -72,87 +110,143 @@ func calibrate(ctx context.Context, args []string, stdin io.Reader, stdout io.Wr
 		return err
 	}
 
-	fmt.Fprintf(stdout, "Calibrating with %d of your prompts. They are shown only in this terminal and\n"+
+	fmt.Fprintf(stdout, "You will label %d of your prompts. They are shown only in this terminal, and\n"+
 		"nothing is saved.\n\n%s", len(samples), answerHelp)
 	in := bufio.NewScanner(stdin)
-	var rules, labels []sessions.Prompt
-	for i, s := range samples {
+	labels := make([]*label, len(samples))
+	for i := 0; i < len(samples); {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		text := s.text
+		text := samples[i].text
 		if len(text) > maxShown {
 			text = text[:maxShown] + " …(truncated)"
 		}
-		fmt.Fprintf(stdout, "\n── %d/%d ──\n%s\n", i+1, len(samples), text)
-		l, ok := askLabel(in, stdout)
-		if !ok {
+		fmt.Fprintf(stdout, "\nPrompt %d of %d\n%s\n%s\n%s\n", i+1, len(samples), rule, text, rule)
+		l, act := askPrompt(in, stdout)
+		if act == quit {
 			break
 		}
-		if l == nil {
+		if act == back {
+			if i > 0 {
+				i--
+				labels[i] = nil
+			}
 			continue
 		}
-		rules = append(rules, s.rule)
-		labels = append(labels, sessions.Prompt{Type: l.typ, Context: l.context, Criteria: l.criteria, Verification: l.verification})
+		labels[i] = l // nil when skipped
+		i++
 	}
-	return writeAgreement(stdout, rules, labels)
+	var rules []sessions.Prompt
+	var given []label
+	for i, l := range labels {
+		if l != nil {
+			rules = append(rules, samples[i].rule)
+			given = append(given, *l)
+		}
+	}
+	return writeAgreement(stdout, rules, given)
 }
 
-// answerHelp explains the four answers given for each prompt.
-const answerHelp = `Answer each prompt with four letters, in this order:
-  1. Task type      b bug, f feature, r refactor, t test, o other (question or not a code change)
-  2. Context        y/n: names files, functions, or errors, or pastes code or logs
-  3. Criteria       y/n: says what done looks like (expected behavior, edge cases, limits)
-  4. Verification   y/n: asks for tests or checks
-  Example: "f yny" = feature, has context, no criteria, asks for tests.
-  Spaces are optional ("f y n y" works). s skips a prompt; q finishes and shows results.
-`
+// askPrompt asks the type and then each applicable question. Going back from the
+// first question returns back, so the caller reopens the previous prompt.
+func askPrompt(in *bufio.Scanner, out io.Writer) (*label, action) {
+	l := &label{answers: map[string]bool{}}
+	var questions []int // indexes into signalQuestions for the chosen type
+	for step := 0; ; {
+		if step == 0 {
+			fmt.Fprintln(out, "What is this prompt asking for?")
+			valid := ""
+			for _, c := range typeChoices {
+				fmt.Fprintf(out, "  %s %s\n", c.key, c.text)
+				valid += c.key
+			}
+			key, act := ask(in, out, "1-5", valid)
+			if act != answered {
+				return nil, act
+			}
+			questions = questions[:0]
+			for _, c := range typeChoices {
+				if c.key == key {
+					l.typ = c.typ
+				}
+			}
+			for qi, q := range signalQuestions {
+				if sessions.SignalApplies(q.signal, l.typ) {
+					questions = append(questions, qi)
+				}
+			}
+			clear(l.answers)
+			step = 1
+			continue
+		}
+		if step > len(questions) {
+			return l, answered
+		}
+		q := signalQuestions[questions[step-1]]
+		fmt.Fprintf(out, "\n%s\n", q.question)
+		if q.hint != "" {
+			fmt.Fprintln(out, q.hint)
+		}
+		key, act := ask(in, out, "y/n", "yn")
+		switch act {
+		case answered:
+			l.answers[q.signal] = key == "y"
+			step++
+		case back:
+			step--
+		default:
+			return nil, act
+		}
+	}
+}
 
-// answerPrompt is shown before every answer so the order stays visible.
-const answerPrompt = "type[bfrto] context[yn] criteria[yn] verification[yn], s skip, q quit > "
-
-// askLabel reads one answer. It returns ok=false to finish and a nil label to skip.
-func askLabel(in *bufio.Scanner, out io.Writer) (*label, bool) {
+// ask reads one answer: a key from valid, or u, s, or q. End of input finishes.
+func ask(in *bufio.Scanner, out io.Writer, choices, valid string) (string, action) {
 	for {
-		fmt.Fprint(out, answerPrompt)
+		fmt.Fprintf(out, "[%s, u back, s skip, q finish] > ", choices)
 		if !in.Scan() {
-			return nil, false
+			return "", quit
 		}
-		answer := strings.ToLower(strings.Join(strings.Fields(in.Text()), ""))
+		key := strings.ToLower(strings.TrimSpace(in.Text()))
 		switch {
-		case answer == "q":
-			return nil, false
-		case answer == "s":
-			return nil, true
-		case len(answer) == 4 && typeKeys[answer[0]] != "" && strings.Trim(answer[1:], "yn") == "":
-			return &label{typeKeys[answer[0]], answer[1] == 'y', answer[2] == 'y', answer[3] == 'y'}, true
+		case key == "u":
+			return "", back
+		case key == "s":
+			return "", skip
+		case key == "q":
+			return "", quit
+		case len(key) == 1 && strings.Contains(valid, key):
+			return key, answered
 		}
-		fmt.Fprint(out, "Not understood.\n"+answerHelp)
+		fmt.Fprintf(out, "Please enter %s.\n", choices)
 	}
 }
 
-// writeAgreement prints per-signal agreement and disagreement directions.
-func writeAgreement(w io.Writer, rules, labels []sessions.Prompt) error {
+// writeAgreement prints, for each question, how often the rules matched the
+// author's answers and which way they differed.
+func writeAgreement(w io.Writer, rules []sessions.Prompt, labels []label) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nCalibration summary: %d prompts labeled (contains no prompt text)\n", len(labels))
+	fmt.Fprintf(&b, "\nResults: %d prompts labeled (this summary contains no prompt text)\n\n", len(labels))
 	if len(labels) == 0 {
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
-	signals := []struct {
-		name string
-		get  func(sessions.Prompt) bool
-	}{
-		{"context", func(p sessions.Prompt) bool { return p.Context }},
-		{"criteria", func(p sessions.Prompt) bool { return p.Criteria }},
-		{"verification", func(p sessions.Prompt) bool { return p.Verification }},
+	signal := map[string]func(sessions.Prompt) bool{
+		"context":      func(p sessions.Prompt) bool { return p.Context },
+		"criteria":     func(p sessions.Prompt) bool { return p.Criteria },
+		"verification": func(p sessions.Prompt) bool { return p.Verification },
 	}
-	fmt.Fprintf(&b, "  %-13s %9s  %22s  %22s\n", "signal", "agreement", "rule yes, you said no", "rule no, you said yes")
-	for _, s := range signals {
-		agree, falseYes, falseNo := 0, 0, 0
-		for i := range labels {
-			r, h := s.get(rules[i]), s.get(labels[i])
-			switch {
+	fmt.Fprintf(&b, "  %-13s %-15s %-28s %s\n", "question", "rules agreed", "rules yes, you said no", "rules no, you said yes")
+	for _, q := range signalQuestions {
+		asked, agree, falseYes, falseNo := 0, 0, 0, 0
+		for i, l := range labels {
+			h, ok := l.answers[q.signal]
+			if !ok {
+				continue
+			}
+			asked++
+			switch r := signal[q.signal](rules[i]); {
 			case r == h:
 				agree++
 			case r:
@@ -161,18 +255,22 @@ func writeAgreement(w io.Writer, rules, labels []sessions.Prompt) error {
 				falseNo++
 			}
 		}
-		fmt.Fprintf(&b, "  %-13s %8.0f%%  %22d  %22d\n", s.name, percent(agree, len(labels)), falseYes, falseNo)
+		if asked == 0 {
+			fmt.Fprintf(&b, "  %-13s not asked\n", q.signal)
+			continue
+		}
+		fmt.Fprintf(&b, "  %-13s %-15s %-28d %d\n", q.signal, ratio(agree, asked), falseYes, falseNo)
 	}
 	agree := 0
 	mismatches := map[string]int{}
-	for i := range labels {
-		if rules[i].Type == labels[i].Type {
+	for i, l := range labels {
+		if rules[i].Type == l.typ {
 			agree++
 		} else {
-			mismatches["you "+labels[i].Type+", rule "+rules[i].Type]++
+			mismatches["you said "+l.typ+", rules said "+rules[i].Type]++
 		}
 	}
-	fmt.Fprintf(&b, "  %-13s %8.0f%%\n", "task type", percent(agree, len(labels)))
+	fmt.Fprintf(&b, "  %-13s %s\n", "task type", ratio(agree, len(labels)))
 	keys := make([]string, 0, len(mismatches))
 	for k := range mismatches {
 		keys = append(keys, k)
@@ -190,7 +288,9 @@ func writeAgreement(w io.Writer, rules, labels []sessions.Prompt) error {
 	return err
 }
 
-func percent(n, total int) float64 { return float64(n) * 100 / float64(total) }
+func ratio(n, total int) string {
+	return fmt.Sprintf("%d/%d %.0f%%", n, total, float64(n)*100/float64(total))
+}
 
 func firstOr(args []string, fallback string) string {
 	if len(args) > 0 {
