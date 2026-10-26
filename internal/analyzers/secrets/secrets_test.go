@@ -90,3 +90,19 @@ func TestFindingsCarryNoValue(t *testing.T) {
 		t.Fatalf("analysis.Finding has %d fields; secrets must never be stored on findings", fields)
 	}
 }
+
+func TestCommentsAndVariableReferencesAreNotSecrets(t *testing.T) {
+	lines := []string{
+		fake(`# e.g. postgres://admin:`, "Zq8vLm2pW", `@db.internal/app`),
+		fake(`  // url: "mysql://root:`, "Zq8vLm2pW", `@db/app"`),
+		`PGPASSWORD="$(DB_PASSWORD)"`,
+		`password: "$(POSTGRES_PASSWORD)"`,
+		`secret = "$$CLIENT_SECRET_VALUE"`,
+		`DATABASE_URL=postgres://app:$(DB_PASSWORD)@db.internal/app`,
+		"# token: " + "gh" + "p_" + strings.Repeat("z", 36),
+	}
+	want := []string{"sec.api-token:7"}
+	if got := scan(t, "deploy/values.yaml", strings.Join(lines, "\n")); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want only the real token format in a comment: %v", got, want)
+	}
+}

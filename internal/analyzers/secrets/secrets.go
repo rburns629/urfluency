@@ -71,6 +71,11 @@ var (
 	// Python {name} interpolation.
 	placeholders = []string{"example", "sample", "changeme", "change_me", "your", "xxx", "placeholder",
 		"dummy", "fake", "redacted", "<", "{", "%s", "process.env", "os.environ", "getenv", "****"}
+	// varRef matches a variable reference such as $(DB_PASSWORD) in Makefiles and
+	// Kubernetes manifests, or $PASSWORD and $$PASSWORD in shells and Makefiles.
+	varRef = regexp.MustCompile(`\$\$?\(?[A-Za-z_]`)
+	// commentPrefixes start comment lines, where generic matches are examples.
+	commentPrefixes = []string{"#", "//", "--", "/*", "*", ";", "<!--"}
 )
 
 // Analyze reports credential findings by rule and line.
@@ -92,15 +97,16 @@ func (Scanner) Analyze(ctx context.Context, files []analysis.File) ([]analysis.F
 }
 
 // match returns the first rule a line violates, or "". Generic checks (URL
-// credentials and password assignments) are skipped in test files, where
-// fixture passwords are expected.
+// credentials and password assignments) are skipped in test files, where fixture
+// passwords are expected, and on comment lines, where they are examples. Known
+// token formats are reported everywhere.
 func match(line string, generic bool) string {
 	for _, p := range patterns {
 		if p.re.MatchString(line) {
 			return p.rule
 		}
 	}
-	if !generic {
+	if !generic || isComment(line) {
 		return ""
 	}
 	if m := urlCredentials.FindStringSubmatch(line); m != nil && !isPlaceholder(m[1]+m[2]) && !strings.Contains(line, "localhost") {
@@ -112,7 +118,20 @@ func match(line string, generic bool) string {
 	return ""
 }
 
+func isComment(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for _, p := range commentPrefixes {
+		if strings.HasPrefix(trimmed, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func isPlaceholder(v string) bool {
+	if varRef.MatchString(v) {
+		return true
+	}
 	lower := strings.ToLower(v)
 	for _, p := range placeholders {
 		if strings.Contains(lower, p) {
