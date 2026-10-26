@@ -40,8 +40,13 @@ func TestScanJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Languages) != 1 || len(rep.Languages[0].Weaknesses) != 1 ||
-		rep.Languages[0].Weaknesses[0].Locations[0] != "a.go:3" {
+	var goLang *report.Language
+	for i := range rep.Languages {
+		if rep.Languages[i].Language == "go" {
+			goLang = &rep.Languages[i]
+		}
+	}
+	if goLang == nil || len(goLang.Weaknesses) != 1 || goLang.Weaknesses[0].Locations[0] != "a.go:3" {
 		t.Errorf("report = %+v", rep)
 	}
 }

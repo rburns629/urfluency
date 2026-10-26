@@ -4,7 +4,7 @@ package rules
 import "sort"
 
 // Version identifies the catalog; it changes whenever rules are added or redefined.
-const Version = "0.2"
+const Version = "0.3"
 
 // Category groups rules into the metrics users see.
 type Category string
@@ -14,6 +14,7 @@ const (
 	Architecture        Category = "architecture"
 	TypeSafety          Category = "type-safety"
 	LanguageProficiency Category = "language-proficiency"
+	Security            Category = "security"
 	Prompting           Category = "prompting"
 )
 

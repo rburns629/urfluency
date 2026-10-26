@@ -29,7 +29,19 @@ go build -o urfluency ./cmd/urfluency
 ./urfluency scan --json .
 ```
 
-The scan analyzes only lines that `git blame` attributes to your emails, never runs
-the repository's code, and writes nothing to disk. `--locations` adds `file:line`
-for each finding; locations are never uploaded.
+The scan analyzes only lines that `git blame` attributes to your emails at the
+latest commit, never runs the repository's code, and writes nothing to disk.
+`--locations` adds `file:line` for each finding; locations are never uploaded.
+
+## What it checks
+
+| Area | Coverage |
+| --- | --- |
+| Languages | Go, Python, JavaScript, TypeScript |
+| Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
+| Security | Committed credentials in any text file (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
+| Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
+
+Secret findings show the rule and line only. Credential values are never printed,
+stored, or uploaded, and nothing about a scanned repository is kept: only scores.
 

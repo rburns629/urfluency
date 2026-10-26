@@ -6,7 +6,7 @@ func TestCatalogIsComplete(t *testing.T) {
 	if d := Duplicates(); len(d) > 0 {
 		t.Fatalf("duplicate rule IDs: %v", d)
 	}
-	valid := map[Category]bool{CleanCode: true, Architecture: true, TypeSafety: true, LanguageProficiency: true, Prompting: true}
+	valid := map[Category]bool{CleanCode: true, Architecture: true, TypeSafety: true, LanguageProficiency: true, Security: true, Prompting: true}
 	for id, r := range catalog {
 		if r.ID != id || r.Title == "" || r.Why == "" || r.Focus == "" || len(r.Languages) == 0 {
 			t.Errorf("rule %s is missing fields: %+v", id, r)

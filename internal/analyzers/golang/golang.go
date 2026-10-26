@@ -129,7 +129,11 @@ func (c *checker) run() {
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SwitchStmt:
-				c.checkEmptyCases(n.Body)
+				// Tagless switches (switch { case cond: }) use empty cases to mean
+				// "do nothing"; the fall-through confusion arises with a tag.
+				if n.Tag != nil {
+					c.checkEmptyCases(n.Body)
+				}
 			case *ast.TypeSwitchStmt:
 				c.checkEmptyCases(n.Body)
 			case *ast.ForStmt:
@@ -156,7 +160,10 @@ func (c *checker) run() {
 				if n.Type != nil && !checkedAsserts[n] && !isTest {
 					c.report("go.unchecked-type-assertion", n.Pos())
 				}
+			case *ast.KeyValueExpr:
+				c.checkInsecureTLS(n)
 			case *ast.CallExpr:
+				c.checkSecurity(n)
 				if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "panic" && !allowPanic {
 					if _, builtin := c.info.Uses[id].(*types.Builtin); builtin {
 						c.report("go.panic-outside-main", n.Pos())

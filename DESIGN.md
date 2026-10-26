@@ -22,9 +22,13 @@ safe to run.
 
 ## Principles
 
-- **Code stays local.** The CLI uploads metrics, never source code, file paths, or
-  private repository names. Only the safety scanner and connected public repos are
-  analyzed on the server.
+- **Only scores are stored.** Nothing about an analyzed repository is kept: no
+  source code, repository names, URLs, file paths, commit hashes, findings with
+  locations, or secrets. The CLI uploads aggregate scores and rule counts combined
+  across all scanned repositories. Ad-hoc safety scans keep nothing after the report
+  is delivered. The one exception is a repository its owner connects for badges,
+  which stores `owner/repo` and its scores, because a badge must be looked up by
+  name.
 - **Trends, not rankings.** Metrics describe one person's trajectory. There are no
   leaderboards and no cross-person comparisons.
 - **Honest provenance.** Every number shows its trust tier, period, sample size, and
@@ -58,7 +62,7 @@ needed. All are decisions to confirm, not requirements.
 
 ## Metrics
 
-Five categories. Each is computed per language where it applies, over a rolling
+Six categories. Each is computed per language where it applies, over a rolling
 window (for example 90 days), and reports a band, a trend, evidence counts, and
 confidence.
 
@@ -68,6 +72,7 @@ confidence.
 | **Architecture** | Sound structure in the user's changes | Dependency-direction and layering violations introduced; global or shared mutable state; abstractions added without variation; source-specific branching repeated across functions | Medium (static rules plus optional model review) |
 | **Type safety** | Reliable data contracts | Unchecked casts and assertions; untyped maps and `any` at boundaries; ignored decode errors; missing boundary validation | High for typed languages |
 | **Language proficiency** | Correct use of each language's semantics and idioms | Language-semantic pitfalls per 1,000 changed lines (for Go: `switch` fall-through assumptions, reused decode targets, `WaitGroup` miscounts, assertions on nil interfaces); lint findings on changed lines; idiom adoption, adjusted for when features became available | High for detected pitfalls |
+| **Security** | Safe handling of credentials and untrusted input | Leaked credentials (keys, tokens, private keys, hard-coded passwords) on the user's lines; injection-prone code (SQL built from strings, shell commands from input, `eval`, unsafe deserialization); disabled TLS verification; framework misconfiguration such as Django `DEBUG = True` or `csrf_exempt` | High for credentials and explicit patterns; values are never shown, stored, or uploaded |
 | **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions: tokens per task, reworked files, corrections, first-attempt acceptance, reported per task type | Medium; validated in [clean-agent-code's prompting evaluation](https://github.com/rburns629/clean-agent-code/blob/main/evaluations/results/2026-10-19-prompting.md) |
 
 ### Strengths, weaknesses, and focus points
@@ -155,7 +160,10 @@ interface, sharing Git access, ownership, and the rule catalog.
      configurations execute project code, so adapters run only on the user's own
      repositories and only when enabled.
    - **Framework packs** add rules on top of a language analyzer, such as React hook
-     misuse, raw SQL in Django views, or field injection in Spring.
+     misuse, raw SQL in Django views, or field injection in Spring. A pack applies to a
+     file when the file imports the framework, so detection needs no manifest
+     parsing. Initial packs: React, Angular, Express, Fastify, FastAPI, Django, and
+     Flask.
 4. **Rules.** Every finding references a catalog rule with a language and optional
    framework, so strengths, weaknesses, and focus points work the same way for
    every language.
@@ -173,21 +181,21 @@ format, and service do not change.
   "tool": "0.1.0",
   "period": {"from": "2026-07-01", "to": "2026-09-30"},
   "tier": "self-reported",
-  "repos": {"public": ["rburns629/clean-agent-code"], "private_count": 3},
   "languages": [{
-    "language": "go",
-    "changed_lines": 4120,
-    "categories": {
-      "language-proficiency": {"rules": {"go.decode-target-reuse": 3, "go.switch-fallthrough": 1}},
-      "type-safety": {"rules": {"go.unchecked-assertion": 7}}
-    }
+    "language": "typescript",
+    "frameworks": ["react"],
+    "owned_lines": 11035,
+    "rules": {"ts.explicit-any": 18, "ts.non-null-assertion": 10, "sec.api-token": 1}
   }],
   "prompting": {"tasks": 42, "by_task_type": {"feature": {"tokens_median": 81000, "corrections_per_task": 0.4, "rework_files_per_task": 0.6, "first_attempt_acceptance": 0.62}}}
 }
 ```
 
-The server computes bands and scores from rule counts and volume, so scoring can
-improve without a new CLI release, and every result records the method version.
+Counts and volume are combined across every repository scanned in the period. The
+payload has no repository names, paths, commit hashes, locations, or secret values,
+and the CLI prints it for confirmation before sending. The server computes bands and
+scores from rule counts and volume, so scoring can improve without a new CLI release,
+and every result records the method version.
 
 ## Trust tiers
 
@@ -235,7 +243,11 @@ Submitted repositories are untrusted. The scanner:
   configuration can execute commands.
 - Performs static analysis only at first. Dynamic analysis (running install steps
   in an instrumented sandbox to observe network and file access) is a later phase.
-- Rate-limits submissions per user and IP, and caches results by commit.
+- Rate-limits submissions per user and IP.
+- Keeps nothing after delivery: the clone, the report, and the submitted URL are
+  deleted once the report is returned. Users who want to keep a report download it.
+  A repository connected for a safety badge stores only `owner/repo` and its verdict
+  and counts.
 
 ### Model assistance
 
@@ -294,19 +306,21 @@ repository owner has published.
 | `metric_uploads` | id, user_id, tier, method, tool, period, payload, received_at |
 | `category_results` | user_id, language, category, band, score, sample, confidence, method, period |
 | `visibility` | user_id, scope (category or language), public |
-| `repos` | id, owner, name, installation_id, tier, last_analyzed_commit |
-| `scans` | id, url, commit, status, summary, report_key, submitted_by, created_at |
+| `repos` | id, owner, name, installation_id, tier, category scores, safety verdict (connected repositories only) |
+| `scan_jobs` | id, status, submitted_by, created_at; the URL and report exist only in the job's memory and temporary storage until delivery, then are deleted |
 | `rules` | id, version, category, language, title, why, focus |
 
 ## Privacy and security
 
-- No source code is stored except temporary clones in scan workers, deleted after
-  each scan.
+- No source code or repository details are stored. Scan workers hold a temporary
+  clone and report only until delivery; connected repositories store `owner/repo`
+  and scores only.
 - Metrics are private by default. Users can export and delete everything.
 - Aggregate metrics can still reveal employer information (activity, technology);
   the CLI shows a notice to check employment agreements before publishing.
 - Session analysis is opt-in, local, and discards prompt text.
-- Secrets found by the scanner are reported by type and location only.
+- Secrets are reported by type and location in the local CLI and in a delivered scan
+  report only; their values are never printed, stored, or uploaded.
 - Threat model to write before launch: forged uploads, token theft, scanner escape,
   prompt injection through scanned code, badge spoofing, and abuse of public
   endpoints.

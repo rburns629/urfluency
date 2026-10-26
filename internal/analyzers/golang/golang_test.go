@@ -48,6 +48,20 @@ func f(s string) string {
 			want: []string{"go.switch-empty-case:04"},
 		},
 		{
+			name: "empty cases in a tagless switch mean do nothing",
+			path: "a.go",
+			src: `package a
+func f(s string) bool {
+	switch {
+	case s == "a", s == "b":
+	case s == "c":
+	default:
+		return false
+	}
+	return true
+}`,
+		},
+		{
 			name: "shared case list is fine",
 			path: "a.go",
 			src: `package a

@@ -34,10 +34,37 @@ type Analyzer interface {
 	Analyze(ctx context.Context, files []File) ([]Finding, error)
 }
 
-var registry []Analyzer
+// Scanner analyzes every text file regardless of language, such as secret
+// detection. Its results are reported under its name.
+type Scanner interface {
+	Name() string
+	Applies(path string) bool
+	Analyze(ctx context.Context, files []File) ([]Finding, error)
+}
+
+// FrameworkDetector is implemented by analyzers that recognize the frameworks a
+// file uses, such as "react" or "django".
+type FrameworkDetector interface {
+	Frameworks(f File) []string
+}
+
+var (
+	registry []Analyzer
+	scanners []Scanner
+)
 
 // Register makes an analyzer available to the engine.
 func Register(a Analyzer) { registry = append(registry, a) }
+
+// RegisterScanner makes a cross-language scanner available to the engine.
+func RegisterScanner(s Scanner) { scanners = append(scanners, s) }
+
+// Scanners returns registered scanners sorted by name.
+func Scanners() []Scanner {
+	out := append([]Scanner(nil), scanners...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out
+}
 
 // Analyzers returns registered analyzers sorted by language.
 func Analyzers() []Analyzer {

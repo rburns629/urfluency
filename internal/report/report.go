@@ -31,6 +31,7 @@ type Report struct {
 // Language summarizes one language.
 type Language struct {
 	Language   string         `json:"language"`
+	Frameworks []string       `json:"frameworks"`
 	Files      int            `json:"files"`
 	OwnedLines int            `json:"owned_lines"`
 	Sufficient bool           `json:"sufficient_data"`
@@ -65,6 +66,7 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 	// Slices start empty, not nil, so JSON consumers always receive arrays.
 	lang := Language{
 		Language:   lr.Language,
+		Frameworks: append([]string{}, lr.Frameworks...),
 		Files:      lr.Files,
 		OwnedLines: lr.OwnedLines,
 		Sufficient: lr.OwnedLines >= MinOwnedLines,
@@ -96,7 +98,12 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		}
 		lang.Weaknesses = append(lang.Weaknesses, *rr)
 	}
+	// Security first, then by count: a leaked key outranks frequent style issues.
 	sort.Slice(lang.Weaknesses, func(i, j int) bool {
+		si, sj := lang.Weaknesses[i].Category == string(rules.Security), lang.Weaknesses[j].Category == string(rules.Security)
+		if si != sj {
+			return si
+		}
 		if lang.Weaknesses[i].Count != lang.Weaknesses[j].Count {
 			return lang.Weaknesses[i].Count > lang.Weaknesses[j].Count
 		}
@@ -136,7 +143,11 @@ func WriteText(w io.Writer, r Report) error {
 		b.WriteString("\nNo owned lines in supported languages were found for these authors.\n")
 	}
 	for _, l := range r.Languages {
-		fmt.Fprintf(&b, "\n%s: %d owned lines in %d files\n", strings.ToUpper(l.Language), l.OwnedLines, l.Files)
+		name := strings.ToUpper(l.Language)
+		if len(l.Frameworks) > 0 {
+			name += " (" + strings.Join(l.Frameworks, ", ") + ")"
+		}
+		fmt.Fprintf(&b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
 		if !l.Sufficient {
 			fmt.Fprintf(&b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
 		}

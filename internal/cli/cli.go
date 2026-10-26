@@ -21,6 +21,7 @@ import (
 	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
 	_ "github.com/rburns629/urfluency/internal/analyzers/javascript"
 	_ "github.com/rburns629/urfluency/internal/analyzers/python"
+	_ "github.com/rburns629/urfluency/internal/analyzers/secrets"
 )
 
 // Version is set at build time with -ldflags "-X .../internal/cli.Version=...".

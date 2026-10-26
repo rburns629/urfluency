@@ -42,8 +42,8 @@ func TestBuildRanksWeaknessesAndFindsStrengths(t *testing.T) {
 	if l.Categories["clean-code"] != 4 || l.Categories["type-safety"] != 2 {
 		t.Errorf("categories = %v", l.Categories)
 	}
-	if len(l.Strengths) != 1 || !strings.Contains(l.Strengths[0], "language-proficiency") {
-		t.Errorf("strengths = %v, want only language-proficiency", l.Strengths)
+	if len(l.Strengths) != 2 || !strings.Contains(l.Strengths[0], "language-proficiency") || !strings.Contains(l.Strengths[1], "security") {
+		t.Errorf("strengths = %v, want language-proficiency and security", l.Strengths)
 	}
 }
 

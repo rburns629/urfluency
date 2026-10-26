@@ -50,7 +50,7 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		if err != nil {
 			continue
 		}
-		c := checker{tree: tree, path: f.Path, isTest: isTestFile(f.Path)}
+		c := checker{tree: tree, path: f.Path, isTest: isTestFile(f.Path), frameworks: importedFrameworks(tree)}
 		parsing.Walk(tree.Root(), c.visit)
 		tree.Close()
 		findings = append(findings, c.findings...)
@@ -73,10 +73,11 @@ func isTestFunction(name string) bool {
 }
 
 type checker struct {
-	tree     *parsing.Tree
-	path     string
-	isTest   bool
-	findings []analysis.Finding
+	tree       *parsing.Tree
+	path       string
+	isTest     bool
+	frameworks map[string]bool
+	findings   []analysis.Finding
 }
 
 func (c *checker) report(rule string, n *ts.Node) {
@@ -105,6 +106,11 @@ func (c *checker) visit(n *ts.Node) bool {
 		if fn := n.ChildByFieldName("function"); fn != nil && fn.Kind() == "identifier" && c.tree.Text(fn) == "open" && !c.managedOrReturned(n) {
 			c.report("py.open-without-with", n)
 		}
+		c.checkCallSecurity(n)
+	case "decorated_definition":
+		c.checkDecorated(n)
+	case "assignment":
+		c.checkDebugSetting(n)
 	case "comment":
 		if strings.Contains(c.tree.Text(n), "type: ignore") {
 			c.report("py.type-ignore", n)

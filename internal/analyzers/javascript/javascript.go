@@ -77,7 +77,7 @@ func analyze(ctx context.Context, files []analysis.File, typescript bool) ([]ana
 		if err != nil {
 			continue
 		}
-		c := checker{tree: tree, path: f.Path, typescript: typescript}
+		c := checker{tree: tree, path: f.Path, typescript: typescript, frameworks: frameworksOf(tree, f.Path)}
 		parsing.Walk(tree.Root(), c.visit)
 		tree.Close()
 		findings = append(findings, c.findings...)
@@ -89,6 +89,7 @@ type checker struct {
 	tree       *parsing.Tree
 	path       string
 	typescript bool
+	frameworks map[string]bool
 	findings   []analysis.Finding
 }
 
@@ -110,12 +111,14 @@ func (c *checker) visit(n *ts.Node) bool {
 		}
 	case "call_expression":
 		c.checkAsyncForEach(n)
+		c.checkCallSecurity(n)
 	case "comment":
 		text := c.tree.Text(n)
 		if strings.Contains(text, "@ts-ignore") || strings.Contains(text, "@ts-nocheck") {
 			c.report("ts.ts-ignore", n)
 		}
 	}
+	c.checkNodeSecurity(n)
 	if c.typescript {
 		switch n.Kind() {
 		case "predefined_type":
