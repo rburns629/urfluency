@@ -106,3 +106,15 @@ func TestCommentsAndVariableReferencesAreNotSecrets(t *testing.T) {
 		t.Errorf("got %v, want only the real token format in a comment: %v", got, want)
 	}
 }
+
+func TestValuesThatNameCredentialsAreNotSecrets(t *testing.T) {
+	lines := []string{
+		"<input autoComplete={isLogin ? 'current-password' : 'new-password'} />",
+		`field = "client_secret_name"`,
+		fake(`postgres-password: "`, "Zq8vLm2pW3", `"`),
+	}
+	want := []string{"sec.hardcoded-password:3"}
+	if got := scan(t, "src/pages/Auth.tsx", strings.Join(lines, "\n")); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want only the real value on line 3: %v", got, want)
+	}
+}

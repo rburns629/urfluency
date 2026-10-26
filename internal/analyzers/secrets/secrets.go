@@ -112,10 +112,22 @@ func match(line string, generic bool) string {
 	if m := urlCredentials.FindStringSubmatch(line); m != nil && !isPlaceholder(m[1]+m[2]) && !strings.Contains(line, "localhost") {
 		return "sec.credentials-in-url"
 	}
-	if m := assignment.FindStringSubmatch(line); m != nil && !isPlaceholder(m[1]) && entropy(m[1]) >= 3.0 {
+	if m := assignment.FindStringSubmatch(line); m != nil && !isPlaceholder(m[1]) && !namesCredential(m[1]) && entropy(m[1]) >= 3.0 {
 		return "sec.hardcoded-password"
 	}
 	return ""
+}
+
+// namesCredential reports whether a value names a credential rather than holding
+// one, such as the autocomplete token "new-password" in a JSX ternary.
+func namesCredential(v string) bool {
+	lower := strings.ToLower(v)
+	for _, word := range []string{"password", "passwd", "secret", "token"} {
+		if strings.Contains(lower, word) {
+			return true
+		}
+	}
+	return false
 }
 
 func isComment(line string) bool {
