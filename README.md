@@ -47,7 +47,7 @@ text is reduced to signals as it is read and is never stored, printed, or upload
 | Languages | Go, Python, JavaScript, TypeScript |
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
-| Prompting | Concrete context, acceptance criteria on feature and refactor work, verification requests, and corrections needed, per task type (with `--sessions`) |
+| Prompting | With `--sessions`: concrete context, acceptance criteria on feature and refactor work, and verification requests in each session's opening task; corrections needed on every task |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 
 Files that hold secrets by design are never read: `.env` files, key and certificate

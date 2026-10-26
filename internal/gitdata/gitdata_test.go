@@ -2,6 +2,8 @@ package gitdata_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -54,5 +56,29 @@ func TestTrackedFilesAndShow(t *testing.T) {
 	content, err := repo.Show(ctx, "HEAD", "dir/b.go")
 	if err != nil || string(content) != "package b\n" {
 		t.Errorf("show = %q, %v", content, err)
+	}
+}
+
+func TestTrackedFilesListsOnlyCommittedRegularFiles(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a.go": "package a\n"})
+	if err := os.Symlink("a.go", filepath.Join(r.Dir, "link.go")); err != nil {
+		t.Fatal(err)
+	}
+	// A submodule gitlink cannot be blamed; a staged file is not at HEAD.
+	r.Git("me@example.com", "", "add", "link.go")
+	r.Git("me@example.com", "", "update-index", "--add", "--cacheinfo", "160000,0f5e980e898054d8b769dd17b1db0c1c429e5e37,sub")
+	r.Git("me@example.com", "", "commit", "-q", "-m", "link and submodule")
+	if err := os.WriteFile(filepath.Join(r.Dir, "staged.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.Git("me@example.com", "", "add", "staged.go")
+
+	files, err := gitdata.Repo{Dir: r.Dir}.TrackedFiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a.go"}; !reflect.DeepEqual(files, want) {
+		t.Errorf("files = %v, want %v", files, want)
 	}
 }

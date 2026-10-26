@@ -56,16 +56,19 @@ func (r Repo) ConfiguredEmail(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// TrackedFiles lists files tracked at HEAD.
+// TrackedFiles lists the regular files committed at HEAD. Submodules, symlinks,
+// and staged but uncommitted files are excluded.
 func (r Repo) TrackedFiles(ctx context.Context) ([]string, error) {
-	out, err := r.git(ctx, "ls-files", "-z")
+	out, err := r.git(ctx, "ls-tree", "-r", "-z", "--full-tree", "HEAD")
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, f := range strings.Split(string(out), "\x00") {
-		if f != "" {
-			files = append(files, f)
+	for _, entry := range strings.Split(string(out), "\x00") {
+		// "<mode> <type> <object>\t<path>"
+		meta, path, ok := strings.Cut(entry, "\t")
+		if ok && (strings.HasPrefix(meta, "100644 blob ") || strings.HasPrefix(meta, "100755 blob ")) {
+			files = append(files, path)
 		}
 	}
 	return files, nil

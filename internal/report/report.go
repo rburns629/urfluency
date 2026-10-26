@@ -268,7 +268,7 @@ func WriteText(w io.Writer, r Report) error {
 		writePrompting(&b, p)
 	}
 	if a := r.AI; a != nil {
-		fmt.Fprintf(&b, "\nAI-WRITTEN CODE: at least %d of %d owned lines (%.0f%%)\n", a.AILines, a.OwnedLines, a.Share*100)
+		fmt.Fprintf(&b, "\nAI-WRITTEN CODE: at least %d of %d owned code lines (%.0f%%)\n", a.AILines, a.OwnedLines, a.Share*100)
 		if a.AILines > 0 {
 			fmt.Fprintf(&b, "  Findings per 1,000 lines: AI-written %.2f, other %.2f\n", a.AIFindingsPerK, a.OtherFindingsPerK)
 		}

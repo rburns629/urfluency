@@ -102,6 +102,9 @@ func TestClassify(t *testing.T) {
 		{"Refactor the payment module please", Prompt{Type: Refactor}},
 		{"What does this function actually do?", Prompt{Type: Other}},
 		{"Can you add a cache to the user lookup?", Prompt{Type: Feature}},
+		{"<ide_opened_file>The user opened a.go</ide_opened_file> Fix the crash in parse()", Prompt{Type: Bug, Context: true}},
+		{"<local-command-stdout>output</local-command-stdout>", Prompt{}},
+		{"<command-name>/clear</command-name>", Prompt{}},
 	}
 	for _, tt := range tests {
 		if got := Classify(tt.text); got != tt.want {
@@ -122,9 +125,10 @@ func TestGrade(t *testing.T) {
 		t.Errorf("grades = %+v", g)
 	}
 	want := map[string]Tally{
-		"prompt.no-context":             {Applicable: 2, Missed: 0},
+		// Only the opening feature task is graded for content; both for corrections.
+		"prompt.no-context":             {Applicable: 1, Missed: 0},
 		"prompt.no-acceptance-criteria": {Applicable: 1, Missed: 1},
-		"prompt.no-verification":        {Applicable: 2, Missed: 1},
+		"prompt.no-verification":        {Applicable: 1, Missed: 1},
 		"prompt.needed-correction":      {Applicable: 2, Missed: 1},
 	}
 	for id, tally := range want {

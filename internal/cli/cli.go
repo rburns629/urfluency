@@ -60,7 +60,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var err error
 	switch args[0] {
 	case "scan":
-		err = scan(ctx, args[1:], stdout)
+		err = scan(ctx, args[1:], stdout, stderr)
 	case "version":
 		_, err = fmt.Fprintln(stdout, "urfluency", Version)
 	case "help", "-h", "--help":
@@ -84,7 +84,7 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
-func scan(ctx context.Context, args []string, stdout io.Writer) error {
+func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var authors stringList
@@ -132,16 +132,26 @@ func scan(ctx context.Context, args []string, stdout io.Writer) error {
 			return err
 		}
 	}
-	labels := make([]string, len(repos))
-	parts := make([]analysis.Result, len(repos))
-	for i, dir := range repos {
-		labels[i], _ = filepath.Rel(abs, dir)
-		labels[i] = filepath.ToSlash(labels[i])
-		parts[i], err = analysis.Scan(ctx, gitdata.Repo{Dir: dir},
+	// In a folder scan, a repository that fails (for example one with no commits)
+	// is reported and skipped; a single-repository scan fails.
+	var labels []string
+	var parts []analysis.Result
+	for _, dir := range repos {
+		label, _ := filepath.Rel(abs, dir)
+		label = filepath.ToSlash(label)
+		part, err := analysis.Scan(ctx, gitdata.Repo{Dir: dir},
 			analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir]})
 		if err != nil {
-			return fmt.Errorf("%s: %w", labels[i], err)
+			if len(repos) == 1 || ctx.Err() != nil {
+				return err
+			}
+			fmt.Fprintf(stderr, "urfluency: skipping %s: %v\n", label, err)
+			continue
 		}
+		labels, parts = append(labels, label), append(parts, part)
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("no repository under %s could be scanned", abs)
 	}
 	res := analysis.Merge(labels, parts)
 	r := report.Build(res, since, *locations)

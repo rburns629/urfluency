@@ -115,7 +115,7 @@ func TestBuildAI(t *testing.T) {
 	if err := WriteText(&b, Report{Repos: 2, AI: a, Prompting: BuildPrompting(sessions.Grades{})}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2 repositories", "at least 250 of 1000 owned lines (25%)", "not a score", "No code-change tasks"} {
+	for _, want := range []string{"2 repositories", "at least 250 of 1000 owned code lines (25%)", "not a score", "No code-change tasks"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
 		}

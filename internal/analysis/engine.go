@@ -43,8 +43,9 @@ type Result struct {
 	Head      string // empty when several repositories are merged
 	Repos     int
 	Languages []LanguageResult
-	// OwnedLines counts each analyzed file once; AILines are the owned lines that
-	// match agent-written lines, and AIFindings the findings on them.
+	// OwnedLines counts each code file once; AILines are the owned lines that
+	// match agent-written lines. Findings and AIFindings count findings in code
+	// files, so prose and configuration do not dilute the comparison.
 	OwnedLines int
 	AILines    int
 	AIFindings int
@@ -89,7 +90,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	result := Result{Head: head, Repos: 1}
 	ai := map[string]map[int]bool{}
 	for _, f := range files {
-		if f.analyzer != nil || f.text {
+		if f.analyzer != nil {
 			result.OwnedLines += len(f.owned)
 			result.AILines += len(f.ai)
 			ai[f.file.Path] = f.ai
@@ -132,9 +133,12 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		result.Languages = append(result.Languages, lr)
 	}
 	for _, lr := range result.Languages {
-		result.Findings += len(lr.Findings)
 		for _, fd := range lr.Findings {
-			if ai[fd.Path][fd.Line] {
+			lines, code := ai[fd.Path]
+			if code {
+				result.Findings++
+			}
+			if lines[fd.Line] {
 				result.AIFindings++
 			}
 		}
