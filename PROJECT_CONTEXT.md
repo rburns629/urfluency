@@ -21,11 +21,11 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Data sensitivity | Analyzed source code never leaves the machine. Reports contain rule IDs, counts, and volumes only; no code, file paths of private repositories, or prompt text |
 | Protected paths and value files | `.env`, `.env.*`, `*.env` (for example `api.env`), keychain entries, and real agent transcripts under `~/.claude/projects/` and `~/.codex/sessions/`. Tests use synthetic fixtures under `testdata/` only. Fixtures containing fake secrets are marked with the string `URFLUENCY-CANARY` and are non-sensitive |
 | Trust boundaries | Repositories being analyzed are untrusted input: parse them, never execute their code, hooks, or build scripts. Git runs with hooks disabled and without external diff or text conversion |
-| Type checking | `go vet ./...` (see Testing for the container form) |
+| Type checking | `go vet ./...` |
 | Formatting | `gofmt -l .` must print nothing |
-| Linting | `staticcheck ./...` |
-| Testing | Host Go is 1.20 and too old; run checks in the container: `docker run --rm -v "$PWD":/src -w /src golang:1.24.2-bookworm sh -c 'gofmt -l . && go vet ./... && go test -race ./...'` |
-| Security tooling | `govulncheck ./...` in the same container; secret scanning to be added |
+| Linting | `staticcheck ./...` (not installed on the host yet; run `go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...` or use the container below) |
+| Testing | `gofmt -l .` and `go test -race ./...` with host Go (1.27.3). Container alternative: `docker run --rm -v "$PWD":/src -w /src golang:1.24.2-bookworm sh -c 'gofmt -l . && go vet ./... && go test -race ./...'` |
+| Security tooling | `govulncheck ./...` (not installed on the host yet; `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` or the container); secret scanning to be added |
 | CLI operations | GitHub repository `rburns629/urfluency` (private), `gh` account `rburns629`. Pushes, releases, and visibility changes need approval. No cloud resources yet |
 | Auto-mode filesystem recovery | Clean tracked files use their commit as the recovery copy. Other backups go to `~/.urfluency-backups/<timestamp>/`, outside the repository. Robert Burns approves cleanup; nothing is deleted automatically |
 | Performance requirements | Not yet defined |
