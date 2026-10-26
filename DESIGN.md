@@ -128,6 +128,13 @@ reasoning in clean-agent-code's AUDIT.md.
 
   On the author's projects (2026-10-26) the two gave 29% (sessions) and 53%
   (trailers) of 136,794 owned code lines.
+- Each language also reports its authorship split: the share of owned lines that
+  are AI-assisted (agent-written in sessions or from AI-marked commits) and the
+  findings rate for those lines versus the rest. Strengths and weaknesses still
+  cover all owned code, since the user is responsible for what they commit; the
+  split shows whose code a result reflects. On the author's projects, TypeScript
+  was 75% AI-assisted with 5.37 findings per 1,000 AI-assisted lines against 1.36
+  for the rest, while Go was 53% with similar rates (2.97 and 3.28).
 - Prompting signals depend on task type; a bug with an evident symptom needs little
   specification, so signals are grouped by task type.
 - Architecture and clean code involve judgment; model-assisted review is optional,

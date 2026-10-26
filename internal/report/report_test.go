@@ -87,6 +87,30 @@ func TestWriteText(t *testing.T) {
 	}
 }
 
+func TestBuildSplitsAuthorship(t *testing.T) {
+	res := result(1000, "go.ignored-error", "go.ignored-error", "go.ignored-error")
+	res.Languages[0].AssistedLines = 400
+	res.Languages[0].AssistedFindings = 2
+	r := Build(res, time.Time{}, false)
+	a := r.Languages[0].Authorship
+	if a == nil || a.AssistedShare != 0.4 || a.AssistedFindingsPer != 5 || a.OtherFindingsPer != 1.67 {
+		t.Errorf("authorship = %+v", a)
+	}
+	if r.Since != "all" {
+		t.Errorf("since = %q, want all for a zero time", r.Since)
+	}
+	var b strings.Builder
+	if err := WriteText(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "AI-assisted: 400 lines (40%). Findings per 1,000 lines: AI-assisted 5.00, other 1.67") {
+		t.Errorf("text:\n%s", b.String())
+	}
+	if Build(result(500, "go.ignored-error"), time.Time{}, false).Languages[0].Authorship != nil {
+		t.Error("no AI-assisted lines should mean no authorship split")
+	}
+}
+
 func TestBuildPrompting(t *testing.T) {
 	g := sessions.Grades{Sessions: 3, Tasks: map[string]int{"feature": 6, "bug": 4}, Rules: map[string]sessions.Tally{
 		"prompt.unverified-change": {Applicable: 8, Missed: 5},

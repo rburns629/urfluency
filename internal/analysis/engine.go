@@ -36,6 +36,10 @@ type LanguageResult struct {
 	Files      int
 	OwnedLines int
 	Findings   []Finding
+	// AssistedLines are owned lines an agent wrote in local sessions or that
+	// come from commits marked AI-assisted; AssistedFindings are findings on them.
+	AssistedLines    int
+	AssistedFindings int
 }
 
 // Result is the outcome of scanning one or more repositories.
@@ -61,7 +65,8 @@ type ownedFile struct {
 	text     bool     // eligible for scanners
 	file     File
 	owned    map[int]string // line → commit
-	ai       map[int]bool
+	ai       map[int]bool   // lines matching agent-written session lines
+	assisted map[int]bool   // ai lines plus lines from AI-marked commits
 }
 
 // Scan analyzes the files at HEAD and keeps findings on lines owned by the user.
@@ -103,7 +108,14 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 	}
 	ai := map[string]map[int]bool{}
-	for _, f := range files {
+	for i := range files {
+		f := &files[i]
+		f.assisted = map[int]bool{}
+		for line, commit := range f.owned {
+			if f.ai[line] || len(tools[commit]) > 0 {
+				f.assisted[line] = true
+			}
+		}
 		if f.analyzer == nil {
 			continue
 		}
@@ -174,11 +186,14 @@ func run(ctx context.Context, name string, group []ownedFile,
 	analyze func(context.Context, []File) ([]Finding, error)) (LanguageResult, error) {
 	lr := LanguageResult{Language: name, Files: len(group)}
 	owned := map[string]map[int]string{}
+	assisted := map[string]map[int]bool{}
 	inputs := make([]File, 0, len(group))
 	for _, f := range group {
 		inputs = append(inputs, f.file)
 		owned[f.file.Path] = f.owned
+		assisted[f.file.Path] = f.assisted
 		lr.OwnedLines += len(f.owned)
+		lr.AssistedLines += len(f.assisted)
 	}
 	findings, err := analyze(ctx, inputs)
 	if err != nil {
@@ -187,6 +202,9 @@ func run(ctx context.Context, name string, group []ownedFile,
 	for _, fd := range findings {
 		if owned[fd.Path][fd.Line] != "" {
 			lr.Findings = append(lr.Findings, fd)
+			if assisted[fd.Path][fd.Line] {
+				lr.AssistedFindings++
+			}
 		}
 	}
 	sort.Slice(lr.Findings, func(i, j int) bool {

@@ -138,7 +138,7 @@ func TestMergeCombinesRepositories(t *testing.T) {
 func TestScanCountsLinesFromAIMarkedCommits(t *testing.T) {
 	r := testutil.NewRepo(t)
 	r.Commit("me@example.com", "", map[string]string{"a/a.go": "package a\n"})
-	if err := os.WriteFile(filepath.Join(r.Dir, "a/a.go"), []byte("package a\n\nfunc f() {}\nfunc g() {}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(r.Dir, "a/a.go"), []byte("package a\n\nfunc f() { panic(1) }\nfunc g() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r.Git("me@example.com", "", "commit", "-qam", "Add f and g\n\nCo-Authored-By: Claude Opus <noreply@anthropic.com>")
@@ -148,6 +148,9 @@ func TestScanCountsLinesFromAIMarkedCommits(t *testing.T) {
 	}
 	if res.OwnedLines != 4 || res.MarkedLines != 3 || res.MarkedByTool["claude"] != 3 {
 		t.Errorf("owned %d, marked %d, by tool %v; want 4, 3, claude 3", res.OwnedLines, res.MarkedLines, res.MarkedByTool)
+	}
+	if g := res.Languages[0]; g.Language != "go" || g.AssistedLines != 3 || g.AssistedFindings != 1 || len(g.Findings) != 1 {
+		t.Errorf("go = %+v, want 3 AI-assisted lines holding the 1 finding", g)
 	}
 }
 

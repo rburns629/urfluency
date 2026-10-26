@@ -17,7 +17,7 @@ import (
 
 func TestParseSince(t *testing.T) {
 	now := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
-	tests := map[string]string{"90d": "2026-07-28", "2026-01-31": "2026-01-31"}
+	tests := map[string]string{"90d": "2026-07-28", "2026-01-31": "2026-01-31", "all": "0001-01-01"}
 	for in, want := range tests {
 		got, err := parseSince(in, now)
 		if err != nil || got.Format("2006-01-02") != want {

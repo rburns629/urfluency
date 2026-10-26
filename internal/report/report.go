@@ -83,6 +83,17 @@ type Language struct {
 	Weaknesses []RuleResult   `json:"weaknesses"`
 	Strengths  []string       `json:"strengths"`
 	Focus      []string       `json:"focus"`
+	// Authorship splits the findings rate between AI-assisted and other owned
+	// lines, so readers can see whose code a result reflects.
+	Authorship *Authorship `json:"authorship,omitempty"`
+}
+
+// Authorship compares AI-assisted owned lines with the rest.
+type Authorship struct {
+	AssistedLines       int     `json:"ai_assisted_lines"`
+	AssistedShare       float64 `json:"ai_assisted_share"`
+	AssistedFindingsPer float64 `json:"findings_per_1000_ai_assisted_lines"`
+	OtherFindingsPer    float64 `json:"findings_per_1000_other_lines"`
 }
 
 // RuleResult is one rule with occurrences on the user's lines.
@@ -99,7 +110,10 @@ type RuleResult struct {
 
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
-	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: since.Format("2006-01-02")}
+	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all"}
+	if !since.IsZero() {
+		r.Since = since.Format("2006-01-02")
+	}
 	for _, lr := range res.Languages {
 		r.Languages = append(r.Languages, buildLanguage(lr, withLocations))
 	}
@@ -118,6 +132,14 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		Weaknesses: []RuleResult{},
 		Strengths:  []string{},
 		Focus:      []string{},
+	}
+	if lr.AssistedLines > 0 && lr.OwnedLines > 0 {
+		a := &Authorship{AssistedLines: lr.AssistedLines, AssistedShare: round2(float64(lr.AssistedLines) / float64(lr.OwnedLines))}
+		a.AssistedFindingsPer = round2(float64(lr.AssistedFindings) * 1000 / float64(lr.AssistedLines))
+		if other := lr.OwnedLines - lr.AssistedLines; other > 0 {
+			a.OtherFindingsPer = round2(float64(len(lr.Findings)-lr.AssistedFindings) * 1000 / float64(other))
+		}
+		lang.Authorship = a
 	}
 	byRule := map[string]*RuleResult{}
 	for _, f := range lr.Findings {
@@ -259,6 +281,10 @@ func WriteText(w io.Writer, r Report) error {
 		fmt.Fprintf(&b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
 		if !l.Sufficient {
 			fmt.Fprintf(&b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
+		}
+		if a := l.Authorship; a != nil {
+			fmt.Fprintf(&b, "  AI-assisted: %d lines (%.0f%%). Findings per 1,000 lines: AI-assisted %.2f, other %.2f\n",
+				a.AssistedLines, a.AssistedShare*100, a.AssistedFindingsPer, a.OtherFindingsPer)
 		}
 		if len(l.Strengths) > 0 {
 			b.WriteString("  Strengths\n")

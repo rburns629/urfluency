@@ -41,8 +41,8 @@ Usage:
 
 Scan flags:
   --author EMAIL   Your commit email; repeat for several (default: git user.email)
-  --since WHEN     Only lines authored since WHEN: a duration like 90d or a date
-                   like 2026-01-31 (default 365d)
+  --since WHEN     Only lines authored since WHEN: a duration like 90d, a date
+                   like 2026-01-31, or all (default 365d)
   --json           Print the report as JSON
   --locations      Include file:line for each finding (local only, never uploaded)
   --sessions       Also grade your prompts in local Claude Code and Codex sessions
@@ -265,8 +265,11 @@ func relative(root, path string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-// parseSince accepts "<n>d" or a YYYY-MM-DD date.
+// parseSince accepts "all", "<n>d", or a YYYY-MM-DD date.
 func parseSince(v string, now time.Time) (time.Time, error) {
+	if v == "all" {
+		return time.Time{}, nil
+	}
 	if strings.HasSuffix(v, "d") {
 		days, err := strconv.Atoi(strings.TrimSuffix(v, "d"))
 		if err != nil || days <= 0 {

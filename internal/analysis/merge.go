@@ -29,6 +29,8 @@ func Merge(labels []string, parts []Result) Result {
 			}
 			m.Files += lr.Files
 			m.OwnedLines += lr.OwnedLines
+			m.AssistedLines += lr.AssistedLines
+			m.AssistedFindings += lr.AssistedFindings
 			for _, fd := range lr.Findings {
 				fd.Path = labels[i] + "/" + fd.Path
 				m.Findings = append(m.Findings, fd)
