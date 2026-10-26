@@ -71,6 +71,27 @@ func TestScannersRunOnOwnedLinesOfAnyTextFile(t *testing.T) {
 	}
 }
 
+func TestProtectedFilesAreNeverRead(t *testing.T) {
+	token := "gh" + "p_" + strings.Repeat("y", 36)
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{
+		".env":           "TOKEN=" + token + "\n",
+		"app/.env.local": "TOKEN=" + token + "\n",
+		"certs/app.pem":  "TOKEN=" + token + "\n",
+		"app/config.go":  "package app\n",
+	})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir},
+		analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lr := range res.Languages {
+		if lr.Language == "secrets" && (lr.Files != 1 || len(lr.Findings) != 0) {
+			t.Errorf("protected files reached the scanner: %+v", lr)
+		}
+	}
+}
+
 func TestScanRequiresEmails(t *testing.T) {
 	if _, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: t.TempDir()}, analysis.Options{}); err == nil {
 		t.Error("expected an error without emails")

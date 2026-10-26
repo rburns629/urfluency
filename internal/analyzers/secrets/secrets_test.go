@@ -73,7 +73,7 @@ func TestGenericSecrets(t *testing.T) {
 
 func TestApplies(t *testing.T) {
 	for p, want := range map[string]bool{
-		".env": true, "config/prod.yaml": true, "src/app.ts": true,
+		"config/app.ini": true, "config/prod.yaml": true, "src/app.ts": true,
 		"package-lock.json": false, "go.sum": false, "logo.png": false, "vendor.min.js": false,
 	} {
 		if got := (Scanner{}).Applies(p); got != want {

@@ -39,9 +39,12 @@ latest commit, never runs the repository's code, and writes nothing to disk.
 | --- | --- |
 | Languages | Go, Python, JavaScript, TypeScript |
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
-| Security | Committed credentials in any text file (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
+| Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 
-Secret findings show the rule and line only. Credential values are never printed,
-stored, or uploaded, and nothing about a scanned repository is kept: only scores.
+Files that hold secrets by design are never read: `.env` files, key and certificate
+files, credential configs such as `.npmrc` or service-account JSON, Terraform state
+and variables, and directories such as `secrets/` or `.ssh/`. Secret findings show
+the rule and line only. Credential values are never printed, stored, or uploaded,
+and nothing about a scanned repository is kept: only scores.
 

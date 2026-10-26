@@ -33,6 +33,10 @@ safe to run.
   leaderboards and no cross-person comparisons.
 - **Honest provenance.** Every number shows its trust tier, period, sample size, and
   method version.
+- **Never read secret stores.** Files that hold secrets by design (`.env` files,
+  keys and certificates, credential configs, Terraform state and variables, and
+  directories such as `secrets/` or `.ssh/`) are excluded before any Git command
+  reads them, in the CLI and the scanner alike.
 - **Explain, don't grade.** Each weakness links to what was detected, why it
   matters, and what to practice. Each strength says what evidence supports it.
 - **Opt-in visibility.** Everything is private by default; users publish per metric

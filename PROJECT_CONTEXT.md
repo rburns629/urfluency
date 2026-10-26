@@ -18,7 +18,7 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Error handling | Library packages return wrapped errors; the CLI prints one user-facing message and exits non-zero |
 | Authentication | Not yet implemented. Planned: GitHub device flow, tokens in the OS keychain |
 | Authorization | Not applicable to the local CLI yet |
-| Data sensitivity | Only scores leave the machine: uploads contain rule counts and volumes aggregated across repositories, with no repository names, URLs, paths, commit hashes, code, or prompt text. Secret findings show type and location locally and never their value, in any output |
+| Data sensitivity | Only scores leave the machine: uploads contain rule counts and volumes aggregated across repositories, with no repository names, URLs, paths, commit hashes, code, or prompt text. Secret findings show type and location locally and never their value, in any output. The engine never reads protected file types (`internal/analysis/protected.go`); keep that list aligned with AGENTS.md |
 | Protected paths and value files | `.env`, `.env.*`, `*.env` (for example `api.env`), keychain entries, and real agent transcripts under `~/.claude/projects/` and `~/.codex/sessions/`. Tests use synthetic fixtures under `testdata/` only. Fixtures containing fake secrets are marked with the string `URFLUENCY-CANARY` and are non-sensitive |
 | Trust boundaries | Repositories being analyzed are untrusted input: parse them, never execute their code, hooks, or build scripts. Git runs with hooks disabled and without external diff or text conversion |
 | Type checking | `go vet ./...` |

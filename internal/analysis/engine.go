@@ -61,9 +61,11 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
+	// Protected files are dropped here, before blame or show, so their contents are
+	// never read.
 	var candidates []string
 	for _, p := range paths {
-		if !inSkippedDir(p) && (ForPath(p) != nil || anyScannerApplies(p)) {
+		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p)) {
 			candidates = append(candidates, p)
 		}
 	}

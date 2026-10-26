@@ -1,4 +1,6 @@
-// Package secrets detects committed credentials in any text file. Findings carry
+// Package secrets detects credentials committed in source and configuration
+// files. Files that hold secrets by design (.env, key files, and similar) are
+// excluded by the engine and never read; see analysis.IsProtected. Findings carry
 // the rule and line only; matched values never leave this package.
 package secrets
 
