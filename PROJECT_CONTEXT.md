@@ -6,7 +6,7 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Area | Project facts, safe references, owners, or commands |
 | --- | --- |
 | Project purpose | Free tooling for engineers: a local CLI that analyzes the user's own commits and agent sessions and uploads aggregate metrics; a web app and API (later) for profiles and badges; a safety scanner for public Git URLs (later). See [DESIGN.md](DESIGN.md) |
-| Languages | Go, minimum 1.24.6 (module directive `go 1.24.6`, the first release with fixes for GO-2025-3956 and GO-2025-3750); developed with Go 1.27. Analyzed languages: Go, Python, JavaScript, TypeScript |
+| Languages | Go, minimum 1.26.10 (module directive `go 1.26.10`). Keep the minimum on a supported release (the two newest Go minor versions) at its latest patch: Go 1.24.6 reached GO-2026-4602 through `filepath.WalkDir`; developed with Go 1.27. Analyzed languages: Go, Python, JavaScript, TypeScript |
 | Frameworks | Standard library plus the official tree-sitter Go bindings and grammars (`github.com/tree-sitter/go-tree-sitter` and `tree-sitter-{python,javascript,typescript}`), MIT licensed. Add dependencies only with a stated need |
 | Runtime environment | CLI on macOS, Linux, and Windows; one binary per platform built with cgo (`CGO_ENABLED=1`) because tree-sitter is C. Release builds run per platform in CI |
 | Deployment targets | None yet. Service hosting is an open decision in DESIGN.md |
@@ -23,9 +23,9 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Trust boundaries | Repositories being analyzed are untrusted input: parse them, never execute their code, hooks, or build scripts. Git runs with hooks disabled and without external diff or text conversion |
 | Type checking | `go vet ./...` |
 | Formatting | `gofmt -l .` must print nothing |
-| Linting | `staticcheck` 2025.1.1 does not support Go 1.27, so run it in the container: `docker run --rm -v "$PWD":/src -w /src -e GOFLAGS=-buildvcs=false golang:1.24.6-bookworm sh -c 'go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...'` |
+| Linting | `go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...` |
 | Testing | `gofmt -l .` and `go test -race ./...` with host Go (1.27.3); requires a C compiler (Xcode Command Line Tools on macOS) |
-| Security tooling | `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` with host Go; secret scanning to be added |
+| Security tooling | `GOTOOLCHAIN=go$(go mod edit -json | jq -r .Go) go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...`, which checks the minimum Go version as CI does; with a newer host Go it would miss vulnerabilities in the minimum version. Secret scanning to be added |
 | Continuous integration | `.github/workflows/ci.yml` runs format, vet, race tests, staticcheck, and govulncheck on every push and pull request with the Go version from `go.mod`. Actions are pinned to commit SHAs |
 | CLI operations | GitHub repository `rburns629/urfluency` (private), `gh` account `rburns629`. Pushes, releases, and visibility changes need approval. No cloud resources yet |
 | Auto-mode filesystem recovery | Clean tracked files use their commit as the recovery copy. Other backups go to `~/.urfluency-backups/<timestamp>/`, outside the repository. Robert Burns approves cleanup; nothing is deleted automatically |

@@ -20,7 +20,7 @@ The CLI command and Go module use lowercase: `urfluency`,
 
 ## Try the CLI
 
-Requires Go 1.24.6 or later, a C compiler (for tree-sitter), and Git.
+Requires Go 1.26.10 or later, a C compiler (for tree-sitter), and Git.
 
 ```sh
 go build -o urfluency ./cmd/urfluency

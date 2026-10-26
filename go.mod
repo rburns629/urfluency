@@ -1,6 +1,6 @@
 module github.com/rburns629/urfluency
 
-go 1.24.6
+go 1.26.10
 
 require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0
