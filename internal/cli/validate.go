@@ -104,6 +104,21 @@ func writeValidation(w io.Writer, found []sessions.Session) error {
 		t := byAgent[a]
 		fmt.Fprintf(&b, "  %-15s %d sessions, %d user messages, %d edits, %d checks\n", a, t.sessions, t.prompts, t.edits, t.checks)
 	}
+	models := map[string]int{}
+	for _, s := range found {
+		for m := range s.Models {
+			models[m]++
+		}
+	}
+	names := make([]string, 0, len(models))
+	for m := range models {
+		names = append(names, m)
+	}
+	sort.Strings(names)
+	b.WriteString("Models (sessions using each):\n")
+	for _, m := range names {
+		fmt.Fprintf(&b, "  %s %d\n", m, models[m])
+	}
 	for _, s := range validatedSignals {
 		var with, without outcome
 		for _, t := range tasks {

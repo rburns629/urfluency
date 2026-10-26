@@ -11,14 +11,14 @@ import (
 
 // Synthetic transcripts in each agent's format; no real session is read by tests.
 const claudeTranscript = `{"type":"user","cwd":"/w/app","timestamp":"2026-10-01T10:00:00Z","message":{"role":"user","content":"Add a retry to fetchUser in api/client.go; it should give up after 3 attempts. Add tests."}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"fetchUser"}},{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"cat api/client.go"}}]}}
+{"type":"assistant","message":{"model":"claude-test-1","content":[{"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"fetchUser"}},{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"cat api/client.go"}}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/w/app/api/client.go","old_string":"func fetchUser() {\n\treturn get(url)\n}","new_string":"func fetchUser() {\n\tfor attempt := 0; attempt < 3; attempt++ {\n\treturn get(url)\n}"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"toolUseResult":{"structuredPatch":[{"lines":[" func fetchUser() {","+\tfor attempt := 0; attempt < 3; attempt++ {","\treturn get(url)"]}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Write","input":{"file_path":"/w/app/rejected.go","content":"package rejected_by_user\n"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"The user doesn't want to proceed"}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Write","input":{"file_path":"/w/app/new.go","content":"package newpackage\n}\n"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"created"}]},"toolUseResult":{"type":"create"}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b2","name":"Bash","input":{"command":"go test ./..."}},{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/w/app/new.go"}}]}}
+{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"tool_use","id":"b2","name":"Bash","input":{"command":"go test ./..."}},{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/w/app/new.go"}}]}}
 {"type":"user","isSidechain":true,"message":{"content":"Subagent prompt written by the agent, should be ignored"}}
 {"type":"user","isMeta":true,"message":{"content":"Caveat: injected by the client"}}
 {"type":"user","message":{"content":[{"type":"text","text":"no, that's the wrong file"}]}}
@@ -54,6 +54,9 @@ func TestReadClaude(t *testing.T) {
 	}
 	if s.Edits["/w/app/rejected.go"] != nil {
 		t.Error("a rejected edit was counted")
+	}
+	if len(s.Models) != 1 || !s.Models["claude-test-1"] {
+		t.Errorf("models = %v, want only claude-test-1", s.Models)
 	}
 	if p := s.Prompts[0]; p.ExploresBeforeEdit != 2 || p.Explores != 3 || p.Edits != 3 || p.Checks != 1 {
 		t.Errorf("activity = %+v, want 2 explores before 3 edit attempts, 3 explores, 1 check", p)
@@ -203,7 +206,7 @@ const copilotOpLog = `{"kind":0,"v":{"version":3,"creationDate":1790000000000,"r
 {"kind":2,"k":["requests"],"v":[{"timestamp":1790000001000,"message":{"text":"<ide_opened_file>x</ide_opened_file> Fix the crash in parser.go on empty input"},"response":[]}]}
 {"kind":2,"k":["requests",0,"response"],"v":[{"kind":"thinking"},{"kind":"stale"}]}
 {"kind":2,"k":["requests",0,"response"],"i":1,"v":[{"kind":"toolInvocationSerialized"}]}
-{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"toolCallRounds":[{"toolCalls":[
+{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"resolvedModel":"gpt-test-mini","toolCallRounds":[{"toolCalls":[
  {"name":"grep_search","arguments":"{\"query\":\"parse\"}"},
  {"name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\\n*** Update File: /w/web/parser.go\\n+\\tif len(input) == 0 {\\n*** End Patch\",\"explanation\":\"x\"}"},
  {"name":"replace_string_in_file","arguments":"{\"filePath\":\"/w/web/a.go\",\"oldString\":\"keep this line here\",\"newString\":\"keep this line here\\nreturn errEmptyInput\"}"},
@@ -224,6 +227,9 @@ func TestReadCopilotChatOpLog(t *testing.T) {
 	if len(s.Prompts) != 1 {
 		t.Fatalf("prompts = %+v", s.Prompts)
 	}
+	if !s.Models["gpt-test-mini"] {
+		t.Errorf("models = %v, want the resolved model", s.Models)
+	}
 	if p := s.Prompts[0]; p.Type != Bug || !p.Context || p.ExploresBeforeEdit != 1 || p.Edits != 3 || p.Checks != 1 {
 		t.Errorf("prompt = %+v", p)
 	}
@@ -239,12 +245,12 @@ func TestReadCopilotChatOpLog(t *testing.T) {
 }
 
 func TestReadCopilotChatDocument(t *testing.T) {
-	doc := `{"creationDate":1790000000000,"requests":[{"message":{"text":"Add a CSV export to the reports page"},"result":{"metadata":{"toolCallRounds":[{"toolCalls":[{"name":"create_file","arguments":"{\"filePath\":\"/w/web/export.ts\",\"content\":\"export function toCsv() {}\"}"}]}]}}}]}`
+	doc := `{"creationDate":1790000000000,"requests":[{"modelId":"copilot/test-model","message":{"text":"Add a CSV export to the reports page"},"result":{"metadata":{"toolCallRounds":[{"toolCalls":[{"name":"create_file","arguments":"{\"filePath\":\"/w/web/export.ts\",\"content\":\"export function toCsv() {}\"}"}]}]}}}]}`
 	s, err := ReadCopilotChat(strings.NewReader(doc), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Prompts) != 1 || s.Prompts[0].Type != Feature || !s.Edits["/w/web/export.ts"]["export function toCsv() {}"] {
+	if len(s.Prompts) != 1 || s.Prompts[0].Type != Feature || !s.Edits["/w/web/export.ts"]["export function toCsv() {}"] || !s.Models["copilot/test-model"] {
 		t.Errorf("session = %+v", s)
 	}
 	// A one-line operation log is valid JSON too, but must be replayed.
@@ -259,7 +265,8 @@ func TestReadCodexCodeMode(t *testing.T) {
 		"text(await tools.exec_command({cmd: 'pytest -q', yield_time_ms: 1000}));\n" +
 		"await tools.apply_patch(\"*** Begin Patch\\n*** Add File: notes_helper.py\\n+def describe_notes():\\n*** End Patch\");"
 	scriptJSON, _ := json.Marshal(script)
-	in := `{"timestamp":"2026-10-02T09:00:00Z","type":"session_meta","payload":{"cwd":"/w/svc"}}
+	in := `{"timestamp":"2026-10-02T09:00:00Z","type":"session_meta","payload":{"cwd":"/w/svc","model_provider":"lmstudio"}}
+{"type":"turn_context","payload":{"cwd":"/w/svc","model":"qwen3-coder"}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions, not a prompt"}]}}
 {"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"Add a notes helper for the parser"}]}}}
 {"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":` + string(scriptJSON) + `}}
@@ -273,6 +280,9 @@ func TestReadCodexCodeMode(t *testing.T) {
 	}
 	if p := s.Prompts[0]; p.ExploresBeforeEdit != 1 || p.Explores != 1 || p.Checks != 1 || p.Edits != 1 {
 		t.Errorf("activity = %+v", p)
+	}
+	if !s.Models["lmstudio/qwen3-coder"] {
+		t.Errorf("models = %v, want the local provider prefixed", s.Models)
 	}
 	if !s.Edits["/w/svc/notes_helper.py"]["def describe_notes():"] {
 		t.Errorf("edits = %v", s.Edits)

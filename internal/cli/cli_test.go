@@ -116,11 +116,11 @@ func TestScanFolderWithSessions(t *testing.T) {
 
 func TestWriteValidation(t *testing.T) {
 	found := []sessions.Session{
-		{Agent: "claude-code", Prompts: []sessions.Prompt{
+		{Agent: "claude-code", Models: map[string]bool{"claude-test-1": true}, Prompts: []sessions.Prompt{
 			{Type: "feature", Context: true, ExploresBeforeEdit: 1, Edits: 2, Checks: 1},
 			{Type: "feature", Context: true, ExploresBeforeEdit: 3, Edits: 1},
 		}},
-		{Agent: "copilot-vscode", Prompts: []sessions.Prompt{
+		{Agent: "copilot-vscode", Models: map[string]bool{"claude-test-1": true, "lmstudio/qwen3-coder": true}, Prompts: []sessions.Prompt{
 			{Type: "bug", ExploresBeforeEdit: 8, Edits: 1},
 			{Correction: true}, {Correction: true}, {Correction: true},
 			{Type: "other", Context: true}, // not a code task
@@ -135,6 +135,7 @@ func TestWriteValidation(t *testing.T) {
 		"3 tasks in 2 sessions",
 		"claude-code 1 sessions, 2 user messages, 3 edits, 1 checks",
 		"copilot-vscode 1 sessions, 5 user messages, 1 edits, 0 checks",
+		"Models (sessions using each): claude-test-1 2 lmstudio/qwen3-coder 1",
 		"context: 2 tasks with the signal, 1 without",
 		"needed a correction 0% 100%",
 		"follow-up prompts per task 0.0 3.0",

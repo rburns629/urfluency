@@ -23,6 +23,9 @@ type Session struct {
 	Cwd     string
 	Start   time.Time
 	Prompts []Prompt
+	// Models names the models the agent used. Codex models from a provider other
+	// than OpenAI, such as LM Studio or Ollama, are prefixed with the provider.
+	Models map[string]bool
 	// Edits maps absolute file paths to the normalized lines the agent added.
 	Edits map[string]map[string]bool
 }
@@ -226,6 +229,16 @@ func (s *Session) addLines(path string, lines ...string) {
 			s.Edits[path][l] = true
 		}
 	}
+}
+
+func (s *Session) addModel(model string) {
+	if model == "" || strings.HasPrefix(model, "<") { // "<synthetic>" marks client-made messages
+		return
+	}
+	if s.Models == nil {
+		s.Models = map[string]bool{}
+	}
+	s.Models[model] = true
 }
 
 // addReplacement records the lines of newText that were not already in oldText.

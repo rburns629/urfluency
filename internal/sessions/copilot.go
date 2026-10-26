@@ -16,8 +16,10 @@ type copilotSession struct {
 		Message   struct {
 			Text string `json:"text"`
 		} `json:"message"`
-		Result struct {
+		ModelID string `json:"modelId"`
+		Result  struct {
 			Metadata struct {
+				ResolvedModel  string `json:"resolvedModel"`
 				ToolCallRounds []struct {
 					ToolCalls []struct {
 						Name      string `json:"name"`
@@ -75,6 +77,11 @@ func ReadCopilotChat(r io.Reader, cwd string) (Session, error) {
 			s.Start = time.UnixMilli(req.Timestamp)
 		}
 		s.Prompts = append(s.Prompts, Classify(req.Message.Text))
+		if m := req.Result.Metadata.ResolvedModel; m != "" {
+			s.addModel(m)
+		} else {
+			s.addModel(req.ModelID)
+		}
 		for _, round := range req.Result.Metadata.ToolCallRounds {
 			for _, call := range round.ToolCalls {
 				var a copilotArgs

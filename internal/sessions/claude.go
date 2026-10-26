@@ -15,6 +15,7 @@ type claudeLine struct {
 	IsSidechain      bool      `json:"isSidechain"`
 	IsCompactSummary bool      `json:"isCompactSummary"`
 	Message          struct {
+		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 	ToolUseResult json.RawMessage `json:"toolUseResult"`
@@ -68,6 +69,7 @@ func ReadClaude(r io.Reader) (Session, error) {
 		}
 		switch l.Type {
 		case "assistant":
+			s.addModel(l.Message.Model)
 			for _, b := range blocks {
 				if b.Type != "tool_use" {
 					continue

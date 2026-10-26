@@ -25,6 +25,8 @@ type codexLine struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 		Input     string `json:"input"`
+		Model     string `json:"model"`
+		Provider  string `json:"model_provider"`
 		Item      struct {
 			Type    string `json:"type"`
 			Content []struct {
@@ -49,6 +51,7 @@ var (
 func ReadCodex(r io.Reader) (Session, error) {
 	s := Session{Agent: "codex", Edits: map[string]map[string]bool{}}
 	var fallback []Prompt
+	provider := ""
 	err := eachLine(r, func(line []byte) {
 		var l codexLine
 		if json.Unmarshal(line, &l) != nil {
@@ -62,6 +65,14 @@ func ReadCodex(r io.Reader) (Session, error) {
 			s.Cwd = p.Cwd
 		}
 		switch {
+		case l.Type == "session_meta":
+			provider = p.Provider
+		case l.Type == "turn_context":
+			if provider != "" && provider != "openai" && p.Model != "" {
+				s.addModel(provider + "/" + p.Model)
+			} else {
+				s.addModel(p.Model)
+			}
 		case l.Type == "event_msg" && p.Type == "user_message":
 			s.Prompts = append(s.Prompts, Classify(p.Message))
 		case l.Type == "event_msg" && p.Type == "item_completed" && p.Item.Type == "UserMessage":
