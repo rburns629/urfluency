@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,5 +194,118 @@ func TestDiscover(t *testing.T) {
 func TestClassifyTestTasks(t *testing.T) {
 	if got := Classify("Add unit tests for the date parser"); got.Type != Test {
 		t.Errorf("test task = %+v", got)
+	}
+}
+
+// copilotOpLog mirrors VS Code's JSONL chat format: an initial state, a request
+// appended, its response appended with truncation (i), and its result set.
+const copilotOpLog = `{"kind":0,"v":{"version":3,"creationDate":1790000000000,"requests":[]}}
+{"kind":2,"k":["requests"],"v":[{"timestamp":1790000001000,"message":{"text":"<ide_opened_file>x</ide_opened_file> Fix the crash in parser.go on empty input"},"response":[]}]}
+{"kind":2,"k":["requests",0,"response"],"v":[{"kind":"thinking"},{"kind":"stale"}]}
+{"kind":2,"k":["requests",0,"response"],"i":1,"v":[{"kind":"toolInvocationSerialized"}]}
+{"kind":1,"k":["requests",0,"result"],"v":{"metadata":{"toolCallRounds":[{"toolCalls":[
+ {"name":"grep_search","arguments":"{\"query\":\"parse\"}"},
+ {"name":"apply_patch","arguments":"{\"input\":\"*** Begin Patch\\n*** Update File: /w/web/parser.go\\n+\\tif len(input) == 0 {\\n*** End Patch\",\"explanation\":\"x\"}"},
+ {"name":"replace_string_in_file","arguments":"{\"filePath\":\"/w/web/a.go\",\"oldString\":\"keep this line here\",\"newString\":\"keep this line here\\nreturn errEmptyInput\"}"},
+ {"name":"create_file","arguments":"{\"filePath\":\"/w/web/b.go\",\"content\":\"package parserhelpers\"}"},
+ {"name":"run_in_terminal","arguments":"{\"command\":\"go test ./...\"}"}]}]}}}
+`
+
+func TestReadCopilotChatOpLog(t *testing.T) {
+	// The fixture's result line spans several lines for readability; join them.
+	log := strings.ReplaceAll(copilotOpLog, "\n {", " {")
+	s, err := ReadCopilotChat(strings.NewReader(log), "/w/web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Agent != "copilot-vscode" || s.Cwd != "/w/web" || s.Start.UnixMilli() != 1790000000000 {
+		t.Errorf("session = %+v", s)
+	}
+	if len(s.Prompts) != 1 {
+		t.Fatalf("prompts = %+v", s.Prompts)
+	}
+	if p := s.Prompts[0]; p.Type != Bug || !p.Context || p.ExploresBeforeEdit != 1 || p.Edits != 3 || p.Checks != 1 {
+		t.Errorf("prompt = %+v", p)
+	}
+	want := map[string]string{"/w/web/parser.go": "if len(input) == 0 {", "/w/web/a.go": "return errEmptyInput", "/w/web/b.go": "package parserhelpers"}
+	for path, line := range want {
+		if !s.Edits[path][line] {
+			t.Errorf("%s lines = %v, want %q", path, s.Edits[path], line)
+		}
+	}
+	if s.Edits["/w/web/a.go"]["keep this line here"] {
+		t.Error("an unchanged line was counted as added")
+	}
+}
+
+func TestReadCopilotChatDocument(t *testing.T) {
+	doc := `{"creationDate":1790000000000,"requests":[{"message":{"text":"Add a CSV export to the reports page"},"result":{"metadata":{"toolCallRounds":[{"toolCalls":[{"name":"create_file","arguments":"{\"filePath\":\"/w/web/export.ts\",\"content\":\"export function toCsv() {}\"}"}]}]}}}]}`
+	s, err := ReadCopilotChat(strings.NewReader(doc), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Prompts) != 1 || s.Prompts[0].Type != Feature || !s.Edits["/w/web/export.ts"]["export function toCsv() {}"] {
+		t.Errorf("session = %+v", s)
+	}
+	// A one-line operation log is valid JSON too, but must be replayed.
+	one := `{"kind":0,"v":{"creationDate":1790000000000,"requests":[{"message":{"text":"Add a CSV export to the reports page"}}]}}`
+	if s, err := ReadCopilotChat(strings.NewReader(one), ""); err != nil || len(s.Prompts) != 1 {
+		t.Errorf("one-line op log: %+v, %v", s, err)
+	}
+}
+
+func TestReadCodexCodeMode(t *testing.T) {
+	script := "text(await tools.exec_command({cmd: \"rg parse\"}));\n" +
+		"text(await tools.exec_command({cmd: 'pytest -q', yield_time_ms: 1000}));\n" +
+		"await tools.apply_patch(\"*** Begin Patch\\n*** Add File: notes_helper.py\\n+def describe_notes():\\n*** End Patch\");"
+	scriptJSON, _ := json.Marshal(script)
+	in := `{"timestamp":"2026-10-02T09:00:00Z","type":"session_meta","payload":{"cwd":"/w/svc"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions, not a prompt"}]}}
+{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"Add a notes helper for the parser"}]}}}
+{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":` + string(scriptJSON) + `}}
+`
+	s, err := ReadCodex(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Prompts) != 1 || s.Prompts[0].Type != Feature {
+		t.Fatalf("prompts = %+v", s.Prompts)
+	}
+	if p := s.Prompts[0]; p.ExploresBeforeEdit != 1 || p.Explores != 1 || p.Checks != 1 || p.Edits != 1 {
+		t.Errorf("activity = %+v", p)
+	}
+	if !s.Edits["/w/svc/notes_helper.py"]["def describe_notes():"] {
+		t.Errorf("edits = %v", s.Edits)
+	}
+}
+
+func TestDiscoverCopilotChat(t *testing.T) {
+	user := t.TempDir()
+	ws := filepath.Join(user, "workspaceStorage", "abc123")
+	if err := os.MkdirAll(filepath.Join(ws, "chatSessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"workspace.json":             `{"folder":"file:///w/my%20app"}`,
+		"chatSessions/one.jsonl":     "{}",
+		"chatSessions/two.json":      "{}",
+		"chatSessions/notes.txt":     "ignored",
+		"chatEditingSessions/x.json": "ignored",
+	}
+	for name, body := range files {
+		path := filepath.Join(ws, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := Discover(Dirs{Claude: t.TempDir(), Codex: t.TempDir(), VSCode: []string{user, filepath.Join(t.TempDir(), "missing")}}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Agent != "copilot-vscode" || got[0].Cwd != filepath.FromSlash("/w/my app") {
+		t.Errorf("transcripts = %+v", got)
 	}
 }

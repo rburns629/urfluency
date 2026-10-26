@@ -115,19 +115,26 @@ func TestScanFolderWithSessions(t *testing.T) {
 }
 
 func TestWriteValidation(t *testing.T) {
-	tasks := []sessions.Task{
-		{Prompt: sessions.Prompt{Type: "feature", Context: true}, Edits: 2, ExploresBeforeEdit: 1, Checks: 1},
-		{Prompt: sessions.Prompt{Type: "feature", Context: true}, Edits: 1, ExploresBeforeEdit: 3},
-		{Prompt: sessions.Prompt{Type: "bug"}, Edits: 1, ExploresBeforeEdit: 8, Corrected: true, FollowUps: 3},
-		{Prompt: sessions.Prompt{Type: "other", Context: true}}, // not a code task
+	found := []sessions.Session{
+		{Agent: "claude-code", Prompts: []sessions.Prompt{
+			{Type: "feature", Context: true, ExploresBeforeEdit: 1, Edits: 2, Checks: 1},
+			{Type: "feature", Context: true, ExploresBeforeEdit: 3, Edits: 1},
+		}},
+		{Agent: "copilot-vscode", Prompts: []sessions.Prompt{
+			{Type: "bug", ExploresBeforeEdit: 8, Edits: 1},
+			{Correction: true}, {Correction: true}, {Correction: true},
+			{Type: "other", Context: true}, // not a code task
+		}},
 	}
 	var b strings.Builder
-	if err := writeValidation(&b, 2, tasks); err != nil {
+	if err := writeValidation(&b, found); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(strings.Fields(b.String()), " ")
 	for _, want := range []string{
-		"4 tasks in 2 sessions",
+		"3 tasks in 2 sessions",
+		"claude-code 1 sessions, 2 user messages, 3 edits, 1 checks",
+		"copilot-vscode 1 sessions, 5 user messages, 1 edits, 0 checks",
 		"context: 2 tasks with the signal, 1 without",
 		"needed a correction 0% 100%",
 		"follow-up prompts per task 0.0 3.0",

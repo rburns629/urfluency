@@ -115,7 +115,7 @@ reasoning in clean-agent-code's AUDIT.md.
 - Authorship comes from commits matching the user's verified GitHub emails; the
   attested tiers count only signed commits.
 - AI-written code cannot be told apart from the code itself. With `--sessions`, the
-  CLI matches owned lines against lines agents added in local Claude Code and Codex
+  CLI matches owned lines against lines agents added in local agent
   sessions in the same file. The share is a lower bound (inline completions, pasted
   code, and deleted transcripts are missing) and is shown as context, never scored
   or counted against anyone. Publishing it is a separate opt-in.
@@ -130,13 +130,14 @@ tasks without it. `urfluency validate [path]` prints that comparison from local
 sessions, as counts only: corrections, follow-up prompts, reads and searches before
 the agent's first edit, and whether code changes were checked.
 
-First run, 2026-10-26: one author, 14 Claude Code sessions, 343 tasks.
+Run of 2026-10-26: one author, 25 sessions (12 Claude Code, 2 Codex, 11 Copilot
+Chat, of which 6 were empty), 345 tasks.
 
 | Signal in the prompt | With / without: corrections | Searches before first edit | Changes checked |
 | --- | --- | --- | --- |
-| Concrete context (files, symbols, errors) | 2% / 1% | 3.7 / 4.1 | 46% / 66% |
-| Acceptance criteria | 0% / 2% | 5.3 / 3.6 | 71% / 62% |
-| Asks for verification | 2% / 1% | 3.1 / 4.1 | 48% / 66% |
+| Concrete context (files, symbols, errors) | 2% / 1% | 3.2 / 4.0 | 39% / 65% |
+| Acceptance criteria | 0% / 2% | 5.2 / 3.5 | 70% / 60% |
+| Asks for verification | 2% / 1% | 3.1 / 4.0 | 45% / 64% |
 
 None of the three predicted better outcomes, so none is graded. Asking for
 verification did not even predict that checks ran: projects whose agent
@@ -167,10 +168,26 @@ urfluency logout
   passed.
 - `scan` accepts a repository or a folder; for a folder it scans every repository up
   to four levels below it and combines the results.
-- Session adapters read local transcripts (`~/.claude/projects/`, `~/.codex/sessions/`,
-  honoring `CLAUDE_CONFIG_DIR` and `CODEX_HOME`) only with `--sessions`, and only
-  sessions that ran in or edited the scanned repositories. Each prompt is reduced to
-  signals while parsing; its text is never kept, printed, or uploaded. Subagent
+- Session adapters read local transcripts only with `--sessions`, and only sessions
+  that ran in or edited the scanned repositories. Each adapter records prompts, the
+  lines the agent added, and its reads, edits, and checks. Formats are undocumented,
+  so each adapter is checked against real files with a structure-only read (key
+  paths and types, never values) before it ships.
+
+  | Agent | Location | Status |
+  | --- | --- | --- |
+  | Claude Code | `~/.claude/projects/*/*.jsonl` (`CLAUDE_CONFIG_DIR`) | Supported, checked against real sessions |
+  | Codex (OpenAI or local models) | `~/.codex/sessions/**/rollout-*.jsonl` (`CODEX_HOME`) | Supported, including code-mode `exec` scripts; checked against real sessions without patches, so patch parsing is tested on fixtures only |
+  | GitHub Copilot Chat in VS Code | `<VS Code user dir>/workspaceStorage/*/chatSessions/*.json[l]`, folder from `workspace.json` | Supported for the JSON document and JSONL operation-log formats; checked against real sessions |
+  | GitHub Copilot CLI | `~/.copilot/session-state/<id>/events.jsonl` | Not yet: no real sessions to check against |
+  | Cursor, Gemini CLI, Aider, Cline, Continue, opencode | Tool-specific | Not yet; local models are covered through the tool that runs them |
+
+  Copilot inline completions are not logged locally, so the AI-written share
+  undercounts code from them. Commit trailers (for example `Co-Authored-By`) are a
+  planned tool-independent signal.
+
+  Each prompt is reduced to signals while parsing; its text is never kept,
+  printed, or uploaded. Subagent
   transcripts are skipped because an agent wrote those prompts. Grading uses fixed
   local rules, never a model call, so prompts never leave the machine.
 
@@ -376,9 +393,9 @@ repository owner has published.
    weaknesses, and focus points; public profiles and user badges; API tokens.
 3. **Safety scanner:** static scanning of public URLs in isolated workers; safety
    badges.
-4. **Prompting:** session adapters for Claude Code and Codex, task-type grading,
-   and AI-written share (local CLI done; GitHub Copilot does not keep comparable
-   local transcripts).
+4. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
+   Code, outcome-based grading, and AI-written share (local CLI done); Copilot CLI,
+   Cursor, Gemini CLI, and commit trailers next.
 5. **Repository connections:** GitHub App for public repos; Action with OIDC for
    private repos.
 6. **More languages and dynamic scanning.**

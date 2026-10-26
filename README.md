@@ -34,7 +34,8 @@ The scan analyzes only lines that `git blame` attributes to your emails at the
 latest commit, never runs the repository's code, and writes nothing to disk.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
-`--sessions` also reads your local Claude Code and Codex transcripts for the scanned
+`--sessions` also reads your local Claude Code, Codex, and GitHub Copilot Chat (VS Code)
+sessions for the scanned
 repositories. It grades each agent task on what happened (were code changes tested
 or checked, and did the task need a correction), with strengths, weaknesses, and
 points of focus, using fixed local rules and no model call. It also reports how much of your owned

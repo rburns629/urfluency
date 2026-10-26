@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ func validate(ctx context.Context, args []string, stdout io.Writer) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return writeValidation(stdout, len(found), sessions.Tasks(found))
+	return writeValidation(stdout, found)
 }
 
 // outcome sums what happened across a group of tasks.
@@ -77,9 +78,32 @@ var validatedSignals = []struct {
 	{"verification", func(p sessions.Prompt) bool { return p.Verification }},
 }
 
-func writeValidation(w io.Writer, sessionCount int, tasks []sessions.Task) error {
+func writeValidation(w io.Writer, found []sessions.Session) error {
+	tasks := sessions.Tasks(found)
 	var b strings.Builder
-	fmt.Fprintf(&b, "Prompt signals vs. what happened next: %d tasks in %d sessions (counts only)\n", len(tasks), sessionCount)
+	fmt.Fprintf(&b, "Prompt signals vs. what happened next: %d tasks in %d sessions (counts only)\n", len(tasks), len(found))
+	type totals struct{ sessions, prompts, edits, checks int }
+	byAgent := map[string]*totals{}
+	var agents []string
+	for _, s := range found {
+		t := byAgent[s.Agent]
+		if t == nil {
+			t = &totals{}
+			byAgent[s.Agent] = t
+			agents = append(agents, s.Agent)
+		}
+		t.sessions++
+		t.prompts += len(s.Prompts)
+		for _, p := range s.Prompts {
+			t.edits += p.Edits
+			t.checks += p.Checks
+		}
+	}
+	sort.Strings(agents)
+	for _, a := range agents {
+		t := byAgent[a]
+		fmt.Fprintf(&b, "  %-15s %d sessions, %d user messages, %d edits, %d checks\n", a, t.sessions, t.prompts, t.edits, t.checks)
+	}
 	for _, s := range validatedSignals {
 		var with, without outcome
 		for _, t := range tasks {

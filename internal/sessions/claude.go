@@ -130,14 +130,6 @@ func (s *Session) addClaudeEdit(in claudeEdit, result json.RawMessage) {
 	}
 	s.addLines(in.FilePath, strings.Split(in.Content, "\n")...)
 	for _, p := range append(in.Edits, claudePair{in.OldString, in.NewString}) {
-		kept := map[string]bool{}
-		for _, l := range strings.Split(p.OldString, "\n") {
-			kept[strings.TrimSpace(l)] = true
-		}
-		for _, l := range strings.Split(p.NewString, "\n") {
-			if !kept[strings.TrimSpace(l)] {
-				s.addLines(in.FilePath, l)
-			}
-		}
+		s.addReplacement(in.FilePath, p.OldString, p.NewString)
 	}
 }

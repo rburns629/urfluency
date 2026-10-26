@@ -5,9 +5,11 @@ package sessions
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,9 +31,11 @@ type Session struct {
 type Dirs struct {
 	Claude string
 	Codex  string
+	VSCode []string // VS Code "User" directories, for Copilot Chat
 }
 
-// DefaultDirs honors CLAUDE_CONFIG_DIR and CODEX_HOME, as the agents do.
+// DefaultDirs honors CLAUDE_CONFIG_DIR and CODEX_HOME, as the agents do, and
+// covers VS Code and VS Code Insiders.
 func DefaultDirs() (Dirs, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -44,6 +48,12 @@ func DefaultDirs() (Dirs, error) {
 	if d.Codex == "" {
 		d.Codex = filepath.Join(home, ".codex")
 	}
+	config, err := os.UserConfigDir()
+	if err == nil {
+		for _, app := range []string{"Code", "Code - Insiders"} {
+			d.VSCode = append(d.VSCode, filepath.Join(config, app, "User"))
+		}
+	}
 	return d, nil
 }
 
@@ -51,6 +61,7 @@ func DefaultDirs() (Dirs, error) {
 type Transcript struct {
 	Agent string
 	Path  string
+	Cwd   string // set when the location, not the file, names the workspace
 }
 
 // Discover lists transcripts modified since the given time. Subagent transcripts
@@ -79,7 +90,53 @@ func Discover(d Dirs, since time.Time) ([]Transcript, error) {
 		}
 		return nil
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range d.VSCode {
+		workspaces, err := filepath.Glob(filepath.Join(user, "workspaceStorage", "*"))
+		if err != nil {
+			return nil, err
+		}
+		for _, ws := range workspaces {
+			chats, _ := filepath.Glob(filepath.Join(ws, "chatSessions", "*.json*"))
+			cwd := ""
+			for _, p := range chats {
+				if !modifiedSince(p, since) || !(strings.HasSuffix(p, ".json") || strings.HasSuffix(p, ".jsonl")) {
+					continue
+				}
+				if cwd == "" {
+					cwd = workspaceFolder(ws)
+				}
+				out = append(out, Transcript{Agent: "copilot-vscode", Path: p, Cwd: cwd})
+			}
+		}
+	}
+	return out, nil
+}
+
+// workspaceFolder reads the folder a VS Code workspace storage directory belongs
+// to, or "" for multi-root workspaces and unreadable files.
+func workspaceFolder(storage string) string {
+	data, err := os.ReadFile(filepath.Join(storage, "workspace.json"))
+	if err != nil {
+		return ""
+	}
+	var ws struct {
+		Folder string `json:"folder"`
+	}
+	if json.Unmarshal(data, &ws) != nil {
+		return ""
+	}
+	u, err := url.Parse(ws.Folder)
+	if err != nil || u.Scheme != "file" {
+		return ""
+	}
+	p := u.Path
+	if len(p) > 2 && p[0] == '/' && p[2] == ':' { // file:///c:/... on Windows
+		p = p[1:]
+	}
+	return filepath.FromSlash(p)
 }
 
 // Load parses one transcript.
@@ -89,8 +146,11 @@ func Load(t Transcript) (Session, error) {
 		return Session{}, err
 	}
 	defer f.Close()
-	if t.Agent == "codex" {
+	switch t.Agent {
+	case "codex":
 		return ReadCodex(f)
+	case "copilot-vscode":
+		return ReadCopilotChat(f, t.Cwd)
 	}
 	return ReadClaude(f)
 }
@@ -164,6 +224,19 @@ func (s *Session) addLines(path string, lines ...string) {
 				s.Edits[path] = map[string]bool{}
 			}
 			s.Edits[path][l] = true
+		}
+	}
+}
+
+// addReplacement records the lines of newText that were not already in oldText.
+func (s *Session) addReplacement(path, oldText, newText string) {
+	kept := map[string]bool{}
+	for _, l := range strings.Split(oldText, "\n") {
+		kept[strings.TrimSpace(l)] = true
+	}
+	for _, l := range strings.Split(newText, "\n") {
+		if !kept[strings.TrimSpace(l)] {
+			s.addLines(path, l)
 		}
 	}
 }
