@@ -39,7 +39,8 @@ func importedFrameworks(t *parsing.Tree) map[string]bool {
 			names = parsing.NamedChildren(stmt)
 		}
 		for _, n := range names {
-			if n == nil {
+			// Relative imports (from .models import X) are local modules.
+			if n == nil || strings.HasPrefix(t.Text(n), ".") {
 				continue
 			}
 			top := strings.SplitN(t.Text(n), ".", 2)[0]
@@ -176,6 +177,11 @@ func (c *checker) checkCallSecurity(call *ts.Node) {
 	if c.frameworks["flask"] && lastPart(name) == "run" && c.keyword(call, "debug") == "True" {
 		c.report("flask.debug-mode", call)
 	}
+	// Chained calls such as Model.objects.filter(...).delete() are reported once,
+	// at the query.
+	if c.frameworks["django"] && !c.isTest && strings.Contains(name, ".objects.") && !strings.Contains(name, "(") && insideLoopBody(call) {
+		c.report("django.query-in-loop", call)
+	}
 	if c.frameworks["fastapi"] && blockingCalls[name] && insideAsyncFunction(call) {
 		c.report("fastapi.blocking-call-in-async", call)
 	}
@@ -188,6 +194,34 @@ func insideAsyncFunction(n *ts.Node) bool {
 		}
 	}
 	return false
+}
+
+// insideLoopBody reports whether n runs once per iteration of a loop in the same
+// function: in a for or while body, or a comprehension's element or condition. A
+// loop's iterable is evaluated once, so a query there is not per iteration.
+func insideLoopBody(n *ts.Node) bool {
+	child := n
+	for p := n.Parent(); p != nil; child, p = p, p.Parent() {
+		switch p.Kind() {
+		case "function_definition", "lambda", "class_definition":
+			return false
+		case "while_statement":
+			return true
+		case "for_statement":
+			if !sameNode(p.ChildByFieldName("right"), child) {
+				return true
+			}
+		case "list_comprehension", "set_comprehension", "dictionary_comprehension", "generator_expression":
+			if child.Kind() != "for_in_clause" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sameNode(a, b *ts.Node) bool {
+	return a != nil && b != nil && a.StartByte() == b.StartByte() && a.EndByte() == b.EndByte()
 }
 
 // checkDecorated applies decorator-based framework rules.

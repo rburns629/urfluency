@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/rburns629/urfluency/internal/analysis"
@@ -372,5 +373,105 @@ func TestSkipGenerated(t *testing.T) {
 	}
 	if (Analyzer{}).Skip(analysis.File{Path: "a.go", Content: []byte("package a\n")}) {
 		t.Error("ordinary file skipped")
+	}
+}
+
+func TestReliabilityRules(t *testing.T) {
+	src := `package a
+
+import (
+	"context"
+	"net/http"
+	"os"
+	"time"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	go func(ctx context.Context) { _ = context.TODO() }(r.Context())
+	_ = ctx
+}
+
+func run(ctx context.Context, flush func(context.Context)) {
+	select {
+	case <-ctx.Done():
+		flush(context.Background())
+	default:
+	}
+	if ctx.Err() != nil {
+		flush(context.Background())
+	}
+	// Streaming: no timeout, or a watch would be cut short.
+	_ = &http.Client{}
+}
+
+func detached() context.Context { return context.Background() }
+
+func readAll(paths []string) error {
+	for _, p := range paths {
+		f, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if err := func() error {
+			g, err := os.Open(p)
+			if err != nil {
+				return err
+			}
+			defer g.Close()
+			return nil
+		}(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func fetch(urls []string, jobs chan string, work func(string)) *http.Client {
+	for j := range jobs {
+		go work(j)
+	}
+	for _, u := range urls {
+		go work(u)
+	}
+	for i := 0; i < 4; i++ {
+		go work("")
+	}
+	sem := make(chan struct{}, 4)
+	for _, u := range urls {
+		sem <- struct{}{}
+		go func(u string) { defer func() { <-sem }(); work(u) }(u)
+	}
+	_ = &http.Client{Timeout: time.Second}
+	_ = http.DefaultClient
+	resp, err := http.Get(urls[0])
+	if err == nil {
+		work(resp.Status)
+	}
+	return &http.Client{}
+}
+`
+	var got []string
+	for _, f := range findings(t, "a.go", src) {
+		if strings.HasPrefix(f, "go.context-background") || strings.HasPrefix(f, "go.defer-in-loop") ||
+			strings.HasPrefix(f, "go.http-without") || strings.HasPrefix(f, "go.unbounded") {
+			got = append(got, f)
+		}
+	}
+	want := []string{
+		"go.context-background-in-handler:11", "go.context-background-in-handler:12",
+		"go.defer-in-loop:37",
+		"go.http-without-timeout:68", "go.http-without-timeout:69", "go.http-without-timeout:73",
+		"go.unbounded-goroutines:54",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+	// Test files call httptest servers, so the timeout rule skips them.
+	for _, f := range findings(t, "a_test.go", src) {
+		if strings.HasPrefix(f, "go.http-without") {
+			t.Errorf("timeout rule fired in a test file: %s", f)
+		}
 	}
 }

@@ -59,6 +59,7 @@ signal and prints counts only (see DESIGN.md).
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
 | Prompting | With `--sessions`: agent code changes that were never tested or checked, and tasks that needed a correction |
+| Reliability | Go: fresh contexts where a request context exists, `defer` in loops, HTTP clients without timeouts, a goroutine per channel message without a bound; React effects without dependencies; Django queries inside loops |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 
 Files that hold secrets by design are never read: `.env` files, key and certificate

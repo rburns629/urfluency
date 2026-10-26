@@ -123,6 +123,9 @@ func (c *checker) memberProperty(call *ts.Node) (string, *ts.Node) {
 	return c.tree.Text(prop), fn.ChildByFieldName("object")
 }
 
+// effectHooks run after rendering; without a dependency array they run every time.
+var effectHooks = map[string]bool{"useEffect": true, "useLayoutEffect": true, "React.useEffect": true, "React.useLayoutEffect": true}
+
 // checkCallSecurity applies call-based security and framework rules.
 func (c *checker) checkCallSecurity(call *ts.Node) {
 	fn := call.ChildByFieldName("function")
@@ -150,6 +153,9 @@ func (c *checker) checkCallSecurity(call *ts.Node) {
 
 	if c.frameworks["react"] && c.isConditionalHook(call, fn, prop, object) {
 		c.report("react.hook-in-condition", call)
+	}
+	if c.frameworks["react"] && effectHooks[callee] && args != nil && args.NamedChildCount() == 1 {
+		c.report("react.effect-without-deps", call)
 	}
 	if c.frameworks["react"] && prop == "map" {
 		c.checkListKeys(first)

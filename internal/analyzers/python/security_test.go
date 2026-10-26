@@ -73,6 +73,26 @@ def view(request: object) -> None:
 			want: []string{"django.csrf-exempt:6", "django.debug-true:2", "django.null-on-text-field:4"},
 		},
 		{
+			name: "django queries per loop iteration",
+			path: "shop/reports.py",
+			src: `from django.db import models
+from .models import Order, Customer
+def totals(ids: list) -> list:
+    out = []
+    for i in ids:
+        out.append(Order.objects.get(id=i))
+    for o in Order.objects.filter(paid=True):
+        out.append(o)
+    names = [Customer.objects.get(id=i).name for i in ids]
+    rows = [c for c in Customer.objects.all()]
+    while out:
+        Order.objects.filter(id=out.pop()).delete()
+    return out + names + rows
+`,
+			// Line 2's relative import once crashed framework detection.
+			want: []string{"django.query-in-loop:12", "django.query-in-loop:6", "django.query-in-loop:9"},
+		},
+		{
 			name: "flask debug run",
 			path: "app.py",
 			src: `from flask import Flask

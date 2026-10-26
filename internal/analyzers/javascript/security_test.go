@@ -113,3 +113,19 @@ func TestFrameworkDetection(t *testing.T) {
 		t.Errorf("tsx should imply react, got %v", got)
 	}
 }
+
+func TestReactEffectWithoutDeps(t *testing.T) {
+	src := `import React, { useEffect, useLayoutEffect } from 'react';
+export function Profile({ id }) {
+  useEffect(() => { load(id); });
+  useEffect(() => { load(id); }, [id]);
+  React.useLayoutEffect(() => measure());
+  useLayoutEffect(() => measure(), []);
+  return null;
+}
+`
+	want := []string{"react.effect-without-deps:3", "react.effect-without-deps:5"}
+	if got := findings(t, JavaScript{}, "src/Profile.jsx", src); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v\nwant %v", got, want)
+	}
+}

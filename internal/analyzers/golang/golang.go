@@ -53,7 +53,7 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		if err != nil {
 			continue
 		}
-		info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+		info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}}
 		conf := types.Config{Importer: stubImporter{}, Error: func(error) {}}
 		// Errors are expected (other package files and imports are absent); the
 		// partial information is still accurate for local declarations.
@@ -125,7 +125,9 @@ func (c *checker) run() {
 			continue
 		}
 		allowPanic := !library || isTest || fn.Name.Name == "init" || strings.HasPrefix(fn.Name.Name, "Must")
+		fnLimited := limitsConcurrency(fn.Body)
 		c.checkSendLeak(fn.Body)
+		c.checkFreshContext(fn.Type, fn.Body)
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SwitchStmt:
@@ -139,14 +141,21 @@ func (c *checker) run() {
 			case *ast.ForStmt:
 				c.checkDecodeReuse(n.Pos(), n.Body)
 				c.checkIterator(n)
+				c.checkLoopBody(n.Body, false, fnLimited)
 			case *ast.RangeStmt:
 				c.checkDecodeReuse(n.Pos(), n.Body)
+				c.checkLoopBody(n.Body, c.isChannel(n.X), fnLimited)
 			case *ast.BlockStmt:
 				c.checkWaitGroupAdd(n)
 			case *ast.GoStmt:
 				c.checkGoStmt(n)
 			case *ast.FuncLit:
 				c.checkSendLeak(n.Body)
+				c.checkFreshContext(n.Type, n.Body)
+			case *ast.SelectorExpr, *ast.CompositeLit:
+				if !isTest {
+					c.checkHTTPTimeout(n)
+				}
 			case *ast.AssignStmt:
 				if !isTest {
 					c.checkIgnoredError(n)
@@ -164,6 +173,9 @@ func (c *checker) run() {
 				c.checkInsecureTLS(n)
 			case *ast.CallExpr:
 				c.checkSecurity(n)
+				if !isTest {
+					c.checkHTTPTimeout(n)
+				}
 				if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "panic" && !allowPanic {
 					if _, builtin := c.info.Uses[id].(*types.Builtin); builtin {
 						c.report("go.panic-outside-main", n.Pos())
