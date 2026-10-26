@@ -49,7 +49,12 @@ Scan flags:
   --sessions       Also grade your prompts in local Claude Code and Codex sessions
                    for these repositories, and report how much code agents wrote.
                    Prompt text is read in memory only; nothing is stored.
-`
+
+Calibrate flags:
+  --sample N       Number of prompts to label (default 40)
+
+Calibrate answers:
+` + answerHelp
 
 // errUsage marks errors caused by invalid arguments.
 var errUsage = errors.New("usage")

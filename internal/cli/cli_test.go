@@ -138,7 +138,7 @@ func TestCalibrate(t *testing.T) {
 	}
 	got := out.String()
 	flat := strings.Join(strings.Fields(got), " ")
-	for _, want := range []string{"1/1", "Fix the crash in parser.go", "Enter a type", "1 prompts labeled", "context 100%", "task type 100%"} {
+	for _, want := range []string{"1/1", "Fix the crash in parser.go", "Not understood", "type[bfrto] context[yn]", "1. Task type", "1 prompts labeled", "context 100%", "task type 100%"} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("output missing %q:\n%s", want, got)
 		}
@@ -159,6 +159,16 @@ func TestWriteAgreement(t *testing.T) {
 	for _, want := range []string{"context 50% 1 0", "criteria 50% 0 1", "verification 100% 0 0", "task type 50%", "you refactor, rule feature: 1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary missing %q:\n%s", want, b.String())
+		}
+	}
+}
+
+func TestHelpDocumentsCalibrateAnswers(t *testing.T) {
+	var out bytes.Buffer
+	Run(context.Background(), []string{"help"}, nil, &out, &out)
+	for _, want := range []string{"urfluency calibrate", "--sample N", "4. Verification", `"f yny"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("help missing %q", want)
 		}
 	}
 }

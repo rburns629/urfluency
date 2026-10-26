@@ -73,11 +73,7 @@ func calibrate(ctx context.Context, args []string, stdin io.Reader, stdout io.Wr
 	}
 
 	fmt.Fprintf(stdout, "Calibrating with %d of your prompts. They are shown only in this terminal and\n"+
-		"nothing is saved. For each, enter the task type and three yes/no answers:\n"+
-		"  type: b bug, f feature, r refactor, t test, o other (question, not a code change)\n"+
-		"  then y/n for: names concrete context (files, symbols, errors), states acceptance\n"+
-		"  criteria or a definition of done, asks for tests or checks.\n"+
-		"  Example: \"f yny\". Enter s to skip, q to finish early.\n", len(samples))
+		"nothing is saved.\n\n%s", len(samples), answerHelp)
 	in := bufio.NewScanner(stdin)
 	var rules, labels []sessions.Prompt
 	for i, s := range samples {
@@ -102,10 +98,23 @@ func calibrate(ctx context.Context, args []string, stdin io.Reader, stdout io.Wr
 	return writeAgreement(stdout, rules, labels)
 }
 
+// answerHelp explains the four answers given for each prompt.
+const answerHelp = `Answer each prompt with four letters, in this order:
+  1. Task type      b bug, f feature, r refactor, t test, o other (question or not a code change)
+  2. Context        y/n: names files, functions, or errors, or pastes code or logs
+  3. Criteria       y/n: says what done looks like (expected behavior, edge cases, limits)
+  4. Verification   y/n: asks for tests or checks
+  Example: "f yny" = feature, has context, no criteria, asks for tests.
+  Spaces are optional ("f y n y" works). s skips a prompt; q finishes and shows results.
+`
+
+// answerPrompt is shown before every answer so the order stays visible.
+const answerPrompt = "type[bfrto] context[yn] criteria[yn] verification[yn], s skip, q quit > "
+
 // askLabel reads one answer. It returns ok=false to finish and a nil label to skip.
 func askLabel(in *bufio.Scanner, out io.Writer) (*label, bool) {
 	for {
-		fmt.Fprint(out, "> ")
+		fmt.Fprint(out, answerPrompt)
 		if !in.Scan() {
 			return nil, false
 		}
@@ -118,7 +127,7 @@ func askLabel(in *bufio.Scanner, out io.Writer) (*label, bool) {
 		case len(answer) == 4 && typeKeys[answer[0]] != "" && strings.Trim(answer[1:], "yn") == "":
 			return &label{typeKeys[answer[0]], answer[1] == 'y', answer[2] == 'y', answer[3] == 'y'}, true
 		}
-		fmt.Fprintln(out, `Enter a type and three y/n answers, such as "f yny", or s or q.`)
+		fmt.Fprint(out, "Not understood.\n"+answerHelp)
 	}
 }
 
