@@ -77,7 +77,7 @@ confidence.
 | **Type safety** | Reliable data contracts | Unchecked casts and assertions; untyped maps and `any` at boundaries; ignored decode errors; missing boundary validation | High for typed languages |
 | **Language proficiency** | Correct use of each language's semantics and idioms | Language-semantic pitfalls per 1,000 changed lines (for Go: `switch` fall-through assumptions, reused decode targets, `WaitGroup` miscounts, assertions on nil interfaces); lint findings on changed lines; idiom adoption, adjusted for when features became available | High for detected pitfalls |
 | **Security** | Safe handling of credentials and untrusted input | Leaked credentials (keys, tokens, private keys, hard-coded passwords) on the user's lines; injection-prone code (SQL built from strings, shell commands from input, `eval`, unsafe deserialization); disabled TLS verification; framework misconfiguration such as Django `DEBUG = True` or `csrf_exempt` | High for credentials and explicit patterns; values are never shown, stored, or uploaded |
-| **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions: tokens per task, reworked files, corrections, first-attempt acceptance, reported per task type | Medium; validated in [clean-agent-code's prompting evaluation](https://github.com/rburns629/clean-agent-code/blob/main/evaluations/results/2026-10-19-prompting.md) |
+| **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions, per task: concrete context (files, symbols, errors), acceptance criteria on feature and refactor work, requests for verification, and whether the task needed a correction; reported per task type | Medium; validated in [clean-agent-code's prompting evaluation](https://github.com/rburns629/clean-agent-code/blob/main/evaluations/results/2026-10-19-prompting.md) |
 
 ### Strengths, weaknesses, and focus points
 
@@ -114,8 +114,11 @@ reasoning in clean-agent-code's AUDIT.md.
 
 - Authorship comes from commits matching the user's verified GitHub emails; the
   attested tiers count only signed commits.
-- AI-assisted code cannot be distinguished; metrics describe committed code however
-  it was written.
+- AI-written code cannot be told apart from the code itself. With `--sessions`, the
+  CLI matches owned lines against lines agents added in local Claude Code and Codex
+  sessions in the same file. The share is a lower bound (inline completions, pasted
+  code, and deleted transcripts are missing) and is shown as context, never scored
+  or counted against anyone. Publishing it is a separate opt-in.
 - Prompting signals depend on task type; a bug with an evident symptom needs little
   specification, so signals are grouped by task type.
 - Architecture and clean code involve judgment; model-assisted review is optional,
@@ -128,7 +131,7 @@ urfluency login                 # GitHub device flow; token in the OS keychain
 urfluency scan [path...]        # analyze repos; writes a local report
 urfluency report                # show the local report and what would be uploaded
 urfluency upload                # send aggregates; prints the exact payload first
-urfluency sessions --enable     # opt in to agent-session analysis (Claude Code, Codex)
+urfluency scan --sessions       # also grade prompts and report AI-written code
 urfluency logout
 ```
 
@@ -136,8 +139,14 @@ urfluency logout
   lines, and never executes project code beyond the language's static tools.
 - `upload` always shows the payload and asks for confirmation unless `--yes` is
   passed.
-- Session adapters read local transcripts (`~/.claude/projects/`, `~/.codex/sessions/`)
-  only after opt-in, compute signals locally, and discard text.
+- `scan` accepts a repository or a folder; for a folder it scans every repository up
+  to four levels below it and combines the results.
+- Session adapters read local transcripts (`~/.claude/projects/`, `~/.codex/sessions/`,
+  honoring `CLAUDE_CONFIG_DIR` and `CODEX_HOME`) only with `--sessions`, and only
+  sessions that ran in or edited the scanned repositories. Each prompt is reduced to
+  signals while parsing; its text is never kept, printed, or uploaded. Subagent
+  transcripts are skipped because an agent wrote those prompts. Grading uses fixed
+  local rules, never a model call, so prompts never leave the machine.
 
 ### Analyzer architecture
 
@@ -191,7 +200,9 @@ format, and service do not change.
     "owned_lines": 11035,
     "rules": {"ts.explicit-any": 18, "ts.non-null-assertion": 10, "sec.api-token": 1}
   }],
-  "prompting": {"tasks": 42, "by_task_type": {"feature": {"tokens_median": 81000, "corrections_per_task": 0.4, "rework_files_per_task": 0.6, "first_attempt_acceptance": 0.62}}}
+  "prompting": {"sessions": 18, "tasks_by_type": {"feature": 20, "bug": 12},
+    "rules": {"prompt.no-acceptance-criteria": {"applicable": 26, "missed": 14}}},
+  "ai_written": {"owned_lines": 11035, "ai_written_lines": 3120}
 }
 ```
 
@@ -322,7 +333,9 @@ repository owner has published.
 - Metrics are private by default. Users can export and delete everything.
 - Aggregate metrics can still reveal employer information (activity, technology);
   the CLI shows a notice to check employment agreements before publishing.
-- Session analysis is opt-in, local, and discards prompt text.
+- Session analysis is opt-in and local; prompt text is reduced to signals during
+  parsing and never stored or uploaded. The AI-written share is uploaded only if the
+  user opts in to publishing it.
 - Secrets are reported by type and location in the local CLI and in a delivered scan
   report only; their values are never printed, stored, or uploaded.
 - Threat model to write before launch: forged uploads, token theft, scanner escape,
@@ -337,7 +350,9 @@ repository owner has published.
    weaknesses, and focus points; public profiles and user badges; API tokens.
 3. **Safety scanner:** static scanning of public URLs in isolated workers; safety
    badges.
-4. **Prompting:** session adapters for Claude Code and Codex; task-type grouping.
+4. **Prompting:** session adapters for Claude Code and Codex, task-type grading,
+   and AI-written share (local CLI done; GitHub Copilot does not keep comparable
+   local transcripts).
 5. **Repository connections:** GitHub App for public repos; Action with OIDC for
    private repos.
 6. **More languages and dynamic scanning.**

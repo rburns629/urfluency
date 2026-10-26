@@ -97,3 +97,37 @@ func TestScanRequiresEmails(t *testing.T) {
 		t.Error("expected an error without emails")
 	}
 }
+
+func TestScanAttributesAgentWrittenLines(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a/a.go": mine})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{
+		Emails:     []string{"me@example.com"},
+		AgentLines: map[string]map[string]bool{"a/a.go": {`func mine() { panic("mine") }`: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OwnedLines != 5 || res.AILines != 1 || res.Findings != 2 || res.AIFindings != 1 {
+		t.Errorf("owned %d, ai %d, findings %d, ai findings %d; want 5, 1, 2, 1",
+			res.OwnedLines, res.AILines, res.Findings, res.AIFindings)
+	}
+}
+
+func TestMergeCombinesRepositories(t *testing.T) {
+	a := analysis.Result{Head: "a", Repos: 1, OwnedLines: 10, AILines: 2, Languages: []analysis.LanguageResult{
+		{Language: "go", Files: 1, OwnedLines: 10, Frameworks: []string{}, Findings: []analysis.Finding{{Rule: "r", Path: "x.go", Line: 1}}}}}
+	b := analysis.Result{Head: "b", Repos: 1, OwnedLines: 5, Languages: []analysis.LanguageResult{
+		{Language: "typescript", Files: 2, OwnedLines: 5, Frameworks: []string{"react"}},
+		{Language: "go", Files: 3, OwnedLines: 0}}}
+	m := analysis.Merge([]string{"one", "two"}, []analysis.Result{a, b})
+	if m.Head != "" || m.Repos != 2 || m.OwnedLines != 15 || m.AILines != 2 || len(m.Languages) != 2 {
+		t.Fatalf("merged = %+v", m)
+	}
+	if g := m.Languages[0]; g.Language != "go" || g.Files != 4 || g.Findings[0].Path != "one/x.go" {
+		t.Errorf("go = %+v", g)
+	}
+	if ts := m.Languages[1]; ts.Frameworks[0] != "react" {
+		t.Errorf("typescript = %+v", ts)
+	}
+}

@@ -4,7 +4,7 @@ package rules
 import "sort"
 
 // Version identifies the catalog; it changes whenever rules are added or redefined.
-const Version = "0.3"
+const Version = "0.4"
 
 // Category groups rules into the metrics users see.
 type Category string

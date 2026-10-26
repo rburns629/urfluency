@@ -23,6 +23,9 @@ const maxScanBytes = 2 << 20
 type Options struct {
 	Emails []string
 	Since  time.Time
+	// AgentLines maps repository-relative paths to normalized lines an agent wrote,
+	// for attributing owned lines to AI.
+	AgentLines map[string]map[string]bool
 }
 
 // LanguageResult holds findings on the user's owned lines for one language or
@@ -35,10 +38,17 @@ type LanguageResult struct {
 	Findings   []Finding
 }
 
-// Result is the outcome of scanning one repository.
+// Result is the outcome of scanning one or more repositories.
 type Result struct {
-	Head      string
+	Head      string // empty when several repositories are merged
+	Repos     int
 	Languages []LanguageResult
+	// OwnedLines counts each analyzed file once; AILines are the owned lines that
+	// match agent-written lines, and AIFindings the findings on them.
+	OwnedLines int
+	AILines    int
+	AIFindings int
+	Findings   int
 }
 
 type ownedFile struct {
@@ -46,6 +56,7 @@ type ownedFile struct {
 	text     bool     // eligible for scanners
 	file     File
 	owned    map[int]bool
+	ai       map[int]bool
 }
 
 // Scan analyzes the files at HEAD and keeps findings on lines owned by the user.
@@ -75,7 +86,15 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 
-	result := Result{Head: head}
+	result := Result{Head: head, Repos: 1}
+	ai := map[string]map[int]bool{}
+	for _, f := range files {
+		if f.analyzer != nil || f.text {
+			result.OwnedLines += len(f.owned)
+			result.AILines += len(f.ai)
+			ai[f.file.Path] = f.ai
+		}
+	}
 	byAnalyzer := map[Analyzer][]ownedFile{}
 	for _, f := range files {
 		if f.analyzer != nil {
@@ -111,6 +130,14 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			return Result{}, err
 		}
 		result.Languages = append(result.Languages, lr)
+	}
+	for _, lr := range result.Languages {
+		result.Findings += len(lr.Findings)
+		for _, fd := range lr.Findings {
+			if ai[fd.Path][fd.Line] {
+				result.AIFindings++
+			}
+		}
 	}
 	return result, nil
 }
@@ -202,7 +229,8 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 			if bytes.IndexByte(content, 0) >= 0 {
 				return // binary
 			}
-			of := ownedFile{file: f, owned: owned, text: len(content) <= maxScanBytes}
+			of := ownedFile{file: f, owned: owned, text: len(content) <= maxScanBytes,
+				ai: agentWritten(content, owned, opts.AgentLines[p])}
 			if a := ForPath(p); a != nil && !a.Skip(f) {
 				of.analyzer = a
 			}
@@ -216,6 +244,20 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 		}
 	}
 	return results, nil
+}
+
+// agentWritten returns the owned lines whose normalized text an agent wrote.
+func agentWritten(content []byte, owned map[int]bool, agent map[string]bool) map[int]bool {
+	ai := map[int]bool{}
+	if len(agent) == 0 {
+		return ai
+	}
+	for i, line := range strings.Split(string(content), "\n") {
+		if owned[i+1] && agent[strings.TrimSpace(line)] {
+			ai[i+1] = true
+		}
+	}
+	return ai
 }
 
 func inSkippedDir(path string) bool {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/rburns629/urfluency/internal/analysis"
 	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
+	"github.com/rburns629/urfluency/internal/sessions"
 )
 
 func result(owned int, rules ...string) analysis.Result {
@@ -83,5 +84,40 @@ func TestWriteText(t *testing.T) {
 	b.Reset()
 	if err := WriteText(&b, Report{}); err != nil || !strings.Contains(b.String(), "No owned lines") {
 		t.Errorf("empty report output = %q, %v", b.String(), err)
+	}
+}
+
+func TestBuildPrompting(t *testing.T) {
+	g := sessions.Grades{Sessions: 3, Tasks: map[string]int{"feature": 6, "bug": 4}, Rules: map[string]sessions.Tally{
+		"prompt.no-acceptance-criteria": {Applicable: 6, Missed: 4},
+		"prompt.no-context":             {Applicable: 10, Missed: 1},
+		"prompt.no-verification":        {Applicable: 3, Missed: 3}, // too few tasks to judge
+		"prompt.needed-correction":      {Applicable: 10, Missed: 5},
+	}}
+	p := BuildPrompting(g)
+	if len(p.Rules) != 4 || len(p.Weaknesses) != 2 || p.Weaknesses[0].ID != "prompt.no-acceptance-criteria" || p.Weaknesses[0].Share != 0.67 {
+		t.Errorf("weaknesses = %+v", p.Weaknesses)
+	}
+	if len(p.Strengths) != 1 || !strings.Contains(p.Strengths[0], "1 of 10") {
+		t.Errorf("strengths = %v", p.Strengths)
+	}
+	if !reflect.DeepEqual(p.Focus, []string{"prompt.no-acceptance-criteria", "prompt.needed-correction"}) {
+		t.Errorf("focus = %v", p.Focus)
+	}
+}
+
+func TestBuildAI(t *testing.T) {
+	a := BuildAI(analysis.Result{OwnedLines: 1000, AILines: 250, Findings: 10, AIFindings: 1})
+	if a.Share != 0.25 || a.AIFindingsPerK != 4 || a.OtherFindingsPerK != 12 {
+		t.Errorf("ai = %+v", a)
+	}
+	var b strings.Builder
+	if err := WriteText(&b, Report{Repos: 2, AI: a, Prompting: BuildPrompting(sessions.Grades{})}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"2 repositories", "at least 250 of 1000 owned lines (25%)", "not a score", "No code-change tasks"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("text missing %q:\n%s", want, b.String())
+		}
 	}
 }

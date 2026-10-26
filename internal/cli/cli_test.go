@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -58,5 +60,55 @@ func TestUsageErrors(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "unknown command") {
 		t.Errorf("stderr = %q", errOut.String())
+	}
+}
+
+func TestScanFolderWithSessions(t *testing.T) {
+	root := t.TempDir()
+	newRepo := func(name string) *testutil.Repo {
+		r := &testutil.Repo{T: t, Dir: filepath.Join(root, "work", name)}
+		if err := os.MkdirAll(r.Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		r.Git("", "", "init", "-q", "-b", "main")
+		return r
+	}
+	one, two := newRepo("one"), newRepo("two")
+	one.Commit("me@example.com", "", map[string]string{"a.go": "package a\n\nfunc f() { panic(\"agent wrote\") }\n"})
+	two.Commit("me@example.com", "", map[string]string{"b.go": "package b\n\nfunc g() { panic(\"by hand\") }\n"})
+
+	claude := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", claude)
+	t.Setenv("CODEX_HOME", t.TempDir())
+	edit := filepath.Join(one.Dir, "a.go")
+	transcript := `{"type":"user","cwd":"` + one.Dir + `","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `","message":{"content":"Add a function f to a.go that panics, then run the tests"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Write","input":{"file_path":"` + edit + `","content":"func f() { panic(\"agent wrote\") }"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}}
+`
+	path := filepath.Join(claude, "projects", "-one", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(transcript), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", "--sessions", root}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Repos != 2 || rep.Prompting == nil || rep.Prompting.Sessions != 1 || rep.Prompting.Tasks["feature"] != 1 {
+		t.Fatalf("report = %s", out.String())
+	}
+	if rep.AI == nil || rep.AI.AILines != 1 || rep.AI.OwnedLines != 6 {
+		t.Errorf("ai = %+v", rep.AI)
+	}
+	if strings.Contains(out.String(), "panics, then run") {
+		t.Error("prompt text leaked into the report")
 	}
 }

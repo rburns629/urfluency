@@ -27,11 +27,18 @@ go build -o urfluency ./cmd/urfluency
 ./urfluency scan /path/to/your/repo              # uses git user.email
 ./urfluency scan --author you@example.com --since 90d --locations .
 ./urfluency scan --json .
+./urfluency scan --sessions ~/Projects           # every repo below, plus your agent prompts
 ```
 
 The scan analyzes only lines that `git blame` attributes to your emails at the
 latest commit, never runs the repository's code, and writes nothing to disk.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
+
+`--sessions` also reads your local Claude Code and Codex transcripts for the scanned
+repositories. It grades each task prompt with fixed local rules (no model call),
+with strengths, weaknesses, and points of focus, and reports how much of your owned
+code agents wrote. That share is context, not a score, and is a lower bound. Prompt
+text is reduced to signals as it is read and is never stored, printed, or uploaded.
 
 ## What it checks
 
@@ -40,6 +47,7 @@ latest commit, never runs the repository's code, and writes nothing to disk.
 | Languages | Go, Python, JavaScript, TypeScript |
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
+| Prompting | Concrete context, acceptance criteria on feature and refactor work, verification requests, and corrections needed, per task type (with `--sessions`) |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 
 Files that hold secrets by design are never read: `.env` files, key and certificate

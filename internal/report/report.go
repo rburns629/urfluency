@@ -10,13 +10,18 @@ import (
 
 	"github.com/rburns629/urfluency/internal/analysis"
 	"github.com/rburns629/urfluency/internal/rules"
+	"github.com/rburns629/urfluency/internal/sessions"
 )
 
 // FormatVersion identifies the report schema.
-const FormatVersion = "0.1"
+const FormatVersion = "0.2"
 
 // MinOwnedLines is the volume below which a language shows "not enough data".
 const MinOwnedLines = 300
+
+// MinTasks is the number of applicable tasks below which a prompting rule is not
+// judged a strength or weakness.
+const MinTasks = 5
 
 // Report is the local result of a scan. Locations are included only on request
 // and are never part of an upload.
@@ -24,8 +29,42 @@ type Report struct {
 	Format    string     `json:"format"`
 	Catalog   string     `json:"catalog"`
 	Commit    string     `json:"commit"`
+	Repos     int        `json:"repositories"`
 	Since     string     `json:"since"`
 	Languages []Language `json:"languages"`
+	Prompting *Prompting `json:"prompting,omitempty"`
+	AI        *AIShare   `json:"ai_written,omitempty"`
+}
+
+// Prompting grades task prompts from local agent sessions.
+type Prompting struct {
+	Sessions   int            `json:"sessions"`
+	Tasks      map[string]int `json:"tasks_by_type"`
+	Rules      []PromptRule   `json:"rules"`
+	Weaknesses []PromptRule   `json:"weaknesses"`
+	Strengths  []string       `json:"strengths"`
+	Focus      []string       `json:"focus"`
+}
+
+// PromptRule is one prompting rule and the share of applicable tasks that missed it.
+type PromptRule struct {
+	ID         string  `json:"id"`
+	Title      string  `json:"title"`
+	Missed     int     `json:"missed"`
+	Applicable int     `json:"applicable"`
+	Share      float64 `json:"share"`
+	Why        string  `json:"why"`
+	Focus      string  `json:"focus"`
+}
+
+// AIShare is the owned code an agent wrote, as far as local sessions show. It is
+// context, not a score: it is a lower bound and never counts against anyone.
+type AIShare struct {
+	OwnedLines        int     `json:"owned_lines"`
+	AILines           int     `json:"ai_written_lines"`
+	Share             float64 `json:"share"`
+	AIFindingsPerK    float64 `json:"findings_per_1000_ai_lines"`
+	OtherFindingsPerK float64 `json:"findings_per_1000_other_lines"`
 }
 
 // Language summarizes one language.
@@ -55,7 +94,7 @@ type RuleResult struct {
 
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
-	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Since: since.Format("2006-01-02")}
+	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: since.Format("2006-01-02")}
 	for _, lr := range res.Languages {
 		r.Languages = append(r.Languages, buildLanguage(lr, withLocations))
 	}
@@ -135,10 +174,64 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 	return lang
 }
 
+// BuildPrompting turns session grades into strengths, weaknesses, and focus points.
+func BuildPrompting(g sessions.Grades) *Prompting {
+	p := &Prompting{Sessions: g.Sessions, Tasks: g.Tasks, Rules: []PromptRule{}, Weaknesses: []PromptRule{}, Strengths: []string{}, Focus: []string{}}
+	ids := make([]string, 0, len(g.Rules))
+	for id := range g.Rules {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		rule, ok := rules.Lookup(id)
+		tally := g.Rules[id]
+		if !ok || tally.Applicable == 0 {
+			continue
+		}
+		pr := PromptRule{ID: id, Title: rule.Title, Missed: tally.Missed, Applicable: tally.Applicable,
+			Share: round2(float64(tally.Missed) / float64(tally.Applicable)), Why: rule.Why, Focus: rule.Focus}
+		p.Rules = append(p.Rules, pr)
+		switch {
+		case tally.Applicable < MinTasks:
+		case pr.Share >= 0.4:
+			p.Weaknesses = append(p.Weaknesses, pr)
+		case pr.Share <= 0.15:
+			p.Strengths = append(p.Strengths, fmt.Sprintf("Rarely: %s (%d of %d tasks)", strings.ToLower(rule.Title), tally.Missed, tally.Applicable))
+		}
+	}
+	sort.SliceStable(p.Weaknesses, func(i, j int) bool { return p.Weaknesses[i].Share > p.Weaknesses[j].Share })
+	for i, w := range p.Weaknesses {
+		if i == 3 {
+			break
+		}
+		p.Focus = append(p.Focus, w.ID)
+	}
+	return p
+}
+
+// BuildAI summarizes how much owned code agents wrote.
+func BuildAI(res analysis.Result) *AIShare {
+	a := &AIShare{OwnedLines: res.OwnedLines, AILines: res.AILines}
+	if res.OwnedLines > 0 {
+		a.Share = round2(float64(res.AILines) / float64(res.OwnedLines))
+	}
+	if res.AILines > 0 {
+		a.AIFindingsPerK = round2(float64(res.AIFindings) * 1000 / float64(res.AILines))
+	}
+	if other := res.OwnedLines - res.AILines; other > 0 {
+		a.OtherFindingsPerK = round2(float64(res.Findings-res.AIFindings) * 1000 / float64(other))
+	}
+	return a
+}
+
 // WriteText prints a human-readable summary.
 func WriteText(w io.Writer, r Report) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "urFluency scan · commit %s · since %s · catalog %s\n", r.Commit, r.Since, r.Catalog)
+	scope := "commit " + r.Commit
+	if r.Repos > 1 {
+		scope = fmt.Sprintf("%d repositories", r.Repos)
+	}
+	fmt.Fprintf(&b, "urFluency scan · %s · since %s · catalog %s\n", scope, r.Since, r.Catalog)
 	if len(r.Languages) == 0 {
 		b.WriteString("\nNo owned lines in supported languages were found for these authors.\n")
 	}
@@ -171,8 +264,53 @@ func WriteText(w io.Writer, r Report) error {
 			fmt.Fprintf(&b, "  Points of focus: %s\n", strings.Join(l.Focus, ", "))
 		}
 	}
+	if p := r.Prompting; p != nil {
+		writePrompting(&b, p)
+	}
+	if a := r.AI; a != nil {
+		fmt.Fprintf(&b, "\nAI-WRITTEN CODE: at least %d of %d owned lines (%.0f%%)\n", a.AILines, a.OwnedLines, a.Share*100)
+		if a.AILines > 0 {
+			fmt.Fprintf(&b, "  Findings per 1,000 lines: AI-written %.2f, other %.2f\n", a.AIFindingsPerK, a.OtherFindingsPerK)
+		}
+		b.WriteString("  Context only, not a score. Counts code from agent sessions still on this machine;\n" +
+			"  inline completions, pasted code, and deleted sessions are not included.\n")
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writePrompting(b *strings.Builder, p *Prompting) {
+	types := make([]string, 0, len(p.Tasks))
+	total := 0
+	for t, n := range p.Tasks {
+		types = append(types, fmt.Sprintf("%s %d", t, n))
+		total += n
+	}
+	sort.Strings(types)
+	fmt.Fprintf(b, "\nPROMPTING: %d tasks in %d sessions", total, p.Sessions)
+	if len(types) > 0 {
+		fmt.Fprintf(b, " (%s)", strings.Join(types, ", "))
+	}
+	b.WriteString("\n")
+	if total == 0 {
+		b.WriteString("  No code-change tasks found in sessions for these repositories.\n")
+	}
+	if len(p.Strengths) > 0 {
+		b.WriteString("  Strengths\n")
+		for _, s := range p.Strengths {
+			fmt.Fprintf(b, "    + %s\n", s)
+		}
+	}
+	if len(p.Weaknesses) > 0 {
+		b.WriteString("  Areas to improve\n")
+		for _, w := range p.Weaknesses {
+			fmt.Fprintf(b, "    - %s: %d of %d tasks (%.0f%%)\n", w.Title, w.Missed, w.Applicable, w.Share*100)
+			fmt.Fprintf(b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
+		}
+	}
+	if len(p.Focus) > 0 {
+		fmt.Fprintf(b, "  Points of focus: %s\n", strings.Join(p.Focus, ", "))
+	}
 }
 
 func shortHash(h string) string {

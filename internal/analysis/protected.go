@@ -25,6 +25,9 @@ var (
 	protectedPrefixes = []string{".env", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 )
 
+// IsProtectedDir reports whether a directory name holds secrets by convention.
+func IsProtectedDir(name string) bool { return protectedDirs[name] }
+
 // IsProtected reports whether a repository path names a file that holds secrets.
 func IsProtected(p string) bool {
 	parts := strings.Split(p, "/")
