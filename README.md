@@ -40,6 +40,11 @@ with strengths, weaknesses, and points of focus, and reports how much of your ow
 code agents wrote. That share is context, not a score, and is a lower bound. Prompt
 text is reduced to signals as it is read and is never stored, printed, or uploaded.
 
+`urfluency calibrate ~/Projects` checks the prompting rules against your own
+judgment. It shows a random sample of your prompts in your terminal, asks you to
+label each one, and prints how often each rule agreed with you. Nothing is saved,
+and the summary contains no prompt text.
+
 ## What it checks
 
 | Area | Coverage |

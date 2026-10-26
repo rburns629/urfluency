@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rburns629/urfluency/internal/report"
+	"github.com/rburns629/urfluency/internal/sessions"
 	"github.com/rburns629/urfluency/internal/testutil"
 )
 
@@ -34,7 +35,7 @@ func TestScanJSON(t *testing.T) {
 	r := testutil.NewRepo(t)
 	r.Commit("me@example.com", "", map[string]string{"a.go": "package a\n\nfunc f() { panic(1) }\n"})
 	var out, errOut bytes.Buffer
-	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", r.Dir}, &out, &errOut)
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", r.Dir}, nil, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
@@ -55,7 +56,7 @@ func TestScanJSON(t *testing.T) {
 
 func TestUsageErrors(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := Run(context.Background(), []string{"bogus"}, &out, &errOut); code != 2 {
+	if code := Run(context.Background(), []string{"bogus"}, nil, &out, &errOut); code != 2 {
 		t.Errorf("exit %d, want 2", code)
 	}
 	if !strings.Contains(errOut.String(), "unknown command") {
@@ -94,7 +95,7 @@ func TestScanFolderWithSessions(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", "--sessions", root}, &out, &errOut)
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", "--sessions", root}, nil, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
@@ -110,5 +111,54 @@ func TestScanFolderWithSessions(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "panics, then run") {
 		t.Error("prompt text leaked into the report")
+	}
+}
+
+func TestCalibrate(t *testing.T) {
+	repo := testutil.NewRepo(t)
+	repo.Commit("me@example.com", "", map[string]string{"a.go": "package a\n"})
+	claude := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", claude)
+	t.Setenv("CODEX_HOME", t.TempDir())
+	transcript := `{"type":"user","cwd":"` + repo.Dir + `","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `","message":{"content":"<ide_opened_file>a.go</ide_opened_file> Fix the crash in parser.go on empty input"}}
+{"type":"user","message":{"content":"yes"}}
+`
+	path := filepath.Join(claude, "projects", "-a", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(transcript), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	// An invalid answer is asked again; "b ynn" matches the rules exactly.
+	code := Run(context.Background(), []string{"calibrate", repo.Dir}, strings.NewReader("maybe\nb ynn\n"), &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	got := out.String()
+	flat := strings.Join(strings.Fields(got), " ")
+	for _, want := range []string{"1/1", "Fix the crash in parser.go", "Enter a type", "1 prompts labeled", "context 100%", "task type 100%"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ide_opened_file") {
+		t.Error("injected editor block was shown")
+	}
+}
+
+func TestWriteAgreement(t *testing.T) {
+	rules := []sessions.Prompt{{Type: "bug", Context: true}, {Type: "feature"}}
+	labels := []sessions.Prompt{{Type: "bug"}, {Type: "refactor", Criteria: true}}
+	var b strings.Builder
+	if err := writeAgreement(&b, rules, labels); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(strings.Fields(b.String()), " ")
+	for _, want := range []string{"context 50% 1 0", "criteria 50% 0 1", "verification 100% 0 0", "task type 50%", "you refactor, rule feature: 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary missing %q:\n%s", want, b.String())
+		}
 	}
 }

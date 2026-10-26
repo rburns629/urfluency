@@ -47,7 +47,9 @@ var claudeEditTools = map[string]bool{"Edit": true, "MultiEdit": true, "Write": 
 
 // ReadClaude parses a Claude Code transcript. Edits count only when their tool
 // result succeeded, so rejected or failed edits are ignored.
-func ReadClaude(r io.Reader) (Session, error) {
+func ReadClaude(r io.Reader) (Session, error) { return readClaude(r, false) }
+
+func readClaude(r io.Reader, keepText bool) (Session, error) {
 	s := Session{Agent: "claude-code", Edits: map[string]map[string]bool{}}
 	pending := map[string]claudeEdit{}
 	err := eachLine(r, func(line []byte) {
@@ -89,7 +91,7 @@ func ReadClaude(r io.Reader) (Session, error) {
 				}
 			}
 			if !toolResult && !l.IsMeta && !l.IsCompactSummary {
-				s.Prompts = append(s.Prompts, Classify(text))
+				s.addPrompt(text, keepText)
 			}
 		}
 	})

@@ -26,6 +26,7 @@ Agent instructions adopted from clean-agent-code at commit `13aedcb`.
 | Linting | `staticcheck` 2025.1.1 does not support Go 1.27, so run it in the container: `docker run --rm -v "$PWD":/src -w /src -e GOFLAGS=-buildvcs=false golang:1.24.6-bookworm sh -c 'go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 ./...'` |
 | Testing | `gofmt -l .` and `go test -race ./...` with host Go (1.27.3); requires a C compiler (Xcode Command Line Tools on macOS) |
 | Security tooling | `go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...` with host Go; secret scanning to be added |
+| Continuous integration | `.github/workflows/ci.yml` runs format, vet, race tests, staticcheck, and govulncheck on every push and pull request with the Go version from `go.mod`. Actions are pinned to commit SHAs |
 | CLI operations | GitHub repository `rburns629/urfluency` (private), `gh` account `rburns629`. Pushes, releases, and visibility changes need approval. No cloud resources yet |
 | Auto-mode filesystem recovery | Clean tracked files use their commit as the recovery copy. Other backups go to `~/.urfluency-backups/<timestamp>/`, outside the repository. Robert Burns approves cleanup; nothing is deleted automatically |
 | Performance requirements | Not yet defined |

@@ -29,9 +29,11 @@ type codexLine struct {
 // ReadCodex parses a Codex CLI rollout transcript. User prompts come from
 // user_message events; transcripts without them fall back to user messages,
 // skipping the environment and instruction blocks Codex injects.
-func ReadCodex(r io.Reader) (Session, error) {
+func ReadCodex(r io.Reader) (Session, error) { return readCodex(r, false) }
+
+func readCodex(r io.Reader, keepText bool) (Session, error) {
 	s := Session{Agent: "codex", Edits: map[string]map[string]bool{}}
-	var fallback []Prompt
+	var fallback Session
 	err := eachLine(r, func(line []byte) {
 		var l codexLine
 		if json.Unmarshal(line, &l) != nil {
@@ -46,11 +48,11 @@ func ReadCodex(r io.Reader) (Session, error) {
 		}
 		switch {
 		case l.Type == "event_msg" && p.Type == "user_message":
-			s.Prompts = append(s.Prompts, Classify(p.Message))
+			s.addPrompt(p.Message, keepText)
 		case l.Type == "response_item" && p.Type == "message" && p.Role == "user":
 			for _, c := range p.Content {
 				if !strings.HasPrefix(strings.TrimSpace(c.Text), "<") {
-					fallback = append(fallback, Classify(c.Text))
+					fallback.addPrompt(c.Text, keepText)
 				}
 			}
 		case l.Type == "response_item" && p.Type == "custom_tool_call" && p.Name == "apply_patch":
@@ -70,7 +72,7 @@ func ReadCodex(r io.Reader) (Session, error) {
 		}
 	})
 	if len(s.Prompts) == 0 {
-		s.Prompts = fallback
+		s.Prompts, s.Texts = fallback.Prompts, fallback.Texts
 	}
 	return s, err
 }

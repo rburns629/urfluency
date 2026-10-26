@@ -39,7 +39,7 @@ var (
 // Classify reduces a prompt to signals. Slash commands, tool output, and replies
 // shorter than four words are not tasks.
 func Classify(text string) Prompt {
-	t := strings.ToLower(stripTagBlocks(strings.TrimSpace(text)))
+	t := strings.ToLower(StripTagBlocks(strings.TrimSpace(text)))
 	if t == "" || strings.HasPrefix(t, "<") || strings.HasPrefix(t, "/") || strings.HasPrefix(t, "[") {
 		return Prompt{}
 	}
@@ -71,9 +71,9 @@ func Classify(text string) Prompt {
 	return p
 }
 
-// stripTagBlocks removes leading blocks that editors and agents inject before the
+// StripTagBlocks removes leading blocks that editors and agents inject before the
 // user's words, such as <ide_opened_file>...</ide_opened_file>.
-func stripTagBlocks(t string) string {
+func StripTagBlocks(t string) string {
 	for strings.HasPrefix(t, "<") {
 		end := strings.IndexAny(t, " >")
 		if end < 2 {

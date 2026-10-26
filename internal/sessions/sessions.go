@@ -20,6 +20,9 @@ type Session struct {
 	Cwd     string
 	Start   time.Time
 	Prompts []Prompt
+	// Texts holds the prompt text parallel to Prompts, only when loaded with
+	// LoadWithText for local calibration. It is never stored or uploaded.
+	Texts []string
 	// Edits maps absolute file paths to the normalized lines the agent added.
 	Edits map[string]map[string]bool
 }
@@ -81,17 +84,30 @@ func Discover(d Dirs, since time.Time) ([]Transcript, error) {
 	return out, err
 }
 
-// Load parses one transcript.
-func Load(t Transcript) (Session, error) {
+// Load parses one transcript, keeping prompt signals but not prompt text.
+func Load(t Transcript) (Session, error) { return load(t, false) }
+
+// LoadWithText also keeps prompt text, for showing prompts to their author
+// during calibration.
+func LoadWithText(t Transcript) (Session, error) { return load(t, true) }
+
+func load(t Transcript, keepText bool) (Session, error) {
 	f, err := os.Open(t.Path)
 	if err != nil {
 		return Session{}, err
 	}
 	defer f.Close()
 	if t.Agent == "codex" {
-		return ReadCodex(f)
+		return readCodex(f, keepText)
 	}
-	return ReadClaude(f)
+	return readClaude(f, keepText)
+}
+
+func (s *Session) addPrompt(text string, keepText bool) {
+	s.Prompts = append(s.Prompts, Classify(text))
+	if keepText {
+		s.Texts = append(s.Texts, text)
+	}
 }
 
 func modifiedSince(path string, since time.Time) bool {
