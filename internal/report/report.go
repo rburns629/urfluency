@@ -62,12 +62,16 @@ func Build(res analysis.Result, since time.Time, withLocations bool) Report {
 }
 
 func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
+	// Slices start empty, not nil, so JSON consumers always receive arrays.
 	lang := Language{
 		Language:   lr.Language,
 		Files:      lr.Files,
 		OwnedLines: lr.OwnedLines,
 		Sufficient: lr.OwnedLines >= MinOwnedLines,
 		Categories: map[string]int{},
+		Weaknesses: []RuleResult{},
+		Strengths:  []string{},
+		Focus:      []string{},
 	}
 	byRule := map[string]*RuleResult{}
 	for _, f := range lr.Findings {

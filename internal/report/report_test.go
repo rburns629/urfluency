@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -54,6 +55,18 @@ func TestBuildWithoutLocationsOrEnoughData(t *testing.T) {
 	}
 	if len(l.Weaknesses[0].Locations) != 0 {
 		t.Error("locations included without request")
+	}
+}
+
+func TestJSONUsesEmptyArrays(t *testing.T) {
+	b, err := json.Marshal(Build(result(100), time.Now(), false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"weaknesses":[]`, `"strengths":[]`, `"focus":[]`} {
+		if !strings.Contains(string(b), field) {
+			t.Errorf("JSON missing %s: %s", field, b)
+		}
 	}
 }
 
