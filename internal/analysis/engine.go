@@ -50,13 +50,17 @@ type Result struct {
 	AILines    int
 	AIFindings int
 	Findings   int
+	// MarkedLines are owned code lines from commits whose trailers name a coding
+	// tool; MarkedByTool splits them by tool (a commit can name several).
+	MarkedLines  int
+	MarkedByTool map[string]int
 }
 
 type ownedFile struct {
 	analyzer Analyzer // nil when no analyzer applies or it skips the file
 	text     bool     // eligible for scanners
 	file     File
-	owned    map[int]bool
+	owned    map[int]string // line → commit
 	ai       map[int]bool
 }
 
@@ -87,13 +91,32 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 
-	result := Result{Head: head, Repos: 1}
+	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}}
+	commits, err := repo.Commits(ctx, opts.Emails)
+	if err != nil {
+		return Result{}, err
+	}
+	tools := map[string][]string{}
+	for hash, c := range commits {
+		if t := AITools(c); len(t) > 0 {
+			tools[hash] = t
+		}
+	}
 	ai := map[string]map[int]bool{}
 	for _, f := range files {
-		if f.analyzer != nil {
-			result.OwnedLines += len(f.owned)
-			result.AILines += len(f.ai)
-			ai[f.file.Path] = f.ai
+		if f.analyzer == nil {
+			continue
+		}
+		result.OwnedLines += len(f.owned)
+		result.AILines += len(f.ai)
+		ai[f.file.Path] = f.ai
+		for _, commit := range f.owned {
+			if t := tools[commit]; len(t) > 0 {
+				result.MarkedLines++
+				for _, name := range t {
+					result.MarkedByTool[name]++
+				}
+			}
 		}
 	}
 	byAnalyzer := map[Analyzer][]ownedFile{}
@@ -150,7 +173,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 func run(ctx context.Context, name string, group []ownedFile,
 	analyze func(context.Context, []File) ([]Finding, error)) (LanguageResult, error) {
 	lr := LanguageResult{Language: name, Files: len(group)}
-	owned := map[string]map[int]bool{}
+	owned := map[string]map[int]string{}
 	inputs := make([]File, 0, len(group))
 	for _, f := range group {
 		inputs = append(inputs, f.file)
@@ -162,7 +185,7 @@ func run(ctx context.Context, name string, group []ownedFile,
 		return lr, fmt.Errorf("%s analyzer: %w", name, err)
 	}
 	for _, fd := range findings {
-		if owned[fd.Path][fd.Line] {
+		if owned[fd.Path][fd.Line] != "" {
 			lr.Findings = append(lr.Findings, fd)
 		}
 	}
@@ -251,13 +274,13 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 }
 
 // agentWritten returns the owned lines whose normalized text an agent wrote.
-func agentWritten(content []byte, owned map[int]bool, agent map[string]bool) map[int]bool {
+func agentWritten(content []byte, owned map[int]string, agent map[string]bool) map[int]bool {
 	ai := map[int]bool{}
 	if len(agent) == 0 {
 		return ai
 	}
 	for i, line := range strings.Split(string(content), "\n") {
-		if owned[i+1] && agent[strings.TrimSpace(line)] {
+		if owned[i+1] != "" && agent[strings.TrimSpace(line)] {
 			ai[i+1] = true
 		}
 	}

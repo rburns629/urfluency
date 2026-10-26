@@ -27,8 +27,8 @@ func TestOwnedLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := map[int]bool{2: true, 4: true}; !reflect.DeepEqual(got, want) {
-		t.Errorf("owned lines = %v, want %v", got, want)
+	if want := map[int]string{2: head, 4: head}; !reflect.DeepEqual(got, want) {
+		t.Errorf("owned lines = %v, want lines 2 and 4 from %s", got, head)
 	}
 
 	since := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
@@ -80,5 +80,36 @@ func TestTrackedFilesListsOnlyCommittedRegularFiles(t *testing.T) {
 	}
 	if want := []string{"a.go"}; !reflect.DeepEqual(files, want) {
 		t.Errorf("files = %v, want %v", files, want)
+	}
+}
+
+func TestCommits(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a.txt": "1"})
+	if err := os.WriteFile(filepath.Join(r.Dir, "a.txt"), []byte("2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.Git("me@example.com", "", "commit", "-qam", "Add retry\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nCo-authored-by: Pat <pat@example.com>")
+	r.Commit("other@example.com", "", map[string]string{"b.txt": "x"})
+
+	commits, err := gitdata.Repo{Dir: r.Dir}.Commits(context.Background(), []string{"ME@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("commits = %+v, want the two by me@example.com", commits)
+	}
+	var coAuthors [][]string
+	for _, c := range commits {
+		if c.AuthorName != "Test" {
+			t.Errorf("author = %q", c.AuthorName)
+		}
+		if len(c.CoAuthors) > 0 {
+			coAuthors = append(coAuthors, c.CoAuthors)
+		}
+	}
+	want := [][]string{{"Claude <noreply@anthropic.com>", "Pat <pat@example.com>"}}
+	if !reflect.DeepEqual(coAuthors, want) {
+		t.Errorf("co-authors = %v, want %v", coAuthors, want)
 	}
 }

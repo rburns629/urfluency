@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -79,9 +80,10 @@ func (r Repo) Show(ctx context.Context, rev, path string) ([]byte, error) {
 	return r.git(ctx, "show", "--no-textconv", rev+":"+path)
 }
 
-// OwnedLines returns the 1-based line numbers of path at rev whose blamed author
-// email is in emails and whose author time is not before since.
-func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string, since time.Time) (map[int]bool, error) {
+// OwnedLines maps the 1-based line numbers of path at rev whose blamed author
+// email is in emails, and whose author time is not before since, to the commit
+// that last changed them.
+func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string, since time.Time) (map[int]string, error) {
 	out, err := r.git(ctx, "blame", "--line-porcelain", "-w", "-M", "-C", "--no-textconv", rev, "--", path)
 	if err != nil {
 		return nil, err
@@ -90,9 +92,9 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 	for _, e := range emails {
 		wanted[strings.ToLower(e)] = true
 	}
-	owned := map[int]bool{}
+	owned := map[int]string{}
 	var line int
-	var email string
+	var commit, email string
 	var authored time.Time
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
@@ -101,7 +103,7 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 		switch {
 		case strings.HasPrefix(text, "\t"):
 			if wanted[email] && !authored.Before(since) {
-				owned[line] = true
+				owned[line] = commit
 			}
 		case strings.HasPrefix(text, "author-mail "):
 			email = strings.ToLower(strings.Trim(strings.TrimPrefix(text, "author-mail "), "<>"))
@@ -120,7 +122,7 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 				if err != nil {
 					return nil, fmt.Errorf("parse blame line number: %w", err)
 				}
-				line = n
+				commit, line = fields[0], n
 			}
 		}
 	}
@@ -128,6 +130,44 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 		return nil, fmt.Errorf("read blame output: %w", err)
 	}
 	return owned, nil
+}
+
+// Commit is what urFluency reads about a commit: its author name and the values
+// of its Co-authored-by trailers.
+type Commit struct {
+	AuthorName string
+	CoAuthors  []string
+}
+
+// Commits returns the non-merge commits reachable from HEAD whose author email is
+// one of emails, keyed by hash.
+func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, error) {
+	args := []string{"log", "--no-merges", "--regexp-ignore-case",
+		"--format=%H%x1f%an%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d"}
+	for _, e := range emails {
+		args = append(args, "--author="+regexp.QuoteMeta(e))
+	}
+	out, err := r.git(ctx, append(args, "HEAD")...)
+	if err != nil {
+		return nil, err
+	}
+	commits := map[string]Commit{}
+	for _, rec := range strings.Split(string(out), "\x1d") {
+		fields := strings.SplitN(strings.TrimSpace(rec), "\x1f", 3)
+		if len(fields) < 2 {
+			continue
+		}
+		c := Commit{AuthorName: fields[1]}
+		if len(fields) == 3 {
+			for _, v := range strings.Split(fields[2], "\x1e") {
+				if v = strings.TrimSpace(v); v != "" {
+					c.CoAuthors = append(c.CoAuthors, v)
+				}
+			}
+		}
+		commits[fields[0]] = c
+	}
+	return commits, nil
 }
 
 func isHex(s string) bool {

@@ -2,6 +2,9 @@ package analysis_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +132,40 @@ func TestMergeCombinesRepositories(t *testing.T) {
 	}
 	if ts := m.Languages[1]; ts.Frameworks[0] != "react" {
 		t.Errorf("typescript = %+v", ts)
+	}
+}
+
+func TestScanCountsLinesFromAIMarkedCommits(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a/a.go": "package a\n"})
+	if err := os.WriteFile(filepath.Join(r.Dir, "a/a.go"), []byte("package a\n\nfunc f() {}\nfunc g() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.Git("me@example.com", "", "commit", "-qam", "Add f and g\n\nCo-Authored-By: Claude Opus <noreply@anthropic.com>")
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OwnedLines != 4 || res.MarkedLines != 3 || res.MarkedByTool["claude"] != 3 {
+		t.Errorf("owned %d, marked %d, by tool %v; want 4, 3, claude 3", res.OwnedLines, res.MarkedLines, res.MarkedByTool)
+	}
+}
+
+func TestAITools(t *testing.T) {
+	tests := []struct {
+		commit gitdata.Commit
+		want   []string
+	}{
+		{gitdata.Commit{AuthorName: "Robert", CoAuthors: []string{"Claude Opus 5.5 <noreply@anthropic.com>"}}, []string{"claude"}},
+		{gitdata.Commit{AuthorName: "Robert (aider)"}, []string{"aider"}},
+		{gitdata.Commit{CoAuthors: []string{"Copilot <198982749+Copilot@users.noreply.github.com>", "Cursor Agent <cursoragent@cursor.com>"}}, []string{"copilot", "cursor"}},
+		{gitdata.Commit{CoAuthors: []string{"Codex <codex@openai.com>"}}, []string{"codex"}},
+		// People who share a tool's name are not tools.
+		{gitdata.Commit{AuthorName: "Claude Monet", CoAuthors: []string{"Claude Shannon <claude@example.com>", "Cursor Smith <cs@example.com>"}}, []string{}},
+	}
+	for _, tt := range tests {
+		if got := analysis.AITools(tt.commit); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("AITools(%+v) = %v, want %v", tt.commit, got, tt.want)
+		}
 	}
 }

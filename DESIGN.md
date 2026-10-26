@@ -114,11 +114,20 @@ reasoning in clean-agent-code's AUDIT.md.
 
 - Authorship comes from commits matching the user's verified GitHub emails; the
   attested tiers count only signed commits.
-- AI-written code cannot be told apart from the code itself. With `--sessions`, the
-  CLI matches owned lines against lines agents added in local agent
-  sessions in the same file. The share is a lower bound (inline completions, pasted
-  code, and deleted transcripts are missing) and is shown as context, never scored
-  or counted against anyone. Publishing it is a separate opt-in.
+- AI-written code cannot be told apart from the code itself. Two sources bound it,
+  both shown as context, never scored or counted against anyone; publishing them is
+  a separate opt-in:
+  - **Commit trailers** (every scan): owned lines from commits whose
+    `Co-authored-by` trailers name a coding tool by its email domain or identity
+    (`@anthropic.com`, `@openai.com`, `@cursor.com`, the GitHub `Copilot` user, or
+    "(aider)" in the author name). Works for any tool and machine, but marks whole
+    commits, so it overstates the line share, and trailers can be turned off.
+  - **Sessions** (`--sessions`): owned lines matching lines agents added in local
+    sessions in the same file. Line-level, but a lower bound: inline completions,
+    pasted code, and deleted transcripts are missing.
+
+  On the author's projects (2026-10-26) the two gave 29% (sessions) and 53%
+  (trailers) of 136,794 owned code lines.
 - Prompting signals depend on task type; a bug with an evident symptom needs little
   specification, so signals are grouped by task type.
 
@@ -183,8 +192,8 @@ urfluency logout
   | Cursor, Gemini CLI, Aider, Cline, Continue, opencode | Tool-specific | Not yet; local models are covered through the tool that runs them |
 
   Copilot inline completions are not logged locally, so the AI-written share
-  undercounts code from them. Commit trailers (for example `Co-Authored-By`) are a
-  planned tool-independent signal.
+  undercounts code from them. Commit trailers give a tool-independent signal
+  (see Measurement limits).
 
   Each prompt is reduced to signals while parsing; its text is never kept,
   printed, or uploaded. Subagent
@@ -395,7 +404,7 @@ repository owner has published.
    badges.
 4. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
    Code, outcome-based grading, and AI-written share (local CLI done); Copilot CLI,
-   Cursor, Gemini CLI, and commit trailers next.
+   Cursor, and Gemini CLI next. Commit-trailer detection done.
 5. **Repository connections:** GitHub App for public repos; Action with OIDC for
    private repos.
 6. **More languages and dynamic scanning.**

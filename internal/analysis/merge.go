@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts)}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -16,6 +16,10 @@ func Merge(labels []string, parts []Result) Result {
 		out.AILines += p.AILines
 		out.AIFindings += p.AIFindings
 		out.Findings += p.Findings
+		out.MarkedLines += p.MarkedLines
+		for tool, n := range p.MarkedByTool {
+			out.MarkedByTool[tool] += n
+		}
 		for _, lr := range p.Languages {
 			m := byLanguage[lr.Language]
 			if m == nil {

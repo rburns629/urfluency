@@ -110,15 +110,20 @@ func TestBuildPrompting(t *testing.T) {
 }
 
 func TestBuildAI(t *testing.T) {
-	a := BuildAI(analysis.Result{OwnedLines: 1000, AILines: 250, Findings: 10, AIFindings: 1})
-	if a.Share != 0.25 || a.AIFindingsPerK != 4 || a.OtherFindingsPerK != 12 {
+	res := analysis.Result{OwnedLines: 1000, AILines: 250, Findings: 10, AIFindings: 1, MarkedLines: 600, MarkedByTool: map[string]int{"claude": 600}}
+	if a := BuildAI(res, false); a.MarkedShare != 0.6 || a.Sessions || a.AILines != 0 {
+		t.Errorf("without sessions: %+v", a)
+	}
+	a := BuildAI(res, true)
+	if a.Share != 0.25 || a.AIFindingsPerK != 4 || a.OtherFindingsPerK != 12 || a.MarkedByTool["claude"] != 600 {
 		t.Errorf("ai = %+v", a)
 	}
 	var b strings.Builder
 	if err := WriteText(&b, Report{Repos: 2, AI: a, Prompting: BuildPrompting(sessions.Grades{})}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2 repositories", "at least 250 of 1000 owned code lines (25%)", "not a score", "No code-change tasks"} {
+	for _, want := range []string{"2 repositories", "From commits marked AI-assisted: 600 lines (60%): claude 600",
+		"local sessions: at least 250 lines (25%)", "not a score", "No code-change tasks"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
 		}

@@ -159,9 +159,9 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	res := analysis.Merge(labels, parts)
 	r := report.Build(res, since, *locations)
+	r.AI = report.BuildAI(res, *withSessions)
 	if *withSessions {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
-		r.AI = report.BuildAI(res)
 	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)

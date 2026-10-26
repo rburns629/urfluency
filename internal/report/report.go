@@ -57,14 +57,19 @@ type PromptRule struct {
 	Focus      string  `json:"focus"`
 }
 
-// AIShare is the owned code an agent wrote, as far as local sessions show. It is
-// context, not a score: it is a lower bound and never counts against anyone.
+// AIShare is how much owned code came from coding agents. It is context, not a
+// score, and never counts against anyone. Sessions give a line-level lower bound;
+// commit trailers mark whole commits, so their share runs higher.
 type AIShare struct {
-	OwnedLines        int     `json:"owned_lines"`
-	AILines           int     `json:"ai_written_lines"`
-	Share             float64 `json:"share"`
-	AIFindingsPerK    float64 `json:"findings_per_1000_ai_lines"`
-	OtherFindingsPerK float64 `json:"findings_per_1000_other_lines"`
+	OwnedLines        int            `json:"owned_lines"`
+	MarkedLines       int            `json:"lines_from_ai_marked_commits"`
+	MarkedShare       float64        `json:"marked_share"`
+	MarkedByTool      map[string]int `json:"marked_lines_by_tool"`
+	Sessions          bool           `json:"sessions_read"`
+	AILines           int            `json:"ai_written_lines,omitempty"`
+	Share             float64        `json:"share,omitempty"`
+	AIFindingsPerK    float64        `json:"findings_per_1000_ai_lines,omitempty"`
+	OtherFindingsPerK float64        `json:"findings_per_1000_other_lines,omitempty"`
 }
 
 // Language summarizes one language.
@@ -209,9 +214,20 @@ func BuildPrompting(g sessions.Grades) *Prompting {
 	return p
 }
 
-// BuildAI summarizes how much owned code agents wrote.
-func BuildAI(res analysis.Result) *AIShare {
-	a := &AIShare{OwnedLines: res.OwnedLines, AILines: res.AILines}
+// BuildAI summarizes how much owned code came from coding agents. Session-based
+// fields are filled only when sessions were read.
+func BuildAI(res analysis.Result, sessionsRead bool) *AIShare {
+	a := &AIShare{OwnedLines: res.OwnedLines, MarkedLines: res.MarkedLines, MarkedByTool: map[string]int{}, Sessions: sessionsRead}
+	for tool, n := range res.MarkedByTool {
+		a.MarkedByTool[tool] = n
+	}
+	if res.OwnedLines > 0 {
+		a.MarkedShare = round2(float64(res.MarkedLines) / float64(res.OwnedLines))
+	}
+	if !sessionsRead {
+		return a
+	}
+	a.AILines = res.AILines
 	if res.OwnedLines > 0 {
 		a.Share = round2(float64(res.AILines) / float64(res.OwnedLines))
 	}
@@ -267,13 +283,25 @@ func WriteText(w io.Writer, r Report) error {
 	if p := r.Prompting; p != nil {
 		writePrompting(&b, p)
 	}
-	if a := r.AI; a != nil {
-		fmt.Fprintf(&b, "\nAI-WRITTEN CODE: at least %d of %d owned code lines (%.0f%%)\n", a.AILines, a.OwnedLines, a.Share*100)
-		if a.AILines > 0 {
-			fmt.Fprintf(&b, "  Findings per 1,000 lines: AI-written %.2f, other %.2f\n", a.AIFindingsPerK, a.OtherFindingsPerK)
+	if a := r.AI; a != nil && a.OwnedLines > 0 {
+		fmt.Fprintf(&b, "\nAI-ASSISTED CODE (context only, not a score) in %d owned code lines\n", a.OwnedLines)
+		fmt.Fprintf(&b, "  From commits marked AI-assisted: %d lines (%.0f%%)", a.MarkedLines, a.MarkedShare*100)
+		if len(a.MarkedByTool) > 0 {
+			tools := make([]string, 0, len(a.MarkedByTool))
+			for t, n := range a.MarkedByTool {
+				tools = append(tools, fmt.Sprintf("%s %d", t, n))
+			}
+			sort.Strings(tools)
+			fmt.Fprintf(&b, ": %s", strings.Join(tools, ", "))
 		}
-		b.WriteString("  Context only, not a score. Counts code from agent sessions still on this machine;\n" +
-			"  inline completions, pasted code, and deleted sessions are not included.\n")
+		b.WriteString("\n    A marked commit can also contain your own lines; unmarked commits may still be AI-assisted.\n")
+		if a.Sessions {
+			fmt.Fprintf(&b, "  Written by an agent in local sessions: at least %d lines (%.0f%%)\n", a.AILines, a.Share*100)
+			if a.AILines > 0 {
+				fmt.Fprintf(&b, "    Findings per 1,000 lines: agent-written %.2f, other %.2f\n", a.AIFindingsPerK, a.OtherFindingsPerK)
+			}
+			b.WriteString("    Counts sessions still on this machine; inline completions and pasted code are not included.\n")
+		}
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

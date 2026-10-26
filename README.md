@@ -34,13 +34,17 @@ The scan analyzes only lines that `git blame` attributes to your emails at the
 latest commit, never runs the repository's code, and writes nothing to disk.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
-`--sessions` also reads your local Claude Code, Codex, and GitHub Copilot Chat (VS Code)
-sessions for the scanned
-repositories. It grades each agent task on what happened (were code changes tested
-or checked, and did the task need a correction), with strengths, weaknesses, and
-points of focus, using fixed local rules and no model call. It also reports how much of your owned
-code agents wrote. That share is context, not a score, and is a lower bound. Prompt
-text is reduced to signals as it is read and is never stored, printed, or uploaded.
+Every scan reports how many of your owned code lines come from commits marked
+AI-assisted by their trailers (such as `Co-Authored-By: Claude`), by tool. This is
+context, not a score: a marked commit can include your own lines.
+
+`--sessions` also reads your local Claude Code, Codex, and GitHub Copilot Chat
+(VS Code) sessions for the scanned repositories. It grades each agent task on what
+happened (were code changes tested or checked, and did the task need a correction),
+with strengths, weaknesses, and points of focus, using fixed local rules and no model
+call. It also reports the lines agents provably wrote, a lower bound next to the
+commit-based share. Prompt text is reduced to signals as it is read and is never
+stored, printed, or uploaded.
 
 Prompting rules ship already validated: a rule is graded only if it reflects what
 actually happened in sessions. Maintainers check candidate rules with
