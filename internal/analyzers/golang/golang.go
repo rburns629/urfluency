@@ -66,13 +66,14 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 }
 
 type checker struct {
-	fset     *token.FileSet
-	path     string
-	file     *ast.File
-	info     *types.Info
-	imports  map[string]string // local name -> import path
-	findings []analysis.Finding
-	reported map[string]bool
+	fset       *token.FileSet
+	path       string
+	file       *ast.File
+	info       *types.Info
+	imports    map[string]string // local name -> import path
+	waitGroups map[types.Object]bool
+	findings   []analysis.Finding
+	reported   map[string]bool
 }
 
 // report records one finding per rule and position; nested loops would otherwise
@@ -93,6 +94,7 @@ func (c *checker) run() {
 	isTest := strings.HasSuffix(c.path, "_test.go")
 	library := c.file.Name.Name != "main"
 	checkedAsserts := map[*ast.TypeAssertExpr]bool{}
+	c.waitGroups = c.collectWaitGroups()
 
 	// Two-value assertions are safe; mark them before visiting.
 	ast.Inspect(c.file, func(n ast.Node) bool {
@@ -123,6 +125,7 @@ func (c *checker) run() {
 			continue
 		}
 		allowPanic := !library || isTest || fn.Name.Name == "init" || strings.HasPrefix(fn.Name.Name, "Must")
+		c.checkSendLeak(fn.Body)
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SwitchStmt:
@@ -131,10 +134,24 @@ func (c *checker) run() {
 				c.checkEmptyCases(n.Body)
 			case *ast.ForStmt:
 				c.checkDecodeReuse(n.Pos(), n.Body)
+				c.checkIterator(n)
 			case *ast.RangeStmt:
 				c.checkDecodeReuse(n.Pos(), n.Body)
+			case *ast.BlockStmt:
+				c.checkWaitGroupAdd(n)
+			case *ast.GoStmt:
+				c.checkGoStmt(n)
+			case *ast.FuncLit:
+				c.checkSendLeak(n.Body)
+			case *ast.AssignStmt:
+				if !isTest {
+					c.checkIgnoredError(n)
+				}
 			case *ast.ExprStmt:
 				c.checkDiscarded(n)
+				if !isTest {
+					c.checkIgnoredError(n)
+				}
 			case *ast.TypeAssertExpr:
 				if n.Type != nil && !checkedAsserts[n] && !isTest {
 					c.report("go.unchecked-type-assertion", n.Pos())
@@ -228,16 +245,7 @@ func (c *checker) checkDiscarded(stmt *ast.ExprStmt) {
 	if !ok {
 		return
 	}
-	path := c.imports[pkg.Name]
-	switch obj := c.info.Uses[pkg].(type) {
-	case *types.PkgName:
-		path = obj.Imported().Path()
-	case nil:
-		// Unresolved; fall back to the file's import names.
-	default:
-		return // a local variable or field shadows the package name
-	}
-	switch path {
+	switch c.pkgPath(pkg) {
 	case "fmt":
 		switch sel.Sel.Name {
 		case "Errorf", "Sprintf", "Sprint", "Sprintln":

@@ -1,0 +1,74 @@
+package report
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rburns629/urfluency/internal/analysis"
+	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
+)
+
+func result(owned int, rules ...string) analysis.Result {
+	lr := analysis.LanguageResult{Language: "go", Files: 2, OwnedLines: owned}
+	for i, r := range rules {
+		lr.Findings = append(lr.Findings, analysis.Finding{Rule: r, Path: "a.go", Line: i + 1})
+	}
+	return analysis.Result{Head: "0123456789abcdef0123", Languages: []analysis.LanguageResult{lr}}
+}
+
+func TestBuildRanksWeaknessesAndFindsStrengths(t *testing.T) {
+	res := result(500,
+		"go.ignored-error", "go.ignored-error", "go.ignored-error",
+		"go.unchecked-type-assertion", "go.unchecked-type-assertion",
+		"go.panic-outside-main", "unknown.rule")
+	r := Build(res, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), true)
+
+	if r.Commit != "0123456789ab" || r.Since != "2026-01-01" || r.Format != FormatVersion {
+		t.Errorf("header = %+v", r)
+	}
+	l := r.Languages[0]
+	if !l.Sufficient {
+		t.Error("500 owned lines should be sufficient")
+	}
+	if want := []string{"go.ignored-error", "go.unchecked-type-assertion", "go.panic-outside-main"}; !reflect.DeepEqual(l.Focus, want) {
+		t.Errorf("focus = %v, want %v", l.Focus, want)
+	}
+	if w := l.Weaknesses[0]; w.Count != 3 || w.PerKLines != 6 || len(w.Locations) != 3 || w.Why == "" {
+		t.Errorf("top weakness = %+v", w)
+	}
+	if l.Categories["clean-code"] != 4 || l.Categories["type-safety"] != 2 {
+		t.Errorf("categories = %v", l.Categories)
+	}
+	if len(l.Strengths) != 1 || !strings.Contains(l.Strengths[0], "language-proficiency") {
+		t.Errorf("strengths = %v, want only language-proficiency", l.Strengths)
+	}
+}
+
+func TestBuildWithoutLocationsOrEnoughData(t *testing.T) {
+	r := Build(result(100, "go.ignored-error"), time.Now(), false)
+	l := r.Languages[0]
+	if l.Sufficient || len(l.Strengths) != 0 {
+		t.Errorf("100 lines should not produce strengths: %+v", l)
+	}
+	if len(l.Weaknesses[0].Locations) != 0 {
+		t.Error("locations included without request")
+	}
+}
+
+func TestWriteText(t *testing.T) {
+	var b strings.Builder
+	if err := WriteText(&b, Build(result(500, "go.ignored-error"), time.Now(), true)); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"GO: 500 owned lines", "Strengths", "Areas to improve", "Why:", "Focus:", "at a.go:1", "Points of focus: go.ignored-error"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, b.String())
+		}
+	}
+	b.Reset()
+	if err := WriteText(&b, Report{}); err != nil || !strings.Contains(b.String(), "No owned lines") {
+		t.Errorf("empty report output = %q, %v", b.String(), err)
+	}
+}
