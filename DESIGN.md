@@ -177,7 +177,7 @@ urfluency logout
   | Agent | Location | Status |
   | --- | --- | --- |
   | Claude Code | `~/.claude/projects/*/*.jsonl` (`CLAUDE_CONFIG_DIR`) | Supported, checked against real sessions |
-  | Codex (OpenAI or local models) | `~/.codex/sessions/**/rollout-*.jsonl` (`CODEX_HOME`) | Supported, including code-mode `exec` scripts; checked against real sessions without patches, so patch parsing is tested on fixtures only |
+  | Codex (OpenAI or local models) | `~/.codex/sessions/**/rollout-*.jsonl` (`CODEX_HOME`) | Supported, including code-mode `exec` scripts; checked against real sessions without patches, so patch parsing is tested on fixtures only. Models from local providers are labeled `lmstudio/<model>` or `ollama/<model>`; this labeling is tested on fixtures only (a local LM Studio run was too slow to complete on the development machine) |
   | GitHub Copilot Chat in VS Code | `<VS Code user dir>/workspaceStorage/*/chatSessions/*.json[l]`, folder from `workspace.json` | Supported for the JSON document and JSONL operation-log formats; checked against real sessions |
   | GitHub Copilot CLI | `~/.copilot/session-state/<id>/events.jsonl` | Not yet: no real sessions to check against |
   | Cursor, Gemini CLI, Aider, Cline, Continue, opencode | Tool-specific | Not yet; local models are covered through the tool that runs them |
