@@ -130,6 +130,8 @@ reasoning in clean-agent-code's AUDIT.md.
   (trailers) of 136,794 owned code lines.
 - Prompting signals depend on task type; a bug with an evident symptom needs little
   specification, so signals are grouped by task type.
+- Architecture and clean code involve judgment; model-assisted review is optional,
+  runs with the user's own or employer-approved model provider, and is labeled.
 
 ### Prompting validation
 
@@ -156,8 +158,41 @@ mostly long conversations where follow-ups inherit context; corrections are rare
 (about 1%) and detected by keywords; harder tasks need more searching regardless.
 Re-run validation across opted-in users' aggregate counts before reconsidering
 these signals.
-- Architecture and clean code involve judgment; model-assisted review is optional,
-  runs with the user's own or employer-approved model provider, and is labeled.
+
+### Deep review (model-assessed, opt-in; drafted, not built)
+
+Some prompting skills need reading, not counting: whether intent was clear,
+whether the right context was given, whether the user managed the agent well. A
+deep review asks a model to judge them with the rubric in
+[`internal/review/prompt.md`](internal/review/prompt.md), returning JSON that
+matches [`internal/review/schema.json`](internal/review/schema.json).
+
+- **Division of labor.** urFluency measures outcomes (checks run, corrections,
+  findings on agent-written lines) and code quality itself, and hands them to the
+  model as facts. The model judges four competencies only: intent, context,
+  verification, and agent management, in bands (strong, solid, developing, focus
+  area, not assessable), per session and overall. No overall score, rank, or
+  comparison with other people.
+- **Privacy.** This is the one feature that sends prompt text off the machine, so
+  it runs only on explicit request, with the user's own API key or a local model.
+  Before sending, the CLI removes injected editor blocks, redacts anything the
+  secrets scanner matches, truncates each user turn to 2,000 characters and each
+  agent excerpt to 400, and includes only sessions for the scanned repositories (at
+  most 20, most recent first). The full result stays local; at most the overall
+  bands are published, labeled "model-assessed".
+- **Injection.** Sessions and repository files are untrusted. The rubric treats the
+  packet as data, and the result flags sessions that appear to address the
+  evaluator.
+- **Versioning.** Results record the rubric version and model; trends compare only
+  results with the same pair.
+- **Validation before release**, the same rule as other prompting rules:
+  1. Repeatability: the same packets reviewed twice by the same model agree on at
+     least 80% of session bands, and two different models on at least 70%.
+  2. Prediction: per-session bands track urFluency's outcomes, for example
+     sessions banded `focus_area` for intent show more corrections and follow-ups,
+     and `strong` verification sessions show more checked changes.
+  Competencies that fail either test are not shown. Token use and cost are measured
+  on the first validation run.
 
 ## CLI
 

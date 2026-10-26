@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "urFluency deep review result (rubric 0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rubric", "coverage", "sessions", "overall", "strengths", "improvements"],
+  "$defs": {
+    "band": {"enum": ["strong", "solid", "developing", "focus_area", "not_assessable"]},
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "turn"],
+      "properties": {"session": {"type": "string"}, "turn": {"type": "integer", "minimum": 1}}
+    },
+    "note": {"type": "string", "maxLength": 240},
+    "bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intent", "context", "verification", "agent_management"],
+      "properties": {
+        "intent": {"$ref": "#/$defs/band"},
+        "context": {"$ref": "#/$defs/band"},
+        "verification": {"$ref": "#/$defs/band"},
+        "agent_management": {"$ref": "#/$defs/band"}
+      }
+    }
+  },
+  "properties": {
+    "rubric": {"const": "0.1"},
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions_reviewed", "turns_reviewed", "not_assessable"],
+      "properties": {
+        "sessions_reviewed": {"type": "integer", "minimum": 0},
+        "turns_reviewed": {"type": "integer", "minimum": 0},
+        "not_assessable": {"type": "array", "items": {"enum": ["intent", "context", "verification", "agent_management"]}}
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "bands", "possible_injection"],
+        "properties": {
+          "id": {"type": "string"},
+          "bands": {"$ref": "#/$defs/bands"},
+          "possible_injection": {"type": "boolean"}
+        }
+      }
+    },
+    "overall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bands", "confidence", "evidence"],
+      "properties": {
+        "bands": {"$ref": "#/$defs/bands"},
+        "confidence": {"enum": ["high", "medium", "low"]},
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["competency", "refs", "note"],
+            "properties": {
+              "competency": {"enum": ["intent", "context", "verification", "agent_management"]},
+              "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ref"}},
+              "note": {"$ref": "#/$defs/note"}
+            }
+          }
+        }
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["competency", "behavior", "refs"],
+        "properties": {
+          "competency": {"enum": ["intent", "context", "verification", "agent_management"]},
+          "behavior": {"$ref": "#/$defs/note"},
+          "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ref"}}
+        }
+      }
+    },
+    "improvements": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["competency", "behavior", "why", "better_pattern", "refs"],
+        "properties": {
+          "competency": {"enum": ["intent", "context", "verification", "agent_management"]},
+          "behavior": {"$ref": "#/$defs/note"},
+          "why": {"$ref": "#/$defs/note"},
+          "better_pattern": {"$ref": "#/$defs/note"},
+          "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/ref"}}
+        }
+      }
+    }
+  }
+}
