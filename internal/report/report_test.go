@@ -89,20 +89,23 @@ func TestWriteText(t *testing.T) {
 
 func TestBuildPrompting(t *testing.T) {
 	g := sessions.Grades{Sessions: 3, Tasks: map[string]int{"feature": 6, "bug": 4}, Rules: map[string]sessions.Tally{
-		"prompt.no-acceptance-criteria": {Applicable: 6, Missed: 4},
-		"prompt.no-context":             {Applicable: 10, Missed: 1},
-		"prompt.no-verification":        {Applicable: 3, Missed: 3}, // too few tasks to judge
-		"prompt.needed-correction":      {Applicable: 10, Missed: 5},
+		"prompt.unverified-change": {Applicable: 8, Missed: 5},
+		"prompt.needed-correction": {Applicable: 10, Missed: 1},
+		"prompt.retired-rule":      {Applicable: 10, Missed: 9}, // not in the catalog, so ignored
 	}}
 	p := BuildPrompting(g)
-	if len(p.Rules) != 4 || len(p.Weaknesses) != 2 || p.Weaknesses[0].ID != "prompt.no-acceptance-criteria" || p.Weaknesses[0].Share != 0.67 {
+	if len(p.Rules) != 2 || len(p.Weaknesses) != 1 || p.Weaknesses[0].ID != "prompt.unverified-change" || p.Weaknesses[0].Share != 0.63 {
 		t.Errorf("weaknesses = %+v", p.Weaknesses)
 	}
 	if len(p.Strengths) != 1 || !strings.Contains(p.Strengths[0], "1 of 10") {
 		t.Errorf("strengths = %v", p.Strengths)
 	}
-	if !reflect.DeepEqual(p.Focus, []string{"prompt.no-acceptance-criteria", "prompt.needed-correction"}) {
+	if !reflect.DeepEqual(p.Focus, []string{"prompt.unverified-change"}) {
 		t.Errorf("focus = %v", p.Focus)
+	}
+	small := BuildPrompting(sessions.Grades{Rules: map[string]sessions.Tally{"prompt.unverified-change": {Applicable: 3, Missed: 3}}})
+	if len(small.Weaknesses) != 0 {
+		t.Errorf("too few tasks should not be judged: %+v", small.Weaknesses)
 	}
 }
 

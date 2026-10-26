@@ -35,7 +35,7 @@ func TestScanJSON(t *testing.T) {
 	r := testutil.NewRepo(t)
 	r.Commit("me@example.com", "", map[string]string{"a.go": "package a\n\nfunc f() { panic(1) }\n"})
 	var out, errOut bytes.Buffer
-	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", r.Dir}, nil, &out, &errOut)
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", r.Dir}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
@@ -56,7 +56,7 @@ func TestScanJSON(t *testing.T) {
 
 func TestUsageErrors(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if code := Run(context.Background(), []string{"bogus"}, nil, &out, &errOut); code != 2 {
+	if code := Run(context.Background(), []string{"bogus"}, &out, &errOut); code != 2 {
 		t.Errorf("exit %d, want 2", code)
 	}
 	if !strings.Contains(errOut.String(), "unknown command") {
@@ -95,7 +95,7 @@ func TestScanFolderWithSessions(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", "--sessions", root}, nil, &out, &errOut)
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--locations", "--sessions", root}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
@@ -114,69 +114,29 @@ func TestScanFolderWithSessions(t *testing.T) {
 	}
 }
 
-func TestCalibrate(t *testing.T) {
-	repo := testutil.NewRepo(t)
-	repo.Commit("me@example.com", "", map[string]string{"a.go": "package a\n"})
-	claude := t.TempDir()
-	t.Setenv("CLAUDE_CONFIG_DIR", claude)
-	t.Setenv("CODEX_HOME", t.TempDir())
-	transcript := `{"type":"user","cwd":"` + repo.Dir + `","timestamp":"` + time.Now().UTC().Format(time.RFC3339) + `","message":{"content":"<ide_opened_file>a.go</ide_opened_file> Fix the crash in parser.go on empty input"}}
-{"type":"user","message":{"content":"yes"}}
-`
-	path := filepath.Join(claude, "projects", "-a", "s.jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(transcript), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var out, errOut bytes.Buffer
-	// An invalid answer is asked again, u returns from the first question to the
-	// type, and the final answers (bug, context yes, no verification) match the rules.
-	code := Run(context.Background(), []string{"calibrate", repo.Dir}, strings.NewReader("x\n1\nu\n1\ny\nn\n"), &out, &errOut)
-	if code != 0 {
-		t.Fatalf("exit %d: %s", code, errOut.String())
-	}
-	got := out.String()
-	flat := strings.Join(strings.Fields(got), " ")
-	for _, want := range []string{"Prompt 1 of 1", "Fix the crash in parser.go", "Please enter 1-5", "What is this prompt asking for?",
-		"Does it point to specific code?", "1 prompts labeled", "context 1/1 100% 0 0", "criteria not asked", "verification 1/1 100% 0 0", "task type 1/1 100%"} {
-		if !strings.Contains(flat, want) {
-			t.Errorf("output missing %q:\n%s", want, got)
-		}
-	}
-	if strings.Contains(got, `Does it say what "done"`) {
-		t.Error("the done question was asked for a bug fix")
-	}
-	if strings.Contains(got, "ide_opened_file") {
-		t.Error("injected editor block was shown")
-	}
-}
-
-func TestWriteAgreement(t *testing.T) {
-	rules := []sessions.Prompt{{Type: "bug", Context: true}, {Type: "feature"}}
-	labels := []label{
-		{typ: "bug", answers: map[string]bool{"context": false, "verification": false}},
-		{typ: "refactor", answers: map[string]bool{"context": false, "criteria": true, "verification": false}},
+func TestWriteValidation(t *testing.T) {
+	tasks := []sessions.Task{
+		{Prompt: sessions.Prompt{Type: "feature", Context: true}, Edits: 2, ExploresBeforeEdit: 1, Checks: 1},
+		{Prompt: sessions.Prompt{Type: "feature", Context: true}, Edits: 1, ExploresBeforeEdit: 3},
+		{Prompt: sessions.Prompt{Type: "bug"}, Edits: 1, ExploresBeforeEdit: 8, Corrected: true, FollowUps: 3},
+		{Prompt: sessions.Prompt{Type: "other", Context: true}}, // not a code task
 	}
 	var b strings.Builder
-	if err := writeAgreement(&b, rules, labels); err != nil {
+	if err := writeValidation(&b, 2, tasks); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.Join(strings.Fields(b.String()), " ")
-	for _, want := range []string{"context 1/2 50% 1 0", "criteria 0/1 0% 0 1", "verification 2/2 100% 0 0", "task type 1/2 50%", "you said refactor, rules said feature: 1"} {
+	for _, want := range []string{
+		"4 tasks in 2 sessions",
+		"context: 2 tasks with the signal, 1 without",
+		"needed a correction 0% 100%",
+		"follow-up prompts per task 0.0 3.0",
+		"reads and searches before first edit 2.0 8.0",
+		"code changes checked or tested 50% 0%",
+		"criteria: 0 tasks with the signal, 2 without",
+	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("summary missing %q:\n%s", want, b.String())
-		}
-	}
-}
-
-func TestHelpDocumentsCalibrateAnswers(t *testing.T) {
-	var out bytes.Buffer
-	Run(context.Background(), []string{"help"}, nil, &out, &out)
-	for _, want := range []string{"urfluency calibrate", "--sample N", "What is it asking for?", "u goes back"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("help missing %q", want)
+			t.Errorf("missing %q in:\n%s", want, b.String())
 		}
 	}
 }

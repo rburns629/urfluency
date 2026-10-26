@@ -10,12 +10,14 @@ import (
 
 // Synthetic transcripts in each agent's format; no real session is read by tests.
 const claudeTranscript = `{"type":"user","cwd":"/w/app","timestamp":"2026-10-01T10:00:00Z","message":{"role":"user","content":"Add a retry to fetchUser in api/client.go; it should give up after 3 attempts. Add tests."}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"g1","name":"Grep","input":{"pattern":"fetchUser"}},{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"cat api/client.go"}}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/w/app/api/client.go","old_string":"func fetchUser() {\n\treturn get(url)\n}","new_string":"func fetchUser() {\n\tfor attempt := 0; attempt < 3; attempt++ {\n\treturn get(url)\n}"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"toolUseResult":{"structuredPatch":[{"lines":[" func fetchUser() {","+\tfor attempt := 0; attempt < 3; attempt++ {","\treturn get(url)"]}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Write","input":{"file_path":"/w/app/rejected.go","content":"package rejected_by_user\n"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"The user doesn't want to proceed"}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Write","input":{"file_path":"/w/app/new.go","content":"package newpackage\n}\n"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"created"}]},"toolUseResult":{"type":"create"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b2","name":"Bash","input":{"command":"go test ./..."}},{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"/w/app/new.go"}}]}}
 {"type":"user","isSidechain":true,"message":{"content":"Subagent prompt written by the agent, should be ignored"}}
 {"type":"user","isMeta":true,"message":{"content":"Caveat: injected by the client"}}
 {"type":"user","message":{"content":[{"type":"text","text":"no, that's the wrong file"}]}}
@@ -25,8 +27,10 @@ not json at all
 const codexTranscript = `{"timestamp":"2026-10-02T09:00:00Z","type":"session_meta","payload":{"cwd":"/w/svc"}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>ignored</environment_context>"}]}}
 {"type":"event_msg","payload":{"type":"user_message","message":"Fix the crash in parser.py when the input is empty"}}
+{"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"bash\",\"-lc\",\"rg parse\"]}"}}
 {"type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch\n*** Update File: parser.py\n@@\n-    return data[0]\n+    if not data:\n+        return None\n*** Add File: /w/svc/notes_helper.py\n+def describe_notes():\n*** End Patch"}}
 {"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"apply_patch\",\"*** Begin Patch\\n*** Update File: lib/util.py\\n+value = compute_total(items)\\n*** End Patch\"]}"}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"pytest -q\"}"}}
 `
 
 func TestReadClaude(t *testing.T) {
@@ -50,6 +54,9 @@ func TestReadClaude(t *testing.T) {
 	if s.Edits["/w/app/rejected.go"] != nil {
 		t.Error("a rejected edit was counted")
 	}
+	if p := s.Prompts[0]; p.ExploresBeforeEdit != 2 || p.Explores != 3 || p.Edits != 3 || p.Checks != 1 {
+		t.Errorf("activity = %+v, want 2 explores before 3 edit attempts, 3 explores, 1 check", p)
+	}
 }
 
 func TestReadClaudeEditWithoutPatchSkipsKeptLines(t *testing.T) {
@@ -72,6 +79,9 @@ func TestReadCodex(t *testing.T) {
 	}
 	if s.Cwd != "/w/svc" || len(s.Prompts) != 1 || s.Prompts[0].Type != Bug {
 		t.Errorf("session = %+v", s)
+	}
+	if p := s.Prompts[0]; p.ExploresBeforeEdit != 1 || p.Edits != 2 || p.Checks != 1 {
+		t.Errorf("activity = %+v, want 1 explore before 2 patches and 1 check", p)
 	}
 	want := map[string]string{
 		"/w/svc/parser.py":       "return None",
@@ -114,22 +124,31 @@ func TestClassify(t *testing.T) {
 }
 
 func TestGrade(t *testing.T) {
-	feature := Prompt{Type: Feature, Context: true}
 	s := Session{Prompts: []Prompt{
-		feature, {Correction: true}, {Correction: true}, // one task, corrected
-		{Type: Other}, {Correction: true}, // a correction after a question is ignored
-		{Type: Bug, Context: true, Verification: true},
+		{Type: Feature, Context: true, ExploresBeforeEdit: 2, Edits: 1},
+		{Correction: true, ExploresBeforeEdit: 4, Edits: 1}, {Correction: true}, // same task, corrected
+		{Type: Other, Edits: 5}, {Correction: true}, // a question ends the task; this correction is ignored
+		{Type: Bug, Context: true, Edits: 1, Checks: 1},
+		{Type: Refactor}, // no edits, so not graded for verification
 	}}
+	tasks := Tasks([]Session{s})
+	if len(tasks) != 3 {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	if f := tasks[0]; !f.Corrected || f.FollowUps != 2 || f.ExploresBeforeEdit != 2 || f.Edits != 2 || f.Checks != 0 {
+		t.Errorf("feature task = %+v", f)
+	}
 	g := Grade([]Session{s})
-	if g.Sessions != 1 || g.Tasks[Feature] != 1 || g.Tasks[Bug] != 1 {
+	if g.Sessions != 1 || g.Tasks[Feature] != 1 || g.Tasks[Bug] != 1 || g.Tasks[Refactor] != 1 {
 		t.Errorf("grades = %+v", g)
 	}
 	want := map[string]Tally{
-		// Only the opening feature task is graded for content; both for corrections.
-		"prompt.no-context":             {Applicable: 1, Missed: 0},
-		"prompt.no-acceptance-criteria": {Applicable: 1, Missed: 1},
-		"prompt.no-verification":        {Applicable: 1, Missed: 1},
-		"prompt.needed-correction":      {Applicable: 2, Missed: 1},
+		// Verification grades tasks with edits by whether a check ran.
+		"prompt.unverified-change": {Applicable: 2, Missed: 1},
+		"prompt.needed-correction": {Applicable: 3, Missed: 1},
+	}
+	if len(g.Rules) != len(want) {
+		t.Errorf("rules = %v", g.Rules)
 	}
 	for id, tally := range want {
 		if g.Rules[id] != tally {

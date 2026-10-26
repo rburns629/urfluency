@@ -15,13 +15,19 @@ const (
 	Other    = "other" // questions and requests that are not code changes
 )
 
-// Prompt holds the signals of one user prompt; its text is not kept.
+// Prompt holds the signals of one user prompt, and what the agent did before the
+// next prompt; its text is not kept.
 type Prompt struct {
 	Type         string // "" when the prompt is not a task, such as "yes" or a slash command
 	Correction   bool
 	Context      bool // names files, symbols, errors, or pastes code or logs
 	Criteria     bool // states expected behavior or when the task is done
 	Verification bool // asks for tests or checks
+
+	Explores           int // file reads and searches
+	ExploresBeforeEdit int
+	Edits              int
+	Checks             int // tests, linters, builds, and type checks run
 }
 
 var (
@@ -39,7 +45,7 @@ var (
 // Classify reduces a prompt to signals. Slash commands, tool output, and replies
 // shorter than four words are not tasks.
 func Classify(text string) Prompt {
-	t := strings.ToLower(StripTagBlocks(strings.TrimSpace(text)))
+	t := strings.ToLower(stripTagBlocks(strings.TrimSpace(text)))
 	if t == "" || strings.HasPrefix(t, "<") || strings.HasPrefix(t, "/") || strings.HasPrefix(t, "[") {
 		return Prompt{}
 	}
@@ -71,9 +77,9 @@ func Classify(text string) Prompt {
 	return p
 }
 
-// StripTagBlocks removes leading blocks that editors and agents inject before the
+// stripTagBlocks removes leading blocks that editors and agents inject before the
 // user's words, such as <ide_opened_file>...</ide_opened_file>.
-func StripTagBlocks(t string) string {
+func stripTagBlocks(t string) string {
 	for strings.HasPrefix(t, "<") {
 		end := strings.IndexAny(t, " >")
 		if end < 2 {
@@ -102,8 +108,8 @@ type Grades struct {
 	Rules    map[string]Tally
 }
 
-// signalTypes lists the task types each prompt signal is graded for; acceptance
-// criteria apply only to ambiguous work, where they measurably reduce rework.
+// signalTypes lists the task types each prompt signal applies to; acceptance
+// criteria apply only to ambiguous work.
 var signalTypes = map[string][]string{
 	"context":      {Bug, Feature, Refactor, Test},
 	"criteria":     {Feature, Refactor},
@@ -111,58 +117,82 @@ var signalTypes = map[string][]string{
 }
 
 // SignalApplies reports whether a signal ("context", "criteria", or
-// "verification") is graded for a task type.
+// "verification") applies to a task type.
 func SignalApplies(signal, taskType string) bool { return contains(signalTypes[signal], taskType) }
 
-// gradedRules apply per task type. Content rules grade only the task that opens a
-// session: later prompts inherit the conversation's context.
-var gradedRules = []struct {
-	id          string
-	types       []string
-	openingOnly bool
-	met         func(p Prompt, corrected bool) bool
-}{
-	{"prompt.no-context", signalTypes["context"], true, func(p Prompt, _ bool) bool { return p.Context }},
-	{"prompt.no-acceptance-criteria", signalTypes["criteria"], true, func(p Prompt, _ bool) bool { return p.Criteria }},
-	{"prompt.no-verification", signalTypes["verification"], true, func(p Prompt, _ bool) bool { return p.Verification }},
-	{"prompt.needed-correction", []string{Bug, Feature, Refactor, Test}, false, func(_ Prompt, corrected bool) bool { return !corrected }},
+// Task is one task prompt and what followed it until the next task.
+type Task struct {
+	Prompt             Prompt // the prompt that started the task
+	Corrected          bool
+	FollowUps          int // later prompts within the task, including corrections
+	ExploresBeforeEdit int
+	Edits              int
+	Checks             int
 }
 
-// Grade groups prompts into tasks: each task prompt starts one, and corrections
-// that follow count against it.
-func Grade(sessions []Session) Grades {
-	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}}
+// Tasks groups each session's prompts into tasks: a task prompt starts one, and
+// corrections and short replies that follow belong to it, with the agent's
+// activity after them. A question or other non-code prompt ends the task.
+func Tasks(sessions []Session) []Task {
+	var out []Task
 	for _, s := range sessions {
-		type task struct {
-			p         Prompt
-			corrected bool
-		}
-		var tasks []task
 		current := -1
 		for _, p := range s.Prompts {
 			switch {
-			case p.Correction && current >= 0:
-				tasks[current].corrected = true
 			case p.Type == Other:
 				current = -1
+				continue
 			case p.Type != "":
-				tasks = append(tasks, task{p: p})
-				current = len(tasks) - 1
+				out = append(out, Task{Prompt: p})
+				current = len(out) - 1
+			case current < 0:
+				continue
+			default:
+				out[current].FollowUps++
+				out[current].Corrected = out[current].Corrected || p.Correction
 			}
+			t := &out[current]
+			if t.Edits == 0 {
+				t.ExploresBeforeEdit += p.ExploresBeforeEdit
+			}
+			t.Edits += p.Edits
+			t.Checks += p.Checks
 		}
-		for i, t := range tasks {
-			g.Tasks[t.p.Type]++
-			for _, r := range gradedRules {
-				if !contains(r.types, t.p.Type) || (r.openingOnly && i > 0) {
-					continue
-				}
-				tally := g.Rules[r.id]
-				tally.Applicable++
-				if !r.met(t.p, t.corrected) {
-					tally.Missed++
-				}
-				g.Rules[r.id] = tally
+	}
+	return out
+}
+
+// codeTypes are the task types that ask for code changes.
+var codeTypes = []string{Bug, Feature, Refactor, Test}
+
+// gradedRules apply to code tasks where applies is true. Only rules grounded in
+// what happened ship: the prompt-text signals (context, criteria, verification)
+// did not predict outcomes in validation (see DESIGN.md), so they are reported
+// by "urfluency validate" but not graded.
+var gradedRules = []struct {
+	id      string
+	applies func(t Task) bool
+	met     func(t Task) bool
+}{
+	{"prompt.unverified-change", func(t Task) bool { return t.Edits > 0 }, func(t Task) bool { return t.Checks > 0 }},
+	{"prompt.needed-correction", func(Task) bool { return true }, func(t Task) bool { return !t.Corrected }},
+}
+
+// Grade tallies each rule over the sessions' tasks.
+func Grade(sessions []Session) Grades {
+	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}}
+	for _, t := range Tasks(sessions) {
+		g.Tasks[t.Prompt.Type]++
+		for _, r := range gradedRules {
+			if !contains(codeTypes, t.Prompt.Type) || !r.applies(t) {
+				continue
 			}
+			tally := g.Rules[r.id]
+			tally.Applicable++
+			if !r.met(t) {
+				tally.Missed++
+			}
+			g.Rules[r.id] = tally
 		}
 	}
 	return g

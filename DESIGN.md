@@ -77,7 +77,7 @@ confidence.
 | **Type safety** | Reliable data contracts | Unchecked casts and assertions; untyped maps and `any` at boundaries; ignored decode errors; missing boundary validation | High for typed languages |
 | **Language proficiency** | Correct use of each language's semantics and idioms | Language-semantic pitfalls per 1,000 changed lines (for Go: `switch` fall-through assumptions, reused decode targets, `WaitGroup` miscounts, assertions on nil interfaces); lint findings on changed lines; idiom adoption, adjusted for when features became available | High for detected pitfalls |
 | **Security** | Safe handling of credentials and untrusted input | Leaked credentials (keys, tokens, private keys, hard-coded passwords) on the user's lines; injection-prone code (SQL built from strings, shell commands from input, `eval`, unsafe deserialization); disabled TLS verification; framework misconfiguration such as Django `DEBUG = True` or `csrf_exempt` | High for credentials and explicit patterns; values are never shown, stored, or uploaded |
-| **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions. The task that opens each session is checked for concrete context (files, symbols, errors), acceptance criteria on feature and refactor work, and requests for verification; later prompts inherit the conversation's context. Every task is checked for whether it needed a correction. Reported per task type | Low-medium: keyword rules, measured against author labels with `urfluency calibrate` (results to be recorded here); the session-signal approach was validated in [clean-agent-code's prompting evaluation](https://github.com/rburns629/clean-agent-code/blob/main/evaluations/results/2026-10-19-prompting.md) |
+| **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions, graded on what happened: agent code changes with no tests, linters, builds, or type checks run in the task, and tasks that needed a correction. Prompt-text signals are measured but not graded until they predict outcomes (see [Prompting validation](#prompting-validation)) | Medium for verification (commands that ran); low-medium for corrections (keyword detection) |
 
 ### Strengths, weaknesses, and focus points
 
@@ -121,6 +121,31 @@ reasoning in clean-agent-code's AUDIT.md.
   or counted against anyone. Publishing it is a separate opt-in.
 - Prompting signals depend on task type; a bug with an evident symptom needs little
   specification, so signals are grouped by task type.
+
+### Prompting validation
+
+Rules ship pre-validated; users never calibrate anything. A prompt-text signal
+becomes a graded rule only if tasks with the signal turn out measurably better than
+tasks without it. `urfluency validate [path]` prints that comparison from local
+sessions, as counts only: corrections, follow-up prompts, reads and searches before
+the agent's first edit, and whether code changes were checked.
+
+First run, 2026-10-26: one author, 14 Claude Code sessions, 343 tasks.
+
+| Signal in the prompt | With / without: corrections | Searches before first edit | Changes checked |
+| --- | --- | --- | --- |
+| Concrete context (files, symbols, errors) | 2% / 1% | 3.7 / 4.1 | 46% / 66% |
+| Acceptance criteria | 0% / 2% | 5.3 / 3.6 | 71% / 62% |
+| Asks for verification | 2% / 1% | 3.1 / 4.1 | 48% / 66% |
+
+None of the three predicted better outcomes, so none is graded. Asking for
+verification did not even predict that checks ran: projects whose agent
+instructions require checks ran them unprompted. Verification is therefore graded
+on what ran, not on what the prompt said. Limits: one author, whose sessions are
+mostly long conversations where follow-ups inherit context; corrections are rare
+(about 1%) and detected by keywords; harder tasks need more searching regardless.
+Re-run validation across opted-in users' aggregate counts before reconsidering
+these signals.
 - Architecture and clean code involve judgment; model-assisted review is optional,
   runs with the user's own or employer-approved model provider, and is labeled.
 
@@ -131,7 +156,8 @@ urfluency login                 # GitHub device flow; token in the OS keychain
 urfluency scan [path...]        # analyze repos; writes a local report
 urfluency report                # show the local report and what would be uploaded
 urfluency upload                # send aggregates; prints the exact payload first
-urfluency scan --sessions       # also grade prompts and report AI-written code
+urfluency scan --sessions       # also grade agent tasks and report AI-written code
+urfluency validate [path]       # maintainers: check prompt signals against outcomes
 urfluency logout
 ```
 
@@ -201,7 +227,7 @@ format, and service do not change.
     "rules": {"ts.explicit-any": 18, "ts.non-null-assertion": 10, "sec.api-token": 1}
   }],
   "prompting": {"sessions": 18, "tasks_by_type": {"feature": 20, "bug": 12},
-    "rules": {"prompt.no-acceptance-criteria": {"applicable": 26, "missed": 14}}},
+    "rules": {"prompt.unverified-change": {"applicable": 26, "missed": 14}}},
   "ai_written": {"owned_lines": 11035, "ai_written_lines": 3120}
 }
 ```

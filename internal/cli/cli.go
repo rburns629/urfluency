@@ -35,9 +35,8 @@ const usage = `urfluency analyzes your own commits and reports strengths and are
 Usage:
   urfluency scan [flags] [path]   Analyze the repository at path, or every repository
                                   below it (default ".")
-  urfluency calibrate [--sample N] [path]
-                                  Label a sample of your prompts to measure how
-                                  often the prompting rules agree with you
+  urfluency validate [path]       For maintainers: show whether prompt signals
+                                  predict what happened next in agent sessions
   urfluency version               Print the version
 
 Scan flags:
@@ -49,18 +48,13 @@ Scan flags:
   --sessions       Also grade your prompts in local Claude Code and Codex sessions
                    for these repositories, and report how much code agents wrote.
                    Prompt text is read in memory only; nothing is stored.
-
-Calibrate flags:
-  --sample N       Number of prompts to label (default 40)
-
-Calibrate:
-` + answerHelp
+`
 
 // errUsage marks errors caused by invalid arguments.
 var errUsage = errors.New("usage")
 
 // Run executes the command line and returns the process exit code.
-func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
@@ -69,8 +63,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	switch args[0] {
 	case "scan":
 		err = scan(ctx, args[1:], stdout, stderr)
-	case "calibrate":
-		err = calibrate(ctx, args[1:], stdin, stdout)
+	case "validate":
+		err = validate(ctx, args[1:], stdout)
 	case "version":
 		_, err = fmt.Fprintln(stdout, "urfluency", Version)
 	case "help", "-h", "--help":
@@ -138,7 +132,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var graded []sessions.Session
 	agentLines := map[string]map[string]map[string]bool{}
 	if *withSessions {
-		if graded, agentLines, err = loadSessions(abs, repos, since, false); err != nil {
+		if graded, agentLines, err = loadSessions(abs, repos, since); err != nil {
 			return err
 		}
 	}
@@ -211,9 +205,8 @@ func isRepo(dir string) bool {
 
 // loadSessions reads transcripts since the given time and keeps the sessions that
 // ran in or edited the scanned repositories, plus the lines agents wrote in each
-// repository keyed by repository-relative path. Prompt text is kept only for
-// calibration. Unreadable transcripts are skipped.
-func loadSessions(root string, repos []string, since time.Time, keepText bool) ([]sessions.Session, map[string]map[string]map[string]bool, error) {
+// repository keyed by repository-relative path. Unreadable transcripts are skipped.
+func loadSessions(root string, repos []string, since time.Time) ([]sessions.Session, map[string]map[string]map[string]bool, error) {
 	dirs, err := sessions.DefaultDirs()
 	if err != nil {
 		return nil, nil, err
@@ -225,11 +218,7 @@ func loadSessions(root string, repos []string, since time.Time, keepText bool) (
 	var kept []sessions.Session
 	lines := map[string]map[string]map[string]bool{}
 	for _, t := range transcripts {
-		load := sessions.Load
-		if keepText {
-			load = sessions.LoadWithText
-		}
-		s, err := load(t)
+		s, err := sessions.Load(t)
 		if err != nil || s.Start.Before(since) {
 			continue
 		}

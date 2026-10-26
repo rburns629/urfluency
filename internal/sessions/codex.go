@@ -29,11 +29,9 @@ type codexLine struct {
 // ReadCodex parses a Codex CLI rollout transcript. User prompts come from
 // user_message events; transcripts without them fall back to user messages,
 // skipping the environment and instruction blocks Codex injects.
-func ReadCodex(r io.Reader) (Session, error) { return readCodex(r, false) }
-
-func readCodex(r io.Reader, keepText bool) (Session, error) {
+func ReadCodex(r io.Reader) (Session, error) {
 	s := Session{Agent: "codex", Edits: map[string]map[string]bool{}}
-	var fallback Session
+	var fallback []Prompt
 	err := eachLine(r, func(line []byte) {
 		var l codexLine
 		if json.Unmarshal(line, &l) != nil {
@@ -48,33 +46,58 @@ func readCodex(r io.Reader, keepText bool) (Session, error) {
 		}
 		switch {
 		case l.Type == "event_msg" && p.Type == "user_message":
-			s.addPrompt(p.Message, keepText)
+			s.Prompts = append(s.Prompts, Classify(p.Message))
 		case l.Type == "response_item" && p.Type == "message" && p.Role == "user":
 			for _, c := range p.Content {
 				if !strings.HasPrefix(strings.TrimSpace(c.Text), "<") {
-					fallback.addPrompt(c.Text, keepText)
+					fallback = append(fallback, Classify(c.Text))
 				}
 			}
 		case l.Type == "response_item" && p.Type == "custom_tool_call" && p.Name == "apply_patch":
+			s.record(edit)
 			s.addPatch(p.Input)
 		case l.Type == "response_item" && p.Type == "function_call":
-			// Shell calls carry the patch as an argument: ["apply_patch", "*** Begin Patch..."].
+			// Shell calls carry the command as an argument list, and patches as
+			// ["apply_patch", "*** Begin Patch..."].
 			var args struct {
 				Command []string `json:"command"`
+				Cmd     string   `json:"cmd"`
 			}
-			if json.Unmarshal([]byte(p.Arguments), &args) == nil {
-				for _, a := range args.Command {
-					if i := strings.Index(a, "*** Begin Patch"); i >= 0 {
-						s.addPatch(a[i:])
-					}
+			if json.Unmarshal([]byte(p.Arguments), &args) != nil {
+				return
+			}
+			patched := false
+			for _, a := range args.Command {
+				if i := strings.Index(a, "*** Begin Patch"); i >= 0 {
+					s.addPatch(a[i:])
+					patched = true
 				}
+			}
+			if patched {
+				s.record(edit)
+			} else {
+				s.record(commandKind(shellCommand(args.Command, args.Cmd)))
 			}
 		}
 	})
 	if len(s.Prompts) == 0 {
-		s.Prompts, s.Texts = fallback.Prompts, fallback.Texts
+		s.Prompts = fallback
 	}
 	return s, err
+}
+
+var shells = map[string]bool{"bash": true, "sh": true, "zsh": true}
+
+// shellCommand returns the command a shell call runs, unwrapping
+// ["bash", "-lc", "go test ./..."].
+func shellCommand(argv []string, cmd string) string {
+	if cmd != "" {
+		return cmd
+	}
+	if len(argv) == 3 && strings.HasPrefix(argv[1], "-") && shells[filepath.Base(argv[0])] {
+		return argv[2]
+	}
+	return strings.Join(argv, " ")
 }
 
 // addPatch records the added lines of an apply_patch envelope. Paths are relative

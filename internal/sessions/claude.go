@@ -47,9 +47,7 @@ var claudeEditTools = map[string]bool{"Edit": true, "MultiEdit": true, "Write": 
 
 // ReadClaude parses a Claude Code transcript. Edits count only when their tool
 // result succeeded, so rejected or failed edits are ignored.
-func ReadClaude(r io.Reader) (Session, error) { return readClaude(r, false) }
-
-func readClaude(r io.Reader, keepText bool) (Session, error) {
+func ReadClaude(r io.Reader) (Session, error) {
 	s := Session{Agent: "claude-code", Edits: map[string]map[string]bool{}}
 	pending := map[string]claudeEdit{}
 	err := eachLine(r, func(line []byte) {
@@ -71,9 +69,23 @@ func readClaude(r io.Reader, keepText bool) (Session, error) {
 		switch l.Type {
 		case "assistant":
 			for _, b := range blocks {
+				if b.Type != "tool_use" {
+					continue
+				}
 				var in claudeEdit
-				if b.Type == "tool_use" && claudeEditTools[b.Name] && json.Unmarshal(b.Input, &in) == nil {
-					pending[b.ID] = in
+				var shell struct {
+					Command string `json:"command"`
+				}
+				switch {
+				case claudeEditTools[b.Name]:
+					s.record(edit)
+					if json.Unmarshal(b.Input, &in) == nil {
+						pending[b.ID] = in
+					}
+				case exploreTools[b.Name]:
+					s.record(explore)
+				case b.Name == "Bash" && json.Unmarshal(b.Input, &shell) == nil:
+					s.record(commandKind(shell.Command))
 				}
 			}
 		case "user":
@@ -91,7 +103,7 @@ func readClaude(r io.Reader, keepText bool) (Session, error) {
 				}
 			}
 			if !toolResult && !l.IsMeta && !l.IsCompactSummary {
-				s.addPrompt(text, keepText)
+				s.Prompts = append(s.Prompts, Classify(text))
 			}
 		}
 	})

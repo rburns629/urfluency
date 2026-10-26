@@ -35,17 +35,16 @@ latest commit, never runs the repository's code, and writes nothing to disk.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
 `--sessions` also reads your local Claude Code and Codex transcripts for the scanned
-repositories. It grades each task prompt with fixed local rules (no model call),
-with strengths, weaknesses, and points of focus, and reports how much of your owned
+repositories. It grades each agent task on what happened (were code changes tested
+or checked, and did the task need a correction), with strengths, weaknesses, and
+points of focus, using fixed local rules and no model call. It also reports how much of your owned
 code agents wrote. That share is context, not a score, and is a lower bound. Prompt
 text is reduced to signals as it is read and is never stored, printed, or uploaded.
 
-`urfluency calibrate ~/Projects` checks the prompting rules against your own
-judgment. It shows a random sample of your prompts in your terminal, one at a
-time, and asks what each one is for (1-5) and up to three yes/no questions: does it
-point to specific code, say what "done" looks like, and ask for tests? It then
-prints how often the rules agreed with you. Nothing is saved,
-and the summary contains no prompt text.
+Prompting rules ship already validated: a rule is graded only if it reflects what
+actually happened in sessions. Maintainers check candidate rules with
+`urfluency validate`, which compares outcomes for tasks with and without each prompt
+signal and prints counts only (see DESIGN.md).
 
 ## What it checks
 
@@ -54,7 +53,7 @@ and the summary contains no prompt text.
 | Languages | Go, Python, JavaScript, TypeScript |
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
-| Prompting | With `--sessions`: concrete context, acceptance criteria on feature and refactor work, and verification requests in each session's opening task; corrections needed on every task |
+| Prompting | With `--sessions`: agent code changes that were never tested or checked, and tasks that needed a correction |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 
 Files that hold secrets by design are never read: `.env` files, key and certificate

@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -20,9 +21,6 @@ type Session struct {
 	Cwd     string
 	Start   time.Time
 	Prompts []Prompt
-	// Texts holds the prompt text parallel to Prompts, only when loaded with
-	// LoadWithText for local calibration. It is never stored or uploaded.
-	Texts []string
 	// Edits maps absolute file paths to the normalized lines the agent added.
 	Edits map[string]map[string]bool
 }
@@ -84,29 +82,60 @@ func Discover(d Dirs, since time.Time) ([]Transcript, error) {
 	return out, err
 }
 
-// Load parses one transcript, keeping prompt signals but not prompt text.
-func Load(t Transcript) (Session, error) { return load(t, false) }
-
-// LoadWithText also keeps prompt text, for showing prompts to their author
-// during calibration.
-func LoadWithText(t Transcript) (Session, error) { return load(t, true) }
-
-func load(t Transcript, keepText bool) (Session, error) {
+// Load parses one transcript.
+func Load(t Transcript) (Session, error) {
 	f, err := os.Open(t.Path)
 	if err != nil {
 		return Session{}, err
 	}
 	defer f.Close()
 	if t.Agent == "codex" {
-		return readCodex(f, keepText)
+		return ReadCodex(f)
 	}
-	return readClaude(f, keepText)
+	return ReadClaude(f)
 }
 
-func (s *Session) addPrompt(text string, keepText bool) {
-	s.Prompts = append(s.Prompts, Classify(text))
-	if keepText {
-		s.Texts = append(s.Texts, text)
+// Kinds of agent activity recorded after a prompt.
+const (
+	explore = "explore"
+	edit    = "edit"
+	check   = "check"
+)
+
+var (
+	exploreTools = map[string]bool{"Read": true, "Grep": true, "Glob": true, "LS": true}
+	exploreCmd   = regexp.MustCompile(`^\s*(grep|rg|ag|find|fd|ls|cat|head|tail|tree|wc|sed -n|git (grep|log|show|diff|status|blame))\b`)
+	checkCmd     = regexp.MustCompile(`\b(test|tests|pytest|jest|vitest|mocha|tsc|eslint|ruff|mypy|pyright|flake8|lint|typecheck|staticcheck|govulncheck|go (test|vet|build)|cargo (test|check|build|clippy)|(npm|pnpm|yarn|bun)( run)? (build|check))\b`)
+)
+
+// commandKind classifies a shell command as exploration, a check (tests,
+// linters, builds, type checks), or neither.
+func commandKind(cmd string) string {
+	switch {
+	case exploreCmd.MatchString(cmd):
+		return explore
+	case checkCmd.MatchString(cmd):
+		return check
+	}
+	return ""
+}
+
+// record counts agent activity against the latest prompt.
+func (s *Session) record(kind string) {
+	if len(s.Prompts) == 0 || kind == "" {
+		return
+	}
+	p := &s.Prompts[len(s.Prompts)-1]
+	switch kind {
+	case explore:
+		p.Explores++
+		if p.Edits == 0 {
+			p.ExploresBeforeEdit++
+		}
+	case edit:
+		p.Edits++
+	case check:
+		p.Checks++
 	}
 }
 
