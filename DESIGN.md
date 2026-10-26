@@ -145,10 +145,11 @@ interface, sharing Git access, ownership, and the rule catalog.
    owned line ranges and report findings; the engine keeps only findings on owned
    lines.
 3. **Analyzer kinds.**
-   - **Native analyzers** parse in process. Go uses `go/ast`. Other languages use a
-     shared parser layer; tree-sitter grammars are the likely choice, either through
-     cgo bindings or compiled to WebAssembly and run with a pure-Go runtime, which
-     keeps the CLI a single static binary. To decide when the second language lands.
+   - **Native analyzers** parse in process. Go uses `go/ast` with `go/types`. Other
+     languages use the shared `internal/parsing` layer over the official tree-sitter
+     Go bindings, through cgo (decided 2026-10-26; a WebAssembly runtime would have
+     kept a pure-Go binary but needed a bridge nobody maintains). Release binaries
+     are built per platform.
    - **Tool adapters** (opt-in) run linters a project already configures, such as
      ESLint or Ruff, and map their findings to catalog rules. Some linter
      configurations execute project code, so adapters run only on the user's own
@@ -330,6 +331,6 @@ repository owner has published.
   or microVMs).
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
-- Languages after Go.
+- Languages after Go, Python, JavaScript, and TypeScript.
 - License (for example MIT for the CLI and analyzers, with the service code to be
   decided).

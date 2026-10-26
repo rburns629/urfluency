@@ -8,7 +8,7 @@ func TestCatalogIsComplete(t *testing.T) {
 	}
 	valid := map[Category]bool{CleanCode: true, Architecture: true, TypeSafety: true, LanguageProficiency: true, Prompting: true}
 	for id, r := range catalog {
-		if r.ID != id || r.Title == "" || r.Why == "" || r.Focus == "" || r.Language == "" {
+		if r.ID != id || r.Title == "" || r.Why == "" || r.Focus == "" || len(r.Languages) == 0 {
 			t.Errorf("rule %s is missing fields: %+v", id, r)
 		}
 		if !valid[r.Category] {

@@ -12,14 +12,15 @@ and checks whether public repositories are safe to run.
 - **Badges and API:** add badges to repositories and embed your published metrics in
   a portfolio site.
 
-Status: phase 1, a local CLI with a Go analyzer. See [DESIGN.md](DESIGN.md).
+Status: phase 1, a local CLI with analyzers for Go, Python, JavaScript, and
+TypeScript. See [DESIGN.md](DESIGN.md).
 
 The CLI command and Go module use lowercase: `urfluency`,
 `github.com/rburns629/urfluency`.
 
 ## Try the CLI
 
-Requires Go 1.24 or later and Git.
+Requires Go 1.24.6 or later, a C compiler (for tree-sitter), and Git.
 
 ```sh
 go build -o urfluency ./cmd/urfluency

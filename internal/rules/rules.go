@@ -21,7 +21,7 @@ const (
 type Rule struct {
 	ID        string
 	Category  Category
-	Language  string
+	Languages []string
 	Framework string
 	Title     string
 	Why       string
@@ -54,12 +54,15 @@ func Lookup(id string) (Rule, bool) {
 	return r, ok
 }
 
-// ForLanguage returns the rules for a language, sorted by ID.
+// ForLanguage returns the rules that apply to a language, sorted by ID.
 func ForLanguage(language string) []Rule {
 	var out []Rule
 	for _, r := range catalog {
-		if r.Language == language {
-			out = append(out, r)
+		for _, l := range r.Languages {
+			if l == language {
+				out = append(out, r)
+				break
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
