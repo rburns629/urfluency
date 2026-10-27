@@ -1,0 +1,46 @@
+package rules
+
+func init() {
+	dart := []string{"dart"}
+	Register(
+		Rule{ID: "dart.dynamic-type", Category: TypeSafety, Languages: dart,
+			Title: "Explicit dynamic type",
+			Why:   "dynamic turns off static checking, so misspelled members and wrong types fail at runtime instead of compile time.",
+			Focus: "Declare the real type, or Object? when any value is allowed, and check it with is before use."},
+		Rule{ID: "dart.null-assertion", Category: TypeSafety, Languages: dart,
+			Title: "Null assertion operator (!)",
+			Why:   "x! throws at runtime when x is null, discarding the null safety the compiler would otherwise enforce.",
+			Focus: "Promote with a null check, use ?. or ??, or make the value non-nullable at its source."},
+		Rule{ID: "dart.empty-catch", Category: CleanCode, Languages: dart,
+			Title: "Empty catch block",
+			Why:   "An empty catch or on block silently swallows the error, turning failures into wrong behavior that is hard to trace.",
+			Focus: "Handle, log, or rethrow the error; if ignoring it is intended, catch the specific type and say why in a comment."},
+		Rule{ID: "dart.print-in-library", Category: CleanCode, Languages: dart,
+			Title: "print in library code",
+			Why:   "print in lib/ writes to the console in release builds, cannot be filtered or turned off, and can leak data into device logs.",
+			Focus: "Use a logger such as package:logging, or debugPrint for Flutter debugging output."},
+		Rule{ID: "dart.http-url-literal", Category: Security, Languages: dart,
+			Title: "Plain http:// URL parsed from a literal",
+			Why:   "Requests to an http:// URL travel unencrypted and can be read or altered in transit; Android and iOS also block them by default.",
+			Focus: "Use https://, and keep http:// for localhost or emulator addresses in development configuration."},
+		Rule{ID: "dart.set-state-after-await", Category: LanguageProficiency, Languages: dart, Framework: "flutter",
+			Title: "setState after await without a mounted check",
+			Why:   "The widget can be removed while the await is pending, and setState on an unmounted State throws.",
+			Focus: "After each await, return early with if (!mounted) return; before calling setState."},
+		Rule{ID: "dart.missing-dispose", Category: LanguageProficiency, Languages: dart, Framework: "flutter",
+			Title: "Controller created in State without dispose",
+			Why:   "Animation, text, scroll, page, and tab controllers and focus nodes hold listeners and tickers that leak when the State is removed.",
+			Focus: "Override dispose() to dispose each controller the State creates, then call super.dispose()."},
+
+		idiom("dart.idiom.null-aware", "Null-aware operators", "Handles nullable values with ?., ??, and ??= instead of explicit null checks or ! assertions.", "dart"),
+		idiom("dart.idiom.async-await", "async and await", "Writes asynchronous code that reads top to bottom, with try/catch for errors.", "dart"),
+		idiom("dart.idiom.generator", "Generators (async* and sync*)", "Produces streams and iterables lazily with yield.", "dart"),
+		idiom("dart.idiom.const-constructor", "const constructors", "Lets instances be canonicalized at compile time, so Flutter can skip rebuilding const widgets.", "dart"),
+		idiom("dart.idiom.required-named-parameters", "Required named parameters", "Makes call sites self-describing while the compiler enforces mandatory arguments.", "dart"),
+		idiom("dart.idiom.extension-methods", "Extension methods", "Adds behavior to existing types without wrappers or utility classes.", "dart"),
+		idiom("dart.idiom.sealed-class", "Sealed classes", "Models closed sets of states that switch can check exhaustively.", "dart"),
+		idiom("dart.idiom.pattern-matching", "Patterns and switch expressions", "Destructures and branches on data shape with checked patterns instead of casts.", "dart"),
+		idiom("dart.idiom.records", "Records", "Returns and passes several values with types, without a throwaway class.", "dart"),
+		idiom("dart.idiom.collection-control-flow", "Collection if and for", "Builds lists, sets, and maps declaratively inside the literal.", "dart"),
+	)
+}
