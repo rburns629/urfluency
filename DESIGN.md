@@ -29,6 +29,14 @@ safe to run.
   is delivered. The one exception is a repository its owner connects for badges,
   which stores `owner/repo` and its scores, because a badge must be looked up by
   name.
+- **Code and prompts never leave the machine.** Analysis runs locally. Optional
+  model-assisted reviews call only a model runtime on the same machine (such as
+  Ollama or LM Studio); hosted model providers are never used, so urFluency is safe
+  to run on a work laptop.
+- **AI fluency is a skill, not a penalty.** Coding agents are part of how most
+  engineers now work. urFluency never counts agent use against anyone; it measures
+  whether agent-assisted work meets the engineer's own bar, so it can show that the
+  work is not slop.
 - **Trends, not rankings.** Metrics describe one person's trajectory. There are no
   leaderboards and no cross-person comparisons.
 - **Honest provenance.** Every number shows its trust tier, period, sample size, and
@@ -77,7 +85,28 @@ confidence.
 | **Type safety** | Reliable data contracts | Unchecked casts and assertions; untyped maps and `any` at boundaries; ignored decode errors; missing boundary validation | High for typed languages |
 | **Language proficiency** | Correct use of each language's semantics and idioms | Language-semantic pitfalls per 1,000 changed lines (for Go: `switch` fall-through assumptions, reused decode targets, `WaitGroup` miscounts, assertions on nil interfaces); lint findings on changed lines; idiom adoption, adjusted for when features became available | High for detected pitfalls |
 | **Security** | Safe handling of credentials and untrusted input | Leaked credentials (keys, tokens, private keys, hard-coded passwords) on the user's lines; injection-prone code (SQL built from strings, shell commands from input, `eval`, unsafe deserialization); disabled TLS verification; framework misconfiguration such as Django `DEBUG = True` or `csrf_exempt` | High for credentials and explicit patterns; values are never shown, stored, or uploaded |
-| **Prompting standards** | Clear communication with coding agents | From opted-in local agent sessions, graded on what happened: agent code changes with no tests, linters, builds, or type checks run in the task, and tasks that needed a correction. Prompt-text signals are measured but not graded until they predict outcomes (see [Prompting validation](#prompting-validation)) | Medium for verification (commands that ran); low-medium for corrections (keyword detection) |
+| **AI engineering** | Turning coding agents into code that holds up | Quality of AI-assisted lines against the engineer's own hand-written baseline; agent changes verified by tests or checks; review engagement (agent edits rejected or reworked before commit); durability (later fix commits on AI-assisted versus other lines); tasks that needed a correction. See [AI engineering](#ai-engineering-proving-it-is-not-slop) | Medium; validated per signal like prompting rules |
+
+### AI engineering: proving it is not slop
+
+"Slop" is code shipped because an agent produced it, not because anyone made sure
+it works and fits. The AI engineering category answers one question with evidence:
+does this engineer's agent-assisted work hold up as well as their own? It replaces
+the earlier "prompting standards" category, whose prompt-text signals did not
+predict outcomes (see [Prompting validation](#prompting-validation)).
+
+| Signal | Strength when | Weakness when |
+| --- | --- | --- |
+| Quality parity | Findings per 1,000 AI-assisted lines are at or below the engineer's hand-written rate | AI-assisted lines carry clearly more findings, named by rule ("agent TypeScript adds 4x your rate of `as unknown as`") |
+| Verified changes | Agent edits are followed by tests, linters, builds, or type checks in the task | Agent edits ship with nothing run |
+| Review engagement | The engineer rejects or reworks agent edits before committing | Every agent edit is accepted unchanged across large commits |
+| Durability | AI-assisted lines need no more later fix commits than hand-written ones | AI-assisted lines are fixed or reverted soon after |
+| Corrections | Tasks rarely need "no, that's not it" | Many tasks need corrections |
+
+The AI-assisted share itself is never scored: a high share with strong parity,
+verification, and durability is the best result in the category. Reports lead with
+what the engineer does well with agents, then what to tighten. Each signal passes
+the same validation as other prompting rules before it is shown.
 
 ### Strengths, weaknesses, and focus points
 
@@ -114,9 +143,10 @@ reasoning in clean-agent-code's AUDIT.md.
 
 - Authorship comes from commits matching the user's verified GitHub emails; the
   attested tiers count only signed commits.
-- AI-written code cannot be told apart from the code itself. Two sources bound it,
-  both shown as context, never scored or counted against anyone; publishing them is
-  a separate opt-in:
+- AI-written code cannot be told apart from the code itself. Two sources bound it.
+  The share is never scored or counted against anyone, and publishing it is a
+  separate opt-in; the AI engineering category scores how the assisted code holds
+  up:
   - **Commit trailers** (every scan): owned lines from commits whose
     `Co-authored-by` trailers name a coding tool by its email domain or identity
     (`@anthropic.com`, `@openai.com`, `@cursor.com`, the GitHub `Copilot` user, or
@@ -166,7 +196,7 @@ mostly long conversations where follow-ups inherit context; corrections are rare
 Re-run validation across opted-in users' aggregate counts before reconsidering
 these signals.
 
-### Deep review (model-assessed, opt-in; drafted, not built)
+### Deep review (local model, experimental; drafted, not built)
 
 Some prompting skills need reading, not counting: whether intent was clear,
 whether the right context was given, whether the user managed the agent well. A
@@ -180,13 +210,14 @@ matches [`internal/review/schema.json`](internal/review/schema.json).
   verification, and agent management, in bands (strong, solid, developing, focus
   area, not assessable), per session and overall. No overall score, rank, or
   comparison with other people.
-- **Privacy.** This is the one feature that sends prompt text off the machine, so
-  it runs only on explicit request, with the user's own API key or a local model.
-  Before sending, the CLI removes injected editor blocks, redacts anything the
-  secrets scanner matches, truncates each user turn to 2,000 characters and each
-  agent excerpt to 400, and includes only sessions for the scanned repositories (at
-  most 20, most recent first). The full result stays local; at most the overall
-  bands are published, labeled "model-assessed".
+- **Local only.** It runs only on explicit request, against a model runtime on the
+  same machine (an OpenAI-compatible endpoint on `localhost`, such as Ollama or LM
+  Studio); urFluency never bundles a model or calls a hosted provider. Before
+  calling, the CLI removes injected editor blocks, redacts anything the secrets
+  scanner matches, truncates each user turn to 2,000 characters and each agent
+  excerpt to 400, and includes only sessions for the scanned repositories (at most
+  20, most recent first). The full result stays local; at most the overall bands
+  are published, with their provenance (see [Upload format](#upload-format)).
 - **Injection.** Sessions and repository files are untrusted. The rubric treats the
   packet as data, and the result flags sessions that appear to address the
   evaluator.
@@ -201,7 +232,7 @@ matches [`internal/review/schema.json`](internal/review/schema.json).
   Competencies that fail either test are not shown. Token use and cost are measured
   on the first validation run.
 
-### Design review (model-assessed, opt-in; drafted, not built)
+### Design review (local model, experimental; drafted, not built)
 
 Static rules cover idioms, type safety, error handling, reliability, and security.
 Design choices, test quality, and production practices need reading. A design
@@ -213,11 +244,14 @@ matches [`internal/review/design.schema.json`](internal/review/design.schema.jso
   trailers). The model judges only lines the user wrote without an agent; accepted
   AI code is context, never evidence of skill. Too little authored code yields
   "not assessable", never a low band.
-- **Code leaves the machine, so stricter limits apply.** It runs only per
-  repository on explicit request, with a local model or a provider the user's
-  employer approves; the CLI repeats the employment-agreement notice first.
-  Excerpts come from owned lines only, protected files are never read, secrets are
-  redacted, and each technology is limited to a sampled set of excerpts.
+- **Local only.** It runs only per repository on explicit request, against a model
+  runtime on the same machine, never a hosted provider. Excerpts come from owned
+  lines only, protected files are never read, secrets are redacted, and each
+  technology is limited to a sampled set of excerpts.
+- **Complements, never replaces, the deterministic metrics** in
+  [Design metrics](#design-metrics-deterministic). Small local models are often too
+  inconsistent to pass validation; until one does, model results are shown locally
+  only and never enter scores or profiles.
 - **No duplicate measurement.** Static findings are passed in as facts; the model
   judges three competencies (design, testing, production practices) in bands, with
   file and line references, and no overall score or rank.
@@ -225,6 +259,51 @@ matches [`internal/review/design.schema.json`](internal/review/design.schema.jso
   and prediction against history: files whose design or testing is banded
   `developing` or `focus_area` should see more later bug-fix commits than files
   banded `strong`.
+
+### Design metrics (deterministic)
+
+The core answers design, testing, and production questions without a model, so
+results are fast, repeatable, and never leave the machine:
+
+- **Durability:** later fix commits per file and per owned line, from Git history
+  (commits whose messages or linked changes mark a fix, following moves). This is
+  also the outcome every other design metric is validated against.
+- **Cognitive complexity** per function, implemented from SonarSource's published
+  specification on the existing parsers (`go/ast` and tree-sitter).
+- **Structure:** dependency cycles and fan-in and fan-out between packages or
+  modules, from imports.
+- **Testing:** tests per owned code file, assertions per test, and tests that
+  exercise error paths.
+- **Production practices:** formatting, linting, type checking, and tests wired
+  into CI or build configuration.
+
+Libraries were evaluated before writing these. `codemetrics` (Go, MIT) computes
+both complexity measures across 17 languages, but requires Go 1.27, brings a second
+tree-sitter implementation, and was four months old with one maintainer when
+checked (2026-10-27), so its tests serve as a cross-check rather than a dependency.
+Server platforms such as SonarQube are out of scope for a single local binary. Tools
+a project already configures (ESLint, Ruff, golangci-lint) remain optional adapters.
+
+### Prior art
+
+As of 2026-10-27, open-source work splits into two kinds, and none links agent
+sessions to the quality of the committed code:
+
+- **Session analyzers** report usage from Claude Code or Codex logs: tokens, cost,
+  tool use, and behavioral ratios such as reads per edit (for example
+  [session-analyzer](https://github.com/Tomatio13/session-analyzer),
+  [claude-session-analyzer](https://github.com/lucemia/claude-session-analyzer),
+  [claudelytics](https://github.com/nwiizo/claudelytics)).
+- **Prompt and instruction linters** score prompt text or files such as AGENTS.md
+  with rules or a trained model (for example
+  [reprompt](https://pypi.org/project/reprompt-cli/),
+  [Schliff](https://github.com/Zandereins/schliff),
+  [prompt-architect](https://www.sourcepulse.org/projects/33953940)). Scoring prompt
+  text is the approach urFluency's validation found did not predict outcomes.
+
+urFluency's difference is the join: sessions and commit trailers attribute owned
+lines to agents, and those lines are measured with the same analyzers, history, and
+outcomes as hand-written code.
 
 ## CLI
 
@@ -321,9 +400,20 @@ format, and service do not change.
   }],
   "prompting": {"sessions": 18, "tasks_by_type": {"feature": 20, "bug": 12},
     "rules": {"prompt.unverified-change": {"applicable": 26, "missed": 14}}},
-  "ai_written": {"owned_lines": 11035, "ai_written_lines": 3120}
+  "ai_written": {"owned_lines": 11035, "ai_written_lines": 3120},
+  "reviews": [{
+    "kind": "design",
+    "technology": "go",
+    "bands": {"design": "solid", "testing": "strong", "production_practices": "solid"},
+    "enhanced_with": {"model": "qwen3-coder-30b", "runtime": "ollama", "rubric": "design-0.1", "validated": false}
+  }]
 }
 ```
+
+Anything a model produced carries `enhanced_with`: the model, the local runtime,
+the rubric version, and whether that rubric and model pair passed validation. The
+service keeps model-assessed results separate from measured ones, labels them with
+their provenance, and excludes unvalidated pairs from scores, profiles, and badges.
 
 Counts and volume are combined across every repository scanned in the period. The
 payload has no repository names, paths, commit hashes, locations, or secret values,
@@ -453,7 +543,8 @@ repository owner has published.
 - Aggregate metrics can still reveal employer information (activity, technology);
   the CLI shows a notice to check employment agreements before publishing.
 - Session analysis is opt-in and local; prompt text is reduced to signals during
-  parsing and never stored or uploaded. The AI-written share is uploaded only if the
+  parsing and never stored or uploaded. Model-assisted reviews call only a model
+  runtime on the same machine; source code and prompt text never leave it. The AI-written share is uploaded only if the
   user opts in to publishing it.
 - Secrets are reported by type and location in the local CLI and in a delivered scan
   report only; their values are never printed, stored, or uploaded.
