@@ -197,17 +197,71 @@ user's own lines:
 
 The score is `0.35 × range + 0.65 × mean(category scores)`, capped at the weakest
 category plus 30, so a strong category cannot hide a weak one (the reasoning of
-clean-agent-code's AUDIT.md). Levels: **Expert** 85+, **Advanced** 70+,
-**Proficient** 55+, **Developing** 40+, **Beginner** below. Confidence comes from
-volume: high from 10,000 owned lines, medium from 2,000, low below.
+clean-agent-code's AUDIT.md). Levels, shared by every rating in the report:
+**Expert** 85+, **Advanced** 70+, **Intermediate** 40+, **Beginner** below.
+Confidence comes from volume: high from 10,000 owned lines, medium from 2,000, low
+below.
 
-The model is versioned (`proficiency.model`, now `0.1-uncalibrated`). Its weights
+The model is versioned (`proficiency.model`, now `0.2-uncalibrated`; 0.2 moved to
+the four levels above). Its weights
 and `k` values are reasoned starting points. Before scores are uploaded or shown
 publicly they are calibrated against outcomes: per language, scores should
 predict durability (how often the user's lines later need fixes), and once uploads
 exist, the level bands are set from the distribution across users. Each change to
 the model changes its version, and trends compare only results with the same
 version.
+
+### Summary and experience ratings
+
+The report opens with a summary (`summary` in JSON) built only from the rest of
+the report, so it adds no data. It orders evidence the way a reviewer would read
+it: strengths first, then design trends and communication, then what holds the
+ratings down, a ratings table, and caveats.
+
+- **Languages** keep their proficiency score. A language rated both in Git
+  repositories and in folders without Git is combined into one rating, weighted
+  by lines, with the evidence showing both parts. The overall rating is the mean
+  of language scores weighted by lines.
+- **Frameworks, tools, and design areas** get an *experience* rating:
+  `60 × min(1, log2(1 + repos) / log2(1 + R)) + 40 × min(1, log2(1 + files) / log2(1 + F))`,
+  with R = 10 and F = 200 for frameworks and tools, and R = 25 and F = 500 for
+  design areas, which pool many libraries. The logarithm makes the first projects
+  count most, and repositories weigh more than files because one large project
+  can reflect a team's choices. Confidence: high from five repositories, medium
+  from two. Package managers are listed but not rated: a manifest shows a
+  language, not a skill.
+- **Ways of working**: commit messages
+  (`0.4 × descriptive + 0.2 × short subject + 0.4 × min(1, explained in body / 0.3)`,
+  from 20 commits), testing (share of larger code changes with tests, where half
+  rates 100, from 10 changes), and quality gates (the mean share of mandatory
+  gates the CI the user wrote runs).
+- **Prompting** (with `--sessions`): the mean share of tasks that met each graded
+  rule with at least five applicable tasks.
+
+**Design areas** come from imports in files with owned lines. Each analyzer's
+language has an import pattern (Go uses its parser), and a table maps import
+prefixes to an area and a library name, such as `google.cloud`, `@google-cloud/`
+or `cloud.google.com/go` to cloud/gcp, or `requests`, `axios`, and `okhttp3` to
+integrations/http-client. A bare name matches the import or its subpackages, never
+a domain, so `github` (PyGithub) does not match `github.com/...`. Relative imports
+are the user's own code and are ignored. Infrastructure also counts the user's
+infrastructure tool files. Only area and library names and counts are kept.
+Areas that appear together in at least three repositories and a tenth of those
+scanned name the kind of work: cloud integration (cloud and integrations),
+backend services (APIs and data), event-driven systems (messaging and cloud),
+platform and infrastructure, data engineering, AI applications, machine learning,
+mobile apps, web front ends, and developer tooling.
+
+**Communication** (with `--sessions`) counts task prompts that explain why
+(rationale), set limits (constraints), state expected behavior (criteria), name
+specific code (context), or ask for checks (verification), plus how often the
+user rejects or changes agent edits. Prompt text is classified in memory and only
+counts are kept. These are descriptive traits: prompt-text signals did not predict
+outcomes in validation (see Prompting validation), so they are not scored.
+
+Experience is not quality. A framework rated Expert by experience says the user
+built a lot with it; only language ratings judge how well. All ratings share the
+model version and are uncalibrated.
 
 ### Tools and Git
 

@@ -119,17 +119,44 @@ files, repositories, and when you last used it. Git itself is measured from your
 commit messages: subject length, descriptive subjects, bodies that explain the
 change, and Conventional Commits. Messages are measured, never stored.
 
+## Summary
+
+Every report opens with a summary that answers one question: is this person
+proficient? It leads with strengths, then shows how you design systems, how you
+brief agents, what holds the ratings down, and how far to trust the result.
+
+Every area gets a rating from 0 to 100 and a level: **Beginner** (below 40),
+**Intermediate** (40+), **Advanced** (70+), or **Expert** (85+).
+
+| Area | Rated on |
+| --- | --- |
+| Languages | How well you write it (see Proficiency); one rating per language, combining work with and without Git by lines |
+| Frameworks | Experience: repositories and files of yours that use it |
+| Design | Experience in each kind of system you build, from the libraries your files import: cloud services, integrations with other services, web APIs, messaging, databases, analytics, auth, observability, infrastructure as code, AI applications, machine learning, front ends, mobile, and command-line tools |
+| Tools | Experience: repositories and files of yours for each tool |
+| Ways of working | Commit messages, changes committed with tests, and the quality gates your CI runs |
+| Prompting | With `--sessions`: how often agent tasks were verified and right the first time |
+
+Design areas that appear together name the kind of work you do, such as
+"cloud integration" (cloud services with calls to other services) or "platform and
+infrastructure". With `--sessions`, the summary also describes how you brief
+agents: how often you explain the goal, set limits, state expected behavior, point
+at specific code, or ask for checks. Only counts are kept; prompt text is never
+stored. These traits are descriptive and are not scored.
+
+Experience ratings measure how much you used something, not how well; only
+language ratings judge quality.
+
 ## Proficiency
 
-Each language gets a score from 0 to 100 and a level (Beginner, Developing,
-Proficient, Advanced, Expert). Both come from your own lines: the share of the
-language's idioms you use well, such as error wrapping in Go, dataclasses and
-generators in Python, or type guards in TypeScript, and how cleanly you write it
-in each category (security, type safety, clean code, language proficiency). A weak
-category caps the score, so strengths cannot hide it. The report lists the idioms
-you demonstrate under **Shows**. The model (version `0.1-uncalibrated`) is
-documented in DESIGN.md and will be calibrated against outcomes before scores are
-published anywhere.
+Each language gets a score from 0 to 100 and a level. Both come from your own
+lines: the share of the language's idioms you use well, such as error wrapping in
+Go, dataclasses and generators in Python, or type guards in TypeScript, and how
+cleanly you write it in each category (security, type safety, clean code, language
+proficiency). A weak category caps the score, so strengths cannot hide it. The
+report lists the idioms you demonstrate under **Shows**. The model (version
+`0.2-uncalibrated`) is documented in DESIGN.md and will be calibrated against
+outcomes before scores are published anywhere.
 
 ## What it checks
 

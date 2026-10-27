@@ -257,6 +257,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		r.AIEngineering = report.BuildAIEngineering(r)
 		r.Practices = report.BuildPractices(res)
 	}
+	report.Summarize(&r)
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")

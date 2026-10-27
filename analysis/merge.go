@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared, Tools: map[string]ToolUse{}}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -34,6 +34,18 @@ func Merge(labels []string, parts []Result) Result {
 			}
 			out.Tools[name] = sum
 		}
+		for area, u := range p.Design {
+			sum := out.Design[area]
+			if sum.Libraries == nil {
+				sum.Libraries = map[string]int{}
+			}
+			sum.Repos += u.Repos
+			sum.Files += u.Files
+			for lib, n := range u.Libraries {
+				sum.Libraries[lib] += n
+			}
+			out.Design[area] = sum
+		}
 		out.Durability.AssistedAdded += p.Durability.AssistedAdded
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed
 		out.Durability.OtherAdded += p.Durability.OtherAdded
@@ -52,7 +64,7 @@ func Merge(labels []string, parts []Result) Result {
 		for _, lr := range p.Languages {
 			m := byLanguage[lr.Language]
 			if m == nil {
-				m = &LanguageResult{Language: lr.Language, AssistedByRule: map[string]int{}, Idioms: map[string]IdiomUse{}}
+				m = &LanguageResult{Language: lr.Language, AssistedByRule: map[string]int{}, Idioms: map[string]IdiomUse{}, FrameworkUse: map[string]Usage{}}
 				byLanguage[lr.Language] = m
 				frameworks[lr.Language] = map[string]bool{}
 			}
@@ -76,6 +88,10 @@ func Merge(labels []string, parts []Result) Result {
 			}
 			for _, fw := range lr.Frameworks {
 				frameworks[lr.Language][fw] = true
+			}
+			for fw, u := range lr.FrameworkUse {
+				sum := m.FrameworkUse[fw]
+				m.FrameworkUse[fw] = Usage{Repos: sum.Repos + u.Repos, Files: sum.Files + u.Files}
 			}
 		}
 	}

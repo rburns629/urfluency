@@ -12,13 +12,13 @@ import (
 
 // ProficiencyModel versions the scoring below. Its constants are reasoned
 // starting points, not yet calibrated against outcomes (see DESIGN.md).
-const ProficiencyModel = "0.1-uncalibrated"
+const ProficiencyModel = "0.2-uncalibrated"
 
 // Proficiency rates one language from the user's own code: how much of the
 // language's idiom range they use, and how cleanly they write it.
 type Proficiency struct {
 	Score      int                      `json:"score"`      // 0–100
-	Level      string                   `json:"level"`      // Beginner … Expert
+	Level      string                   `json:"level"`      // Beginner, Intermediate, Advanced, Expert
 	Confidence string                   `json:"confidence"` // low, medium, high, from volume
 	Range      int                      `json:"range"`      // 0–100: share of the language's idioms demonstrated
 	Categories map[string]CategoryScore `json:"categories"`
@@ -121,18 +121,48 @@ func band(score float64) string {
 	return "Focus area"
 }
 
+// level classifies a 0–100 rating. The same levels apply to every rating, so a
+// language, a framework, and a habit read the same way.
 func level(score int) string {
 	switch {
 	case score >= 85:
 		return "Expert"
 	case score >= 70:
 		return "Advanced"
-	case score >= 55:
-		return "Proficient"
 	case score >= 40:
-		return "Developing"
+		return "Intermediate"
 	}
 	return "Beginner"
+}
+
+// experience rates sustained use of a framework or tool from the repositories
+// and owned files that use it: ten repositories and 200 files rate 100. It
+// measures how much, not how well; language scores measure how well.
+func experience(repos, files int) int { return experienceAt(repos, files, 10, 200) }
+
+// areaExperience rates a design area. An area pools many libraries, so it
+// needs 25 repositories and 500 files to rate 100.
+func areaExperience(repos, files int) int { return experienceAt(repos, files, 25, 500) }
+
+// experienceAt grows with the logarithm of use, so the first projects count
+// most; repositories weigh more than files, since one large project can
+// reflect a team's choices.
+func experienceAt(repos, files, fullRepos, fullFiles int) int {
+	r := math.Min(1, math.Log2(1+float64(repos))/math.Log2(1+float64(fullRepos)))
+	f := math.Min(1, math.Log2(1+float64(files))/math.Log2(1+float64(fullFiles)))
+	return int(math.Round(60*r + 40*f))
+}
+
+// experienceConfidence grows with the number of repositories, since one
+// project can reflect a team's choices more than the user's.
+func experienceConfidence(repos int) string {
+	switch {
+	case repos >= 5:
+		return "high"
+	case repos >= 2:
+		return "medium"
+	}
+	return "low"
 }
 
 // writeProficiency prints a language's score, its category bands, and the idioms

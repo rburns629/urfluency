@@ -14,7 +14,7 @@ import (
 )
 
 // FormatVersion identifies the report schema.
-const FormatVersion = "0.3"
+const FormatVersion = "0.4"
 
 // MinOwnedLines is the volume below which a language shows "not enough data".
 const MinOwnedLines = 300
@@ -33,12 +33,14 @@ type Report struct {
 	// SkippedSlow counts files skipped because attributing them took too long.
 	SkippedSlow   int            `json:"files_skipped_too_slow,omitempty"`
 	Since         string         `json:"since"`
+	Summary       *Summary       `json:"summary,omitempty"`
 	Languages     []Language     `json:"languages"`
 	Prompting     *Prompting     `json:"prompting,omitempty"`
 	AI            *AIShare       `json:"ai_written,omitempty"`
 	AIEngineering *AIEngineering `json:"ai_engineering,omitempty"`
 	Practices     *Practices     `json:"practices,omitempty"`
 	Tools         []Tool         `json:"tools"`
+	Design        []DesignArea   `json:"design"`
 	Git           *Git           `json:"git,omitempty"`
 	// Unversioned covers folders without Git, kept apart because their
 	// authorship is declared rather than recorded.
@@ -57,8 +59,10 @@ type Prompting struct {
 	Reviewed   int            `json:"agent_edits_rejected_or_changed"`
 	// EditTasks are agent tasks with edits; GateTasks counts those that ran each
 	// quality gate.
-	EditTasks int            `json:"tasks_with_edits"`
-	GateTasks map[string]int `json:"tasks_running_gate"`
+	EditTasks int `json:"tasks_with_edits"`
+	// Communication describes how the user briefs agents; it is not scored.
+	Communication *Communication `json:"communication,omitempty"`
+	GateTasks     map[string]int `json:"tasks_running_gate"`
 }
 
 // PromptRule is one prompting rule and the share of applicable tasks that missed it.
@@ -106,9 +110,11 @@ type Durability struct {
 type Language struct {
 	Language   string   `json:"language"`
 	Frameworks []string `json:"frameworks"`
-	Files      int      `json:"files"`
-	OwnedLines int      `json:"owned_lines"`
-	Sufficient bool     `json:"sufficient_data"`
+	// FrameworkRatings rate experience with each framework.
+	FrameworkRatings []FrameworkRating `json:"framework_ratings"`
+	Files            int               `json:"files"`
+	OwnedLines       int               `json:"owned_lines"`
+	Sufficient       bool              `json:"sufficient_data"`
 	// Scanner rows, such as secrets, check every text file: Files is how many
 	// were checked, and they have no owned lines or per-line rates.
 	Scanner    bool           `json:"scanner,omitempty"`
@@ -152,14 +158,16 @@ type RuleResult struct {
 // Unversioned reports findings in project folders without Git history. Every
 // line counts as the user's, so it is declared rather than verified authorship.
 type Unversioned struct {
-	Projects  int        `json:"projects"`
-	Languages []Language `json:"languages"`
-	Tools     []Tool     `json:"tools"`
+	Projects  int          `json:"projects"`
+	Languages []Language   `json:"languages"`
+	Tools     []Tool       `json:"tools"`
+	Design    []DesignArea `json:"design"`
 }
 
 // BuildUnversioned reports a merged result from folders without Git.
 func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 	u := &Unversioned{Projects: res.Repos, Languages: []Language{}, Tools: BuildTools(res)}
+	u.Design = BuildDesign(res, u.Tools)
 	for _, lr := range res.Languages {
 		u.Languages = append(u.Languages, buildLanguage(lr, withLocations))
 	}
@@ -170,6 +178,7 @@ func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
 	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow,
 		Languages: []Language{}, Tools: BuildTools(res), Git: BuildGit(res)}
+	r.Design = BuildDesign(res, r.Tools)
 	if !since.IsZero() {
 		r.Since = since.Format("2006-01-02")
 	}
@@ -182,16 +191,17 @@ func Build(res analysis.Result, since time.Time, withLocations bool) Report {
 func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 	// Slices start empty, not nil, so JSON consumers always receive arrays.
 	lang := Language{
-		Language:   lr.Language,
-		Frameworks: append([]string{}, lr.Frameworks...),
-		Files:      lr.Files,
-		OwnedLines: lr.OwnedLines,
-		Sufficient: lr.OwnedLines >= MinOwnedLines,
-		Categories: map[string]int{},
-		Weaknesses: []RuleResult{},
-		Strengths:  []string{},
-		Focus:      []string{},
-		Idioms:     []IdiomResult{},
+		Language:         lr.Language,
+		Frameworks:       append([]string{}, lr.Frameworks...),
+		FrameworkRatings: buildFrameworkRatings(lr),
+		Files:            lr.Files,
+		OwnedLines:       lr.OwnedLines,
+		Sufficient:       lr.OwnedLines >= MinOwnedLines,
+		Categories:       map[string]int{},
+		Weaknesses:       []RuleResult{},
+		Strengths:        []string{},
+		Focus:            []string{},
+		Idioms:           []IdiomResult{},
 	}
 	if analysis.IsScanner(lr.Language) {
 		lang.Scanner, lang.OwnedLines = true, 0
@@ -306,6 +316,7 @@ func BuildPrompting(g sessions.Grades) *Prompting {
 		}
 	}
 	sort.SliceStable(p.Weaknesses, func(i, j int) bool { return p.Weaknesses[i].Share > p.Weaknesses[j].Share })
+	p.Communication = buildCommunication(g)
 	for i, w := range p.Weaknesses {
 		if i == 3 {
 			break
@@ -376,12 +387,14 @@ func WriteText(w io.Writer, r Report) error {
 		}
 		fmt.Fprintf(&b, "\nNo lines of yours in supported languages were found in %s%s.\n", where, when)
 	}
+	writeSummary(&b, r.Summary)
 	for _, l := range r.Languages {
 		writeLanguage(&b, l)
 	}
 	writeAIEngineering(&b, r)
 	writePractices(&b, r.Practices, r.Repos)
 	writeTools(&b, r.Tools, r.Git)
+	writeDesign(&b, "DESIGN (from the libraries your files import; experience, not quality)", r.Design)
 	if u := r.Unversioned; u != nil {
 		fmt.Fprintf(&b, "\nPROJECTS WITHOUT GIT: %d (authorship declared, not verified)\n", u.Projects)
 		b.WriteString("Every line in these folders counts as yours; AI share, durability, and test habits need Git history.\n")
@@ -392,6 +405,7 @@ func WriteText(w io.Writer, r Report) error {
 			b.WriteString("\n  TOOLS (files present)\n")
 			writeToolList(&b, u.Tools)
 		}
+		writeDesign(&b, "  DESIGN", u.Design)
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
@@ -411,6 +425,13 @@ func writeLanguage(b *strings.Builder, l Language) {
 		fmt.Fprintf(b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
 	}
 	writeProficiency(b, l)
+	if len(l.FrameworkRatings) > 0 {
+		var parts []string
+		for _, f := range l.FrameworkRatings {
+			parts = append(parts, fmt.Sprintf("%s %d %s (%s, %s)", f.Name, f.Score, f.Level, count(f.Repos, "repo"), count(f.Files, "file")))
+		}
+		fmt.Fprintf(b, "  Frameworks: %s\n", strings.Join(parts, "; "))
+	}
 	if a := l.Authorship; a != nil {
 		fmt.Fprintf(b, "  AI-assisted: %d lines (%.0f%%). Findings per 1,000 lines: AI-assisted %.2f, other %.2f\n",
 			a.AssistedLines, a.AssistedShare*100, a.AssistedFindingsPer, a.OtherFindingsPer)

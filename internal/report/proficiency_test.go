@@ -29,12 +29,12 @@ func TestProficiency(t *testing.T) {
 		level      string
 		confidence string
 	}{
-		{"clean code, no idioms", 10000, nil, nil, 65, "Proficient", "high"},
+		{"clean code, no idioms", 10000, nil, nil, 65, "Intermediate", "high"},
 		{"clean code, every idiom", 10000, goIdioms(), nil, 100, "Expert", "high"},
 		// Type safety at 70 per 1,000 lines scores 12.5, which caps the language
 		// at 42.5 however strong the rest is.
-		{"one weak category", 10000, goIdioms(), map[rules.Category]int{rules.TypeSafety: 700}, 43, "Developing", "high"},
-		{"one-off idioms do not count", 3000, map[string]analysis.IdiomUse{"go.idiom.generics": {Uses: 2, Files: 1}}, nil, 65, "Proficient", "medium"},
+		{"one weak category", 10000, goIdioms(), map[rules.Category]int{rules.TypeSafety: 700}, 43, "Intermediate", "high"},
+		{"one-off idioms do not count", 3000, map[string]analysis.IdiomUse{"go.idiom.generics": {Uses: 2, Files: 1}}, nil, 65, "Intermediate", "medium"},
 	}
 	for _, tc := range tests {
 		lr := analysis.LanguageResult{Language: "go", OwnedLines: tc.lines, Idioms: tc.idioms}

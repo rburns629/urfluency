@@ -25,6 +25,8 @@ type Prompt struct {
 	Context      bool // names files, symbols, errors, or pastes code or logs
 	Criteria     bool // states expected behavior or when the task is done
 	Verification bool // asks for tests or checks
+	Rationale    bool // explains why: the goal or reason behind the request
+	Constraints  bool // sets limits, such as what must not change or happen
 
 	Explores           int // file reads and searches
 	ExploresBeforeEdit int
@@ -44,6 +46,8 @@ var (
 	contextRe    = regexp.MustCompile("`|\\b[\\w./-]+\\.(go|py|ts|tsx|js|jsx|java|kt|rb|rs|cs|php|swift|sql|md|json|ya?ml|toml|html|css|sh)\\b|\\w/\\w|\\w\\(\\)|\\bline \\d+|:\\d+\\b|\\b(stack trace|traceback|error:|exception:)")
 	criteriaRe   = regexp.MustCompile(`\b(should|must|expect(ed|s)?|so that|done when|acceptance|criteria|returns?|until|ensure|make sure|without (breaking|changing)|only (if|when)|instead of|requirements?)\b`)
 	verifyRe     = regexp.MustCompile(`\b(tests?|testing|verify|verified|check|lint|build|compile|type-?check|ci|benchmark|run (it|the))\b`)
+	rationaleRe  = regexp.MustCompile(`\b(because|so that|so we|so it|so they|in order to|the reason|the goal|the point|the idea|otherwise|that way|which means|what i want)\b`)
+	constraintRe = regexp.MustCompile(`\b(never|don'?t|do not|must not|should not|shouldn'?t|can'?t|cannot|avoid|without|only|no longer|unless)\b`)
 )
 
 // Classify reduces a prompt to signals. Slash commands, tool output, and replies
@@ -63,6 +67,8 @@ func Classify(text string) Prompt {
 		Context:      contextRe.MatchString(t) || strings.Count(t, "\n") >= 3,
 		Criteria:     criteriaRe.MatchString(t),
 		Verification: verifyRe.MatchString(t),
+		Rationale:    rationaleRe.MatchString(t),
+		Constraints:  constraintRe.MatchString(t),
 	}
 	switch {
 	case strings.HasSuffix(t, "?") && !politeRe.MatchString(t):
@@ -116,6 +122,10 @@ type Grades struct {
 	// EditTasks are tasks with edits; GateTasks counts those that ran each gate.
 	EditTasks int
 	GateTasks map[string]int
+	// Style counts task prompts with each communication signal (context,
+	// criteria, verification, rationale, constraints). It describes how the user
+	// briefs an agent and is not graded.
+	Style map[string]int
 }
 
 // signalTypes lists the task types each prompt signal applies to; acceptance
@@ -194,7 +204,7 @@ var gradedRules = []struct {
 
 // Grade tallies each rule over the sessions' tasks.
 func Grade(sessions []Session) Grades {
-	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}, GateTasks: map[string]int{}}
+	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}, GateTasks: map[string]int{}, Style: map[string]int{}}
 	for _, s := range sessions {
 		for _, p := range s.Prompts {
 			g.Edits += p.Edits
@@ -203,6 +213,12 @@ func Grade(sessions []Session) Grades {
 	}
 	for _, t := range Tasks(sessions) {
 		g.Tasks[t.Prompt.Type]++
+		for signal, on := range map[string]bool{"context": t.Prompt.Context, "criteria": t.Prompt.Criteria,
+			"verification": t.Prompt.Verification, "rationale": t.Prompt.Rationale, "constraints": t.Prompt.Constraints} {
+			if on {
+				g.Style[signal]++
+			}
+		}
 		if t.Edits > 0 {
 			g.EditTasks++
 			for _, gate := range gates.Named {

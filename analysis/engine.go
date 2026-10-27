@@ -84,9 +84,11 @@ func (o Options) progress(stage string, done, total int) {
 type LanguageResult struct {
 	Language   string
 	Frameworks []string
-	Files      int
-	OwnedLines int
-	Findings   []Finding
+	// FrameworkUse counts repositories and owned files per framework.
+	FrameworkUse map[string]Usage
+	Files        int
+	OwnedLines   int
+	Findings     []Finding
 	// AssistedLines are owned lines an agent wrote in local sessions or that
 	// come from commits marked AI-assisted; AssistedFindings are findings on them.
 	AssistedLines    int
@@ -132,6 +134,8 @@ type Result struct {
 	// commits (empty without history).
 	Tools map[string]ToolUse
 	Git   GitHabits
+	// Design is how much owned code worked in each design area, from imports.
+	Design map[string]DesignUse
 }
 
 type ownedFile struct {
@@ -295,6 +299,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 			}
 		}
 	}
+	result.Design = designUsage(files)
 	byAnalyzer := map[Analyzer][]ownedFile{}
 	for _, f := range files {
 		if f.analyzer != nil {
@@ -312,7 +317,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 			return err
 		}
 		if fd, ok := a.(FrameworkDetector); ok {
-			lr.Frameworks = frameworks(fd, group)
+			lr.Frameworks, lr.FrameworkUse = frameworks(fd, group)
 		}
 		result.Languages = append(result.Languages, lr)
 	}
@@ -401,19 +406,20 @@ func run(ctx context.Context, name string, group []ownedFile,
 	return lr, nil
 }
 
-func frameworks(fd FrameworkDetector, group []ownedFile) []string {
-	seen := map[string]bool{}
+// frameworks lists the frameworks the files use, and how many files use each.
+func frameworks(fd FrameworkDetector, group []ownedFile) ([]string, map[string]Usage) {
+	use := map[string]Usage{}
 	for _, f := range group {
 		for _, fw := range fd.Frameworks(f.file) {
-			seen[fw] = true
+			use[fw] = Usage{Repos: 1, Files: use[fw].Files + 1}
 		}
 	}
 	out := []string{}
-	for fw := range seen {
+	for fw := range use {
 		out = append(out, fw)
 	}
 	sort.Strings(out)
-	return out
+	return out, use
 }
 
 // loadOwned reads each candidate file and its owned lines with a bounded worker
