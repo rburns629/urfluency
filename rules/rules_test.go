@@ -6,9 +6,10 @@ func TestCatalogIsComplete(t *testing.T) {
 	if d := Duplicates(); len(d) > 0 {
 		t.Fatalf("duplicate rule IDs: %v", d)
 	}
-	valid := map[Category]bool{CleanCode: true, Architecture: true, TypeSafety: true, LanguageProficiency: true, Security: true, AIEngineering: true}
+	valid := map[Category]bool{CleanCode: true, Architecture: true, TypeSafety: true, LanguageProficiency: true, Security: true, AIEngineering: true, Idiom: true}
 	for id, r := range catalog {
-		if r.ID != id || r.Title == "" || r.Why == "" || r.Focus == "" || len(r.Languages) == 0 {
+		// Idioms are strengths, so they have no focus advice.
+		if r.ID != id || r.Title == "" || r.Why == "" || (r.Focus == "") != (r.Category == Idiom) || len(r.Languages) == 0 {
 			t.Errorf("rule %s is missing fields: %+v", id, r)
 		}
 		if !valid[r.Category] {

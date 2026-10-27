@@ -77,6 +77,14 @@ type LanguageResult struct {
 	AssistedFindings int
 	AssistedByRule   map[string]int // findings on AI-assisted lines, per rule
 	TestLines        int            // owned lines in test files, included in OwnedLines
+	// Idioms counts positive findings on owned lines, per rule.
+	Idioms map[string]IdiomUse
+}
+
+// IdiomUse is how often, and in how many files, owned code used an idiom.
+type IdiomUse struct {
+	Uses  int
+	Files int
 }
 
 // Result is the outcome of scanning one or more repositories.
@@ -169,7 +177,11 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	if result.Durability, err = durability(ctx, repo, added, commits, tools, touched, opts.Since, time.Now(), opts.progress); err != nil {
+	excluded, err := notUserCode(ctx, repo, added, files)
+	if err != nil {
+		return Result{}, err
+	}
+	if result.Durability, err = durability(ctx, repo, added, commits, tools, touched, excluded, opts.Since, time.Now(), opts.progress); err != nil {
 		return Result{}, err
 	}
 	result.Tests = testHabits(added, commits, tools, opts.Since)
@@ -187,6 +199,34 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 	return result, nil
+}
+
+// notUserCode returns which paths in the history the scan leaves out of the
+// user's code: files skipped at HEAD (generated, bundled, or with a library
+// banner), files ruled out by path, and files .gitattributes marks as vendored or
+// generated, including ones deleted since.
+func notUserCode(ctx context.Context, repo gitdata.Repo, added map[string]map[string]int, files []ownedFile) (func(string) bool, error) {
+	skippedAtHead := map[string]bool{}
+	for _, f := range files {
+		if f.analyzer == nil && ForPath(f.file.Path) != nil {
+			skippedAtHead[f.file.Path] = true
+		}
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, perFile := range added {
+		for p := range perFile {
+			if !seen[p] {
+				seen[p] = true
+				paths = append(paths, p)
+			}
+		}
+	}
+	vendored, err := repo.Vendored(ctx, paths)
+	if err != nil {
+		return nil, err
+	}
+	return func(p string) bool { return skippedAtHead[p] || vendored[p] || skipsPath(p) }, nil
 }
 
 // dropVendored removes the paths .gitattributes marks as vendored or generated.
@@ -288,7 +328,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 // run analyzes a group of files and keeps findings on owned lines.
 func run(ctx context.Context, name string, group []ownedFile,
 	analyze func(context.Context, []File) ([]Finding, error)) (LanguageResult, error) {
-	lr := LanguageResult{Language: name, Files: len(group), AssistedByRule: map[string]int{}}
+	lr := LanguageResult{Language: name, Files: len(group), AssistedByRule: map[string]int{}, Idioms: map[string]IdiomUse{}}
 	owned := map[string]map[int]string{}
 	assisted := map[string]map[int]bool{}
 	inputs := make([]File, 0, len(group))
@@ -306,13 +346,28 @@ func run(ctx context.Context, name string, group []ownedFile,
 	if err != nil {
 		return lr, fmt.Errorf("%s analyzer: %w", name, err)
 	}
+	idiomFiles := map[string]map[string]bool{}
 	for _, fd := range findings {
-		if owned[fd.Path][fd.Line] != "" {
-			lr.Findings = append(lr.Findings, fd)
-			if assisted[fd.Path][fd.Line] {
-				lr.AssistedFindings++
-				lr.AssistedByRule[fd.Rule]++
+		if owned[fd.Path][fd.Line] == "" {
+			continue
+		}
+		if fd.Positive {
+			u := lr.Idioms[fd.Rule]
+			u.Uses++
+			if idiomFiles[fd.Rule] == nil {
+				idiomFiles[fd.Rule] = map[string]bool{}
 			}
+			if !idiomFiles[fd.Rule][fd.Path] {
+				idiomFiles[fd.Rule][fd.Path] = true
+				u.Files++
+			}
+			lr.Idioms[fd.Rule] = u
+			continue
+		}
+		lr.Findings = append(lr.Findings, fd)
+		if assisted[fd.Path][fd.Line] {
+			lr.AssistedFindings++
+			lr.AssistedByRule[fd.Rule]++
 		}
 	}
 	sort.Slice(lr.Findings, func(i, j int) bool {

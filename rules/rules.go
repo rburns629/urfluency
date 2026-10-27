@@ -4,7 +4,7 @@ package rules
 import "sort"
 
 // Version identifies the catalog; it changes whenever rules are added or redefined.
-const Version = "0.8"
+const Version = "0.9"
 
 // Category groups rules into the metrics users see.
 type Category string
@@ -16,6 +16,9 @@ const (
 	LanguageProficiency Category = "language-proficiency"
 	Security            Category = "security"
 	AIEngineering       Category = "ai-engineering"
+	// Idiom rules are positive: they record practices the code uses well and
+	// count toward proficiency, never against it.
+	Idiom Category = "idiom"
 )
 
 // Rule describes one detectable practice and how to improve on it.

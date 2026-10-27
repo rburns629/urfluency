@@ -26,10 +26,10 @@ type Durability struct {
 // durability applies the SZZ method: each fix commit's changed lines are traced
 // back to the commits that introduced them.
 func durability(ctx context.Context, repo gitdata.Repo, added map[string]map[string]int, commits map[string]gitdata.Commit,
-	tools map[string][]string, touched map[string]bool, since, now time.Time,
+	tools map[string][]string, touched map[string]bool, excluded func(p string) bool, since, now time.Time,
 	progress func(stage string, done, total int)) (Durability, error) {
 	var d Durability
-	isCode := func(p string) bool { return !inSkippedDir(p) && !IsProtected(p) && ForPath(p) != nil }
+	isCode := func(p string) bool { return !inSkippedDir(p) && !IsProtected(p) && ForPath(p) != nil && !excluded(p) }
 	// A fix to a file the authors never touched cannot change their lines.
 	ownCode := func(p string) bool { return touched[p] && isCode(p) }
 	eligible := map[string]bool{}

@@ -19,6 +19,9 @@ type Finding struct {
 	Rule string
 	Path string
 	Line int
+	// Positive marks an idiom the code uses well, such as error wrapping, rather
+	// than a problem. Idioms count toward proficiency and never toward findings.
+	Positive bool
 }
 
 // Analyzer analyzes the files of one language. Implementations must not execute
@@ -32,6 +35,18 @@ type Analyzer interface {
 	Skip(f File) bool
 	// Analyze returns findings for the given files.
 	Analyze(ctx context.Context, files []File) ([]Finding, error)
+}
+
+// PathSkipper is implemented by analyzers that can rule out files by path alone,
+// such as build output. Durability uses it for files that no longer exist.
+type PathSkipper interface {
+	SkipPath(path string) bool
+}
+
+// skipsPath reports whether the path's analyzer rules it out by path.
+func skipsPath(p string) bool {
+	ps, ok := ForPath(p).(PathSkipper)
+	return ok && ps.SkipPath(p)
 }
 
 // Scanner analyzes every text file regardless of language, such as secret
@@ -64,6 +79,17 @@ func Scanners() []Scanner {
 	out := append([]Scanner(nil), scanners...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out
+}
+
+// IsScanner reports whether a result name belongs to a scanner, such as
+// "secrets", rather than a language.
+func IsScanner(name string) bool {
+	for _, s := range scanners {
+		if s.Name() == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Analyzers returns registered analyzers sorted by language.

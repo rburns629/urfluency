@@ -22,11 +22,10 @@ func init() {
 // JavaScript analyzes .js, .jsx, .mjs, and .cjs files.
 type JavaScript struct{}
 
-func (JavaScript) Language() string     { return "javascript" }
-func (JavaScript) Extensions() []string { return []string{".js", ".jsx", ".mjs", ".cjs"} }
-func (JavaScript) Skip(f analysis.File) bool {
-	return skipBundled(f)
-}
+func (JavaScript) Language() string          { return "javascript" }
+func (JavaScript) Extensions() []string      { return []string{".js", ".jsx", ".mjs", ".cjs"} }
+func (JavaScript) Skip(f analysis.File) bool { return skipBundled(f) }
+func (JavaScript) SkipPath(p string) bool    { return skipBundledPath(p) }
 func (JavaScript) Analyze(ctx context.Context, files []analysis.File) ([]analysis.Finding, error) {
 	return analyze(ctx, files, false)
 }
@@ -34,24 +33,30 @@ func (JavaScript) Analyze(ctx context.Context, files []analysis.File) ([]analysi
 // TypeScript analyzes .ts, .tsx, .mts, and .cts files, excluding declaration files.
 type TypeScript struct{}
 
-func (TypeScript) Language() string     { return "typescript" }
-func (TypeScript) Extensions() []string { return []string{".ts", ".tsx", ".mts", ".cts"} }
-func (TypeScript) Skip(f analysis.File) bool {
-	return strings.HasSuffix(f.Path, ".d.ts") || skipBundled(f)
-}
+func (TypeScript) Language() string          { return "typescript" }
+func (TypeScript) Extensions() []string      { return []string{".ts", ".tsx", ".mts", ".cts"} }
+func (TypeScript) Skip(f analysis.File) bool { return skipBundled(f) }
+func (TypeScript) SkipPath(p string) bool    { return skipBundledPath(p) }
 func (TypeScript) Analyze(ctx context.Context, files []analysis.File) ([]analysis.Finding, error) {
 	return analyze(ctx, files, true)
+}
+
+// skipBundledPath excludes, by path alone, declaration files, build output,
+// minified files, and libraries copied into static assets.
+func skipBundledPath(p string) bool {
+	base := path.Base(p)
+	if strings.HasSuffix(p, ".d.ts") || parsing.InDir(p, "dist", "build", "out", ".next", "coverage") ||
+		strings.Contains(base, ".min.") || strings.Contains(base, ".bundle.") {
+		return true
+	}
+	// Libraries copied into static assets, such as public/plugins/chartjs.
+	return parsing.InDir(p, "public", "static", "assets") && parsing.InDir(p, "plugins", "lib", "libs", "vendor", "vendors")
 }
 
 // skipBundled excludes build output, minified files, and third-party libraries
 // copied into a project, which are not the user's code.
 func skipBundled(f analysis.File) bool {
-	base := path.Base(f.Path)
-	if parsing.InDir(f.Path, "dist", "build", "out", ".next", "coverage") || strings.Contains(base, ".min.") || strings.Contains(base, ".bundle.") {
-		return true
-	}
-	// Libraries copied into static assets, such as public/plugins/chartjs.
-	if parsing.InDir(f.Path, "public", "static", "assets") && parsing.InDir(f.Path, "plugins", "lib", "libs", "vendor", "vendors") {
+	if skipBundledPath(f.Path) {
 		return true
 	}
 	// Libraries keep their license banner: /*! or @license near the top.
@@ -90,6 +95,7 @@ func analyze(ctx context.Context, files []analysis.File, typescript bool) ([]ana
 		}
 		c := checker{tree: tree, path: f.Path, typescript: typescript, frameworks: frameworksOf(tree, f.Path)}
 		parsing.Walk(tree.Root(), c.visit)
+		parsing.Walk(tree.Root(), c.visitIdioms)
 		if !analysis.IsTestPath(f.Path) {
 			for _, fn := range parsing.Cognitive(tree, parsing.JavaScriptComplexity) {
 				if fn.Complexity > parsing.CognitiveThreshold {

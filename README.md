@@ -99,6 +99,18 @@ actually happened in sessions. Maintainers check candidate rules with
 `urfluency validate`, which compares outcomes for tasks with and without each prompt
 signal and prints counts only (see DESIGN.md).
 
+## Proficiency
+
+Each language gets a score from 0 to 100 and a level (Beginner, Developing,
+Proficient, Advanced, Expert). Both come from your own lines: the share of the
+language's idioms you use well, such as error wrapping in Go, dataclasses and
+generators in Python, or type guards in TypeScript, and how cleanly you write it
+in each category (security, type safety, clean code, language proficiency). A weak
+category caps the score, so strengths cannot hide it. The report lists the idioms
+you demonstrate under **Shows**. The model (version `0.1-uncalibrated`) is
+documented in DESIGN.md and will be calibrated against outcomes before scores are
+published anywhere.
+
 ## What it checks
 
 | Area | Coverage |

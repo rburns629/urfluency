@@ -60,6 +60,7 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		_, _ = conf.Check(file.Name.Name, fset, []*ast.File{file}, info)
 		c := &checker{fset: fset, path: f.Path, file: file, info: info, imports: importNames(file)}
 		c.run()
+		c.idioms()
 		findings = append(findings, c.findings...)
 	}
 	return findings, nil

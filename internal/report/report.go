@@ -14,7 +14,7 @@ import (
 )
 
 // FormatVersion identifies the report schema.
-const FormatVersion = "0.2"
+const FormatVersion = "0.3"
 
 // MinOwnedLines is the volume below which a language shows "not enough data".
 const MinOwnedLines = 300
@@ -102,15 +102,22 @@ type Durability struct {
 
 // Language summarizes one language.
 type Language struct {
-	Language   string         `json:"language"`
-	Frameworks []string       `json:"frameworks"`
-	Files      int            `json:"files"`
-	OwnedLines int            `json:"owned_lines"`
-	Sufficient bool           `json:"sufficient_data"`
+	Language   string   `json:"language"`
+	Frameworks []string `json:"frameworks"`
+	Files      int      `json:"files"`
+	OwnedLines int      `json:"owned_lines"`
+	Sufficient bool     `json:"sufficient_data"`
+	// Scanner rows, such as secrets, check every text file: Files is how many
+	// were checked, and they have no owned lines or per-line rates.
+	Scanner    bool           `json:"scanner,omitempty"`
 	Categories map[string]int `json:"findings_by_category"`
 	Weaknesses []RuleResult   `json:"weaknesses"`
 	Strengths  []string       `json:"strengths"`
 	Focus      []string       `json:"focus"`
+	// Proficiency scores the language from idiom range and category rates; it is
+	// absent with too little owned code. Idioms are the idioms demonstrated.
+	Proficiency *Proficiency  `json:"proficiency,omitempty"`
+	Idioms      []IdiomResult `json:"idioms"`
 	// Authorship splits the findings rate between AI-assisted and other owned
 	// lines, so readers can see whose code a result reflects.
 	Authorship *Authorship `json:"authorship,omitempty"`
@@ -181,8 +188,12 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		Weaknesses: []RuleResult{},
 		Strengths:  []string{},
 		Focus:      []string{},
+		Idioms:     []IdiomResult{},
 	}
-	if lr.AssistedLines > 0 && lr.OwnedLines > 0 {
+	if analysis.IsScanner(lr.Language) {
+		lang.Scanner, lang.OwnedLines = true, 0
+	}
+	if lr.AssistedLines > 0 && lr.OwnedLines > 0 && !lang.Scanner {
 		a := &Authorship{AssistedLines: lr.AssistedLines, AssistedShare: round2(float64(lr.AssistedLines) / float64(lr.OwnedLines))}
 		a.AssistedFindingsPer = round2(float64(lr.AssistedFindings) * 1000 / float64(lr.AssistedLines))
 		if other := lr.OwnedLines - lr.AssistedLines; other > 0 {
@@ -209,7 +220,7 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		}
 	}
 	for _, rr := range byRule {
-		if lr.OwnedLines > 0 {
+		if lang.OwnedLines > 0 {
 			rr.PerKLines = round2(float64(rr.Count) * 1000 / float64(lr.OwnedLines))
 		}
 		lang.Weaknesses = append(lang.Weaknesses, *rr)
@@ -234,7 +245,9 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 	if lang.Sufficient {
 		checked := map[string]int{}
 		for _, rule := range rules.ForLanguage(lr.Language) {
-			checked[string(rule.Category)]++
+			if rule.Category != rules.Idiom {
+				checked[string(rule.Category)]++
+			}
 		}
 		var categories []string
 		for c := range checked {
@@ -247,6 +260,15 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 					"No %s issues in %d owned lines (%d rules checked)", c, lr.OwnedLines, checked[c]))
 			}
 		}
+	}
+	if !lang.Scanner {
+		counts := map[rules.Category]int{}
+		for c, n := range lang.Categories {
+			counts[rules.Category(c)] = n
+		}
+		var idioms []IdiomResult
+		lang.Proficiency, idioms = proficiency(lr, counts)
+		lang.Idioms = append(lang.Idioms, idioms...)
 	}
 	return lang
 }
@@ -372,10 +394,15 @@ func writeLanguage(b *strings.Builder, l Language) {
 	if len(l.Frameworks) > 0 {
 		name += " (" + strings.Join(l.Frameworks, ", ") + ")"
 	}
-	fmt.Fprintf(b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
+	if l.Scanner {
+		fmt.Fprintf(b, "\n%s: checked %d files\n", name, l.Files)
+	} else {
+		fmt.Fprintf(b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
+	}
 	if !l.Sufficient {
 		fmt.Fprintf(b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
 	}
+	writeProficiency(b, l)
 	if a := l.Authorship; a != nil {
 		fmt.Fprintf(b, "  AI-assisted: %d lines (%.0f%%). Findings per 1,000 lines: AI-assisted %.2f, other %.2f\n",
 			a.AssistedLines, a.AssistedShare*100, a.AssistedFindingsPer, a.OtherFindingsPer)
@@ -389,7 +416,11 @@ func writeLanguage(b *strings.Builder, l Language) {
 	if len(l.Weaknesses) > 0 {
 		b.WriteString("  Areas to improve\n")
 		for _, w := range l.Weaknesses {
-			fmt.Fprintf(b, "    - %s [%s]: %d (%.2f per 1,000 lines)\n", w.Title, w.Category, w.Count, w.PerKLines)
+			if l.Scanner {
+				fmt.Fprintf(b, "    - %s [%s]: %d\n", w.Title, w.Category, w.Count)
+			} else {
+				fmt.Fprintf(b, "    - %s [%s]: %d (%.2f per 1,000 lines)\n", w.Title, w.Category, w.Count, w.PerKLines)
+			}
 			fmt.Fprintf(b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
 			if w.Standard != "" {
 				fmt.Fprintf(b, "      Standard: %s\n", w.Standard)

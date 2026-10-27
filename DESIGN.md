@@ -179,11 +179,35 @@ learn: https://urfluency.com/rules/go.decode-target-reuse
 
 ### Scores
 
-Each category shows a band (**Strong**, **Solid**, **Developing**, **Focus area**)
-and a 0–100 value derived from incidence rates, with sample size and confidence
-beside it. Categories with too little evidence show **Not enough data**. There is no
-overall average: a strong category cannot hide a weak one, following the
-reasoning in clean-agent-code's AUDIT.md.
+Each language with at least 300 owned lines gets a **proficiency score** (0–100)
+and a **level**, built from two kinds of evidence read from the syntax of the
+user's own lines:
+
+- **Idiom range** (positive): the share of the language's idiom catalog the user
+  demonstrates, such as error wrapping with `%w` and table-driven tests in Go,
+  dataclasses and generators in Python, or type guards and utility types in
+  TypeScript. An idiom counts with at least 3 uses across at least 2 files, so one
+  copied snippet does not. Idioms are rules in the `idiom` category, reported by
+  the analyzers as positive findings and kept only on owned lines, like problems.
+- **Category scores** (problems): for security, type safety, clean code, and
+  language proficiency, `100 / (1 + rate / k)` where `rate` is findings per 1,000
+  owned lines and `k` is the rate that scores 50: 0.5 for security, 10 for the
+  others. Each category shows a band: **Strong** (85+), **Solid** (70+),
+  **Developing** (50+), **Focus area**.
+
+The score is `0.35 × range + 0.65 × mean(category scores)`, capped at the weakest
+category plus 30, so a strong category cannot hide a weak one (the reasoning of
+clean-agent-code's AUDIT.md). Levels: **Expert** 85+, **Advanced** 70+,
+**Proficient** 55+, **Developing** 40+, **Beginner** below. Confidence comes from
+volume: high from 10,000 owned lines, medium from 2,000, low below.
+
+The model is versioned (`proficiency.model`, now `0.1-uncalibrated`). Its weights
+and `k` values are reasoned starting points. Before scores are uploaded or shown
+publicly they are calibrated against outcomes: per language, scores should
+predict durability (how often the user's lines later need fixes), and once uploads
+exist, the level bands are set from the distribution across users. Each change to
+the model changes its version, and trends compare only results with the same
+version.
 
 ### Measurement limits
 

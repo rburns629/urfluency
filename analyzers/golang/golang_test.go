@@ -3,6 +3,7 @@ package golang
 import (
 	"context"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -18,6 +19,9 @@ func findings(t *testing.T, path, src string) []string {
 	}
 	var out []string
 	for _, f := range got {
+		if f.Positive {
+			continue // idioms are tested separately
+		}
 		out = append(out, f.Rule+":"+itoa(f.Line))
 	}
 	sort.Strings(out)
@@ -473,5 +477,13 @@ func fetch(urls []string, jobs chan string, work func(string)) *http.Client {
 		if strings.HasPrefix(f, "go.http-without") {
 			t.Errorf("timeout rule fired in a test file: %s", f)
 		}
+	}
+}
+
+func TestFrameworks(t *testing.T) {
+	src := "package api\n\nimport (\n\t\"github.com/gofiber/fiber/v2\"\n\t\"github.com/gofiber/fiber/v2/middleware/cors\"\n\t\"google.golang.org/grpc\"\n\t\"github.com/gin-gonic/ginx\"\n)\n"
+	got := Analyzer{}.Frameworks(analysis.File{Path: "api.go", Content: []byte(src)})
+	if !slices.Equal(got, []string{"fiber", "grpc"}) {
+		t.Errorf("Frameworks = %v, want [fiber grpc]", got)
 	}
 }

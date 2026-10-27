@@ -18,6 +18,9 @@ func findings(t *testing.T, path, src string) []string {
 	}
 	out := []string{}
 	for _, f := range got {
+		if f.Positive {
+			continue // idioms are tested separately
+		}
 		out = append(out, fmt.Sprintf("%s:%d", f.Rule, f.Line))
 	}
 	sort.Strings(out)
