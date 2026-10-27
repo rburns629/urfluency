@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -122,5 +123,43 @@ func TestValuesThatNameCredentialsAreNotSecrets(t *testing.T) {
 	want := []string{"sec.hardcoded-password:3"}
 	if got := scan(t, "src/pages/Auth.tsx", strings.Join(lines, "\n")); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want only the real value on line 3: %v", got, want)
+	}
+}
+
+func TestFirebaseWebConfigIsNotASecret(t *testing.T) {
+	// Fake keys are assembled at runtime so the source holds no key-shaped string.
+	key := "AI" + "za" + strings.Repeat("Q", 35)
+	firebase := `export const environment = {
+  production: true,
+  firebase: {
+    apiKey: "` + key + `",
+    authDomain: "demo.firebaseapp.com",
+    projectId: "demo",
+    messagingSenderId: "123",
+    appId: "1:123:web:abc",
+  },
+  mapsKey: "` + key + `",
+};
+`
+	tests := []struct {
+		name, path, src string
+		want            []int // lines with findings
+	}{
+		{"Firebase web config", "src/environments/environment.ts", firebase, []int{10}}, // mapsKey is not Firebase's
+		{"apiKey without the rest of a Firebase config", "src/config.ts", "const c = {\n  apiKey: \"" + key + "\",\n};\n", []int{2}},
+		{"Google key in server code", "home/views.py", "key = \"" + key + "\"\n", []int{1}},
+	}
+	for _, tc := range tests {
+		got, err := Scanner{}.Analyze(context.Background(), []analysis.File{{Path: tc.path, Content: []byte(tc.src)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lines []int
+		for _, f := range got {
+			lines = append(lines, f.Line)
+		}
+		if !slices.Equal(lines, tc.want) {
+			t.Errorf("%s: findings on lines %v, want %v", tc.name, lines, tc.want)
+		}
 	}
 }

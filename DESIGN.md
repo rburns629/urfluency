@@ -225,6 +225,10 @@ Files are read only for supported languages, the CI, build, and agent instructio
 files the practices need, and extensions the user includes (`--include-ext`, or
 saved by `init`). The secrets scanner runs on the same files, so secrets in
 excluded config files are not caught; this is the user's choice to widen.
+A Google API key is not reported when it is the `apiKey` of a Firebase web
+config (with `authDomain` and `messagingSenderId` or `appId` within ten lines):
+Firebase web keys ship to every browser by design and access is governed by
+Firebase Security Rules. Any other Google key is reported.
 
 ### Measurement limits
 

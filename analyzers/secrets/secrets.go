@@ -86,14 +86,33 @@ func (Scanner) Analyze(ctx context.Context, files []analysis.File) ([]analysis.F
 			return nil, err
 		}
 		generic := !isTestPath(f.Path)
-		for i, line := range bytes.Split(f.Content, []byte("\n")) {
+		lines := bytes.Split(f.Content, []byte("\n"))
+		for i, line := range lines {
 			text := string(line)
-			if rule := match(text, generic); rule != "" {
-				findings = append(findings, analysis.Finding{Rule: rule, Path: f.Path, Line: i + 1})
+			rule := match(text, generic)
+			if rule == "" || (rule == "sec.api-token" && firebaseWebKey(text, lines, i)) {
+				continue
 			}
+			findings = append(findings, analysis.Finding{Rule: rule, Path: f.Path, Line: i + 1})
 		}
 	}
 	return findings, nil
+}
+
+// firebaseKey matches the apiKey entry of a Firebase web config.
+var firebaseKey = regexp.MustCompile(`\bapiKey["']?\s*:\s*["']AIza[0-9A-Za-z_-]{35}["']`)
+
+// firebaseWebKey reports whether line i is the apiKey of a Firebase web config:
+// an apiKey entry with authDomain and messagingSenderId or appId within ten
+// lines. Firebase web keys ship to every browser by design; access is governed by
+// Firebase Security Rules, so they are not secrets. Other Google keys are.
+func firebaseWebKey(line string, lines [][]byte, i int) bool {
+	if !firebaseKey.MatchString(line) {
+		return false
+	}
+	window := bytes.Join(lines[max(0, i-10):min(len(lines), i+11)], []byte("\n"))
+	return bytes.Contains(window, []byte("authDomain")) &&
+		(bytes.Contains(window, []byte("messagingSenderId")) || bytes.Contains(window, []byte("appId")))
 }
 
 // match returns the first rule a line violates, or "". Generic checks (URL
