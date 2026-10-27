@@ -42,7 +42,9 @@ Usage:
   urfluency version               Print the version
 
 Scan flags:
-  --author EMAIL   Your commit email; repeat for several (default: git user.email)
+  --author EMAIL   Also count this address as yours; repeat for several. Your
+                   addresses are found automatically from your Git name, email,
+                   and account name, so this is only for ones it lists as possible
   --since WHEN     Only lines authored since WHEN: a duration like 90d, a date
                    like 2026-01-31, or all (default 365d)
   --json           Print the report as JSON
@@ -140,12 +142,14 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(repos) == 0 && len(folders) == 0 {
 		return fmt.Errorf("no projects found at %s", abs)
 	}
-	if len(authors) == 0 && len(repos) > 0 {
-		email, err := gitdata.Repo{Dir: repos[0]}.ConfiguredEmail(ctx)
-		if err != nil || email == "" {
-			return fmt.Errorf("%w: no --author given and git user.email is not set", errUsage)
+	if len(repos) > 0 {
+		prog.phase("Finding your commits")
+		id := detectIdentity(ctx, repos, authors)
+		if len(id.Emails) == 0 {
+			return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
 		}
-		authors = append(authors, email)
+		prog.note(describeIdentity(id, len(repos)))
+		authors = id.Emails
 	}
 	var graded []sessions.Session
 	agentLines := map[string]map[string]map[string]bool{}

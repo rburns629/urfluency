@@ -39,8 +39,8 @@ prints the official install command for whatever is missing.
 ## Try the CLI
 
 ```sh
-./urfluency scan /path/to/your/repo              # uses git user.email
-./urfluency scan --author you@example.com --since 90d --locations .
+./urfluency scan /path/to/your/repo              # finds your commits automatically
+./urfluency scan --since 90d --locations .
 ./urfluency scan --json .
 ./urfluency scan --sessions ~/Projects           # every repo below, plus your agent prompts
 ./urfluency scan --exclude 'Archive*' ~/Projects # skip folders by name or relative path
@@ -53,6 +53,14 @@ clean. Files over 2 MB are skipped before anything reads them, since they are
 vendored or generated, and a file that takes more than 60 seconds to attribute is
 skipped and counted in the report.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
+
+You don't list your email addresses. urFluency starts from your Git name and
+email and your account's full name, then follows history: an address you
+committed under with one of your names is yours, and so is a name you used with
+one of your addresses, so old work, school, and machine-default addresses are
+found. Bots and GitHub's shared web address never link. Addresses that only look
+like yours are listed as possible and not counted; add any that are yours with
+`--author`. Addresses are shown in your terminal and never written to the report.
 
 Projects that lost their Git history (or never had commits) are scanned too. A
 folder counts as a project when it has a manifest such as `go.mod` or

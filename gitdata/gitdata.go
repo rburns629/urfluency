@@ -65,6 +65,45 @@ func (r Repo) TopLevel(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
+// ConfiguredName returns user.name as Git resolves it for this repository, or ""
+// when it is not set.
+func (r Repo) ConfiguredName(ctx context.Context) string {
+	out, err := r.git(ctx, "config", "user.name")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Author is one name and email pair that authored commits.
+type Author struct {
+	Name    string
+	Email   string
+	Commits int
+}
+
+// Authors lists every author name and email pair on any branch, with how many
+// commits each authored. Emails are lowercased.
+func (r Repo) Authors(ctx context.Context) ([]Author, error) {
+	out, err := r.git(ctx, "log", "--all", "--format=%an%x09%ae")
+	if err != nil {
+		return nil, err
+	}
+	counts := map[[2]string]int{}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		name, email, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		counts[[2]string{name, strings.ToLower(email)}]++
+	}
+	var authors []Author
+	for k, n := range counts {
+		authors = append(authors, Author{Name: k[0], Email: k[1], Commits: n})
+	}
+	return authors, nil
+}
+
 // ConfiguredEmail returns user.email as Git resolves it for this repository.
 func (r Repo) ConfiguredEmail(ctx context.Context) (string, error) {
 	out, err := r.git(ctx, "config", "user.email")

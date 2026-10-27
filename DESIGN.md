@@ -495,6 +495,17 @@ urfluency logout
   lines, and never executes project code beyond the language's static tools.
 - `upload` always shows the payload and asks for confirmation unless `--yes` is
   passed.
+- `scan` finds the user's commits without a list of addresses. Seeds are
+  `user.name` and `user.email` as each repository resolves them, the OS account's
+  full name, and any `--author`. Detection links through history until nothing
+  changes: an address used with a known name joins, and a name used with a known
+  address joins when it has at least two words (one-word handles link only as
+  seeds). Names compare by first and last word, so middle initials match. Bots,
+  `noreply@github.com`, and `root` never link. Unlinked addresses that contain the
+  user's last name, initial plus last name, or the letters of a known address are
+  listed (top 10) as possible and not counted. A shared name can link a
+  namesake's address; the counted addresses are always printed so the user can
+  see it. Addresses go to stderr only and never into the report or an upload.
 - `scan` accepts a repository or a folder; for a folder it scans every repository up
   to four levels below it and combines the results. A path inside a repository scans
   that repository. `--exclude` skips folders by name or relative path.

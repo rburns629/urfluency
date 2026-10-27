@@ -178,6 +178,46 @@ func TestScanFoldersWithoutGit(t *testing.T) {
 	}
 }
 
+func TestScanDetectsIdentity(t *testing.T) {
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[user]\n\tname = Ana Diaz\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	r := testutil.NewRepo(t)
+	panics := "package a\n\nfunc f() { panic(1) }\n"
+	commit := func(author, file string) {
+		if err := os.WriteFile(filepath.Join(r.Dir, file), []byte(panics), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r.Git("x@example.com", "", "add", "-A")
+		r.Git("x@example.com", "", "commit", "-q", "-m", "change", "--author="+author)
+	}
+	commit("Ana Diaz <ana@old.example>", "a.go")
+	commit("Ana M. Diaz <ana@new.example>", "b.go")
+	commit("Ben Diaz <ben@example.com>", "c.go")
+
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", "--json", "--since", "all", r.Dir}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Languages) == 0 || rep.Languages[0].OwnedLines != 6 {
+		t.Errorf("languages = %+v", rep.Languages)
+	}
+	for _, want := range []string{"Counted as yours: 2 addresses", "ana@new.example, ana@old.example", "Possibly yours, not counted", "ben@example.com (1 commit in 1 repository)"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("stderr missing %q:\n%s", want, errOut.String())
+		}
+	}
+	if strings.Contains(out.String(), "@") {
+		t.Errorf("an address leaked into the report:\n%s", out.String())
+	}
+}
+
 func TestWriteValidation(t *testing.T) {
 	found := []sessions.Session{
 		{Agent: "claude-code", Models: map[string]bool{"claude-test-1": true}, Prompts: []sessions.Prompt{

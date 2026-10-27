@@ -105,11 +105,7 @@ func (p *progress) finish(repos int) {
 	if p.tty {
 		fmt.Fprint(p.w, "\r\033[K")
 	}
-	noun := "repositories"
-	if repos == 1 {
-		noun = "repository"
-	}
-	fmt.Fprintf(p.w, "Scanned %d %s in %s\n", repos, noun, time.Since(p.started).Round(time.Second))
+	fmt.Fprintf(p.w, "Scanned %d %s in %s\n", repos, plural(repos, "project", "projects"), time.Since(p.started).Round(time.Second))
 }
 
 func (p *progress) emit(line string) {
