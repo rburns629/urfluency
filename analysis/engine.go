@@ -3,21 +3,43 @@ package analysis
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rburns629/urfluency/gitdata"
 )
 
-// skippedDirs are path segments whose files are not the user's own work.
-var skippedDirs = []string{"vendor", "third_party", "node_modules", "testdata", ".git"}
+// dependencyDirs hold installed packages, environments, and package caches, not
+// the user's own work. Ambiguous names such as packages/ (monorepo source),
+// build/, and target/ are deliberately absent.
+var dependencyDirs = map[string]bool{
+	"node_modules": true, "bower_components": true, "jspm_packages": true, ".yarn": true, ".pnpm-store": true,
+	".venv": true, "venv": true, "site-packages": true, "__pycache__": true, ".tox": true, ".eggs": true,
+	"vendor": true, "third_party": true,
+	"Pods": true, "Carthage": true,
+	".gradle": true, ".m2": true,
+	".dart_tool": true, ".pub-cache": true,
+	".bundle": true, "elm-stuff": true, ".terraform": true,
+}
 
-// maxScanBytes bounds the files given to scanners.
+// IsDependencyDir reports whether a directory name holds installed dependencies.
+func IsDependencyDir(name string) bool { return dependencyDirs[name] }
+
+// skippedDirs are other path segments whose files are not the user's own work.
+var skippedDirs = map[string]bool{"testdata": true, ".git": true}
+
+// maxScanBytes bounds the files scanned at all.
 const maxScanBytes = 2 << 20
+
+// BlameTimeout bounds attributing one file's lines; a file that takes longer is
+// skipped and counted rather than stalling the scan.
+var BlameTimeout = 60 * time.Second
 
 // Options selects whose work to analyze.
 type Options struct {
@@ -26,6 +48,16 @@ type Options struct {
 	// AgentLines maps repository-relative paths to normalized lines an agent wrote,
 	// for attributing owned lines to AI.
 	AgentLines map[string]map[string]bool
+	// Progress, if set, receives the current stage and, when known, how many of
+	// its steps are done. It is called from several goroutines and must be safe
+	// for concurrent use.
+	Progress func(stage string, done, total int)
+}
+
+func (o Options) progress(stage string, done, total int) {
+	if o.Progress != nil {
+		o.Progress(stage, done, total)
+	}
 }
 
 // LanguageResult holds findings on the user's owned lines for one language or
@@ -63,6 +95,9 @@ type Result struct {
 	Durability   Durability
 	Tests        TestHabits
 	PerRepo      []RepoPractices
+	// SkippedSlow counts files skipped because attributing them took longer
+	// than BlameTimeout.
+	SkippedSlow int
 }
 
 type ownedFile struct {
@@ -83,7 +118,9 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	paths, err := repo.TrackedFiles(ctx)
+	// Files over maxScanBytes are vendored or generated, and blaming them can take
+	// minutes, so they are excluded before any Git command reads them.
+	paths, err := repo.TrackedFiles(ctx, maxScanBytes)
 	if err != nil {
 		return Result{}, err
 	}
@@ -96,12 +133,12 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 	}
 
-	files, err := loadOwned(ctx, repo, head, candidates, opts)
+	files, slow, err := loadOwned(ctx, repo, head, candidates, opts)
 	if err != nil {
 		return Result{}, err
 	}
 
-	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}}
+	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}, SkippedSlow: slow}
 	commits, err := repo.Commits(ctx, opts.Emails)
 	if err != nil {
 		return Result{}, err
@@ -116,7 +153,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	if result.Durability, err = durability(ctx, repo, added, commits, tools, opts.Since, time.Now()); err != nil {
+	if result.Durability, err = durability(ctx, repo, added, commits, tools, opts.Since, time.Now(), opts.progress); err != nil {
 		return Result{}, err
 	}
 	result.Tests = testHabits(added, commits, tools, opts.Since)
@@ -165,6 +202,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		if len(group) == 0 {
 			continue
 		}
+		opts.progress("analyzing "+a.Language(), 0, 0)
 		lr, err := run(ctx, a.Language(), group, a.Analyze)
 		if err != nil {
 			return Result{}, err
@@ -270,23 +308,33 @@ func anyScannerApplies(path string) bool {
 
 // loadOwned reads each candidate file and its owned lines with a bounded worker
 // pool. Results are written by index, so no shared slice is appended concurrently.
-func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, opts Options) ([]ownedFile, error) {
+func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, opts Options) ([]ownedFile, int, error) {
 	results := make([]ownedFile, len(paths))
 	errs := make([]error, len(paths))
 	limit := make(chan struct{}, runtime.NumCPU())
 	var wg sync.WaitGroup
+	var done, slow atomic.Int64
+	opts.progress("reading files", 0, len(paths))
 	for i, p := range paths {
 		wg.Add(1)
 		go func(i int, p string) {
 			defer wg.Done()
+			defer func() { opts.progress("reading files", int(done.Add(1)), len(paths)) }()
 			limit <- struct{}{}
 			defer func() { <-limit }()
 			if ctx.Err() != nil {
 				errs[i] = ctx.Err()
 				return
 			}
-			owned, err := repo.OwnedLines(ctx, head, p, opts.Emails, opts.Since)
+			fileCtx, cancel := context.WithTimeout(ctx, BlameTimeout)
+			owned, err := repo.OwnedLines(fileCtx, head, p, opts.Emails, opts.Since)
+			timedOut := errors.Is(fileCtx.Err(), context.DeadlineExceeded) // checked before cancel
+			cancel()
 			if err != nil {
+				if timedOut && ctx.Err() == nil {
+					slow.Add(1)
+					return
+				}
 				errs[i] = fmt.Errorf("%s: %w", p, err)
 				return
 			}
@@ -313,10 +361,10 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 	wg.Wait()
 	for _, err := range errs {
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
-	return results, nil
+	return results, int(slow.Load()), nil
 }
 
 // agentWritten returns the owned lines whose normalized text an agent wrote.
@@ -335,10 +383,8 @@ func agentWritten(content []byte, owned map[int]string, agent map[string]bool) m
 
 func inSkippedDir(path string) bool {
 	for _, segment := range strings.Split(path, "/") {
-		for _, d := range skippedDirs {
-			if segment == d {
-				return true
-			}
+		if dependencyDirs[segment] || skippedDirs[segment] {
+			return true
 		}
 	}
 	return false

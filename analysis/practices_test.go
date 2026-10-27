@@ -84,3 +84,34 @@ func TestScanMeasuresPractices(t *testing.T) {
 		t.Errorf("go = %+v, want 1 owned test line", g)
 	}
 }
+
+func TestDependencyDirs(t *testing.T) {
+	for _, d := range []string{"node_modules", ".venv", "Pods", "vendor", ".terraform", "site-packages"} {
+		if !analysis.IsDependencyDir(d) {
+			t.Errorf("%s should be a dependency directory", d)
+		}
+	}
+	for _, d := range []string{"packages", "build", "target", "src", "lib"} {
+		if analysis.IsDependencyDir(d) {
+			t.Errorf("%s may hold the user's own code and should not be skipped", d)
+		}
+	}
+}
+
+func TestScanSkipsCommittedDependencies(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{
+		"cmd/app.go":                   "package main\n",
+		".venv/lib/site-packages/x.go": "package x\n",
+		"ios/Pods/Lib/a.go":            "package lib\n",
+		"web/node_modules/pad/i.go":    "package pad\n",
+		"packages/ui/button.go":        "package ui\n",
+	})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := res.Languages[0]; g.Language != "go" || g.Files != 2 {
+		t.Errorf("go = %+v; dependencies should be skipped and packages/ kept (2 files)", g)
+	}
+}

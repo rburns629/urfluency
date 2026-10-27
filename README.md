@@ -47,6 +47,10 @@ prints the official install command for whatever is missing.
 
 The scan analyzes only lines that `git blame` attributes to your emails at the
 latest commit, never runs the repository's code, and writes nothing to disk.
+Progress (the repository and stage it is on) goes to stderr, so `--json` output stays
+clean. Files over 2 MB are skipped before anything reads them, since they are
+vendored or generated, and a file that takes more than 60 seconds to attribute is
+skipped and counted in the report.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
 Every scan includes an **AI engineering** section: does your agent-assisted work

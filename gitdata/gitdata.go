@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -41,12 +42,19 @@ func (r Repo) git(ctx context.Context, args ...string) ([]byte, error) {
 
 // Head returns the commit the working tree is at.
 func (r Repo) Head(ctx context.Context) (string, error) {
-	out, err := r.git(ctx, "rev-parse", "HEAD")
+	out, err := r.git(ctx, "rev-parse", "--verify", "--quiet", "HEAD")
 	if err != nil {
+		// --verify --quiet exits 1 without output when HEAD names no commit.
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.ExitCode() == 1 {
+			return "", ErrNoCommits
+		}
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// ErrNoCommits is returned for a repository with no commits yet.
+var ErrNoCommits = errors.New("no commits yet")
 
 // ConfiguredEmail returns user.email as Git resolves it for this repository.
 func (r Repo) ConfiguredEmail(ctx context.Context) (string, error) {
@@ -57,20 +65,27 @@ func (r Repo) ConfiguredEmail(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// TrackedFiles lists the regular files committed at HEAD. Submodules, symlinks,
-// and staged but uncommitted files are excluded.
-func (r Repo) TrackedFiles(ctx context.Context) ([]string, error) {
-	out, err := r.git(ctx, "ls-tree", "-r", "-z", "--full-tree", "HEAD")
+// TrackedFiles lists the regular files committed at HEAD, excluding files larger
+// than maxBytes when it is above zero. Submodules, symlinks, and staged but
+// uncommitted files are excluded. Sizes come from Git's object database, so
+// excluded files are never read.
+func (r Repo) TrackedFiles(ctx context.Context, maxBytes int64) ([]string, error) {
+	out, err := r.git(ctx, "ls-tree", "-r", "-z", "-l", "--full-tree", "HEAD")
 	if err != nil {
 		return nil, err
 	}
 	var files []string
 	for _, entry := range strings.Split(string(out), "\x00") {
-		// "<mode> <type> <object>\t<path>"
+		// "<mode> <type> <object> <size>\t<path>", the size padded with spaces
 		meta, path, ok := strings.Cut(entry, "\t")
-		if ok && (strings.HasPrefix(meta, "100644 blob ") || strings.HasPrefix(meta, "100755 blob ")) {
-			files = append(files, path)
+		fields := strings.Fields(meta)
+		if !ok || len(fields) != 4 || fields[1] != "blob" || (fields[0] != "100644" && fields[0] != "100755") {
+			continue
 		}
+		if size, err := strconv.ParseInt(fields[3], 10, 64); err == nil && maxBytes > 0 && size > maxBytes {
+			continue
+		}
+		files = append(files, path)
 	}
 	return files, nil
 }

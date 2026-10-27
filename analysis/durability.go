@@ -23,7 +23,7 @@ type Durability struct {
 // durability applies the SZZ method: each fix commit's changed lines are traced
 // back to the commits that introduced them.
 func durability(ctx context.Context, repo gitdata.Repo, added map[string]map[string]int, commits map[string]gitdata.Commit,
-	tools map[string][]string, since, now time.Time) (Durability, error) {
+	tools map[string][]string, since, now time.Time, progress func(stage string, done, total int)) (Durability, error) {
 	var d Durability
 	isCode := func(p string) bool { return !inSkippedDir(p) && !IsProtected(p) && ForPath(p) != nil }
 	eligible := map[string]bool{}
@@ -57,10 +57,14 @@ func durability(ctx context.Context, repo gitdata.Repo, added map[string]map[str
 	if err != nil {
 		return d, err
 	}
+	var relevant []gitdata.FixCommit
 	for _, f := range fixes {
-		if f.Time.Before(oldest) || f.Time.After(newest.Add(DurabilityWindow)) {
-			continue
+		if !f.Time.Before(oldest) && !f.Time.After(newest.Add(DurabilityWindow)) {
+			relevant = append(relevant, f)
 		}
+	}
+	for i, f := range relevant {
+		progress("tracing fixes", i, len(relevant))
 		fixed, err := repo.FixedLines(ctx, f.Hash, isCode)
 		if err != nil {
 			if ctx.Err() != nil {

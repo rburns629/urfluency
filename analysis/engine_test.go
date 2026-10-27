@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,5 +198,45 @@ func TestScanMeasuresDurability(t *testing.T) {
 	want := analysis.Durability{AssistedAdded: 4, AssistedFixed: 1, OtherAdded: 4, OtherFixed: 0}
 	if res.Durability != want {
 		t.Errorf("durability = %+v, want %+v (the late fix is outside the window)", res.Durability, want)
+	}
+}
+
+func TestScanReportsProgress(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a.go": "package a\n", "b.go": "package a\n"})
+	var mu sync.Mutex
+	var last [2]int
+	stages := map[string]bool{}
+	_, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{
+		Emails: []string{"me@example.com"},
+		Progress: func(stage string, done, total int) {
+			mu.Lock()
+			defer mu.Unlock()
+			stages[stage] = true
+			if stage == "reading files" && done > last[0] {
+				last = [2]int{done, total}
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last != [2]int{2, 2} || !stages["analyzing go"] {
+		t.Errorf("last reading-files progress = %v, stages = %v", last, stages)
+	}
+}
+
+func TestScanSkipsFilesThatTakeTooLongToAttribute(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"a.go": "package a\n", "b.go": "package a\n"})
+	saved := analysis.BlameTimeout
+	analysis.BlameTimeout = time.Nanosecond
+	defer func() { analysis.BlameTimeout = saved }()
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatalf("a slow file should be skipped, not fail the scan: %v", err)
+	}
+	if res.SkippedSlow != 2 {
+		t.Errorf("skipped = %d, want 2", res.SkippedSlow)
 	}
 }

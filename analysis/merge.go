@@ -17,6 +17,7 @@ func Merge(labels []string, parts []Result) Result {
 		out.AIFindings += p.AIFindings
 		out.Findings += p.Findings
 		out.MarkedLines += p.MarkedLines
+		out.SkippedSlow += p.SkippedSlow
 		out.Durability.AssistedAdded += p.Durability.AssistedAdded
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed
 		out.Durability.OtherAdded += p.Durability.OtherAdded

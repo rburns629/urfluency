@@ -26,10 +26,12 @@ const MinTasks = 5
 // Report is the local result of a scan. Locations are included only on request
 // and are never part of an upload.
 type Report struct {
-	Format        string         `json:"format"`
-	Catalog       string         `json:"catalog"`
-	Commit        string         `json:"commit"`
-	Repos         int            `json:"repositories"`
+	Format  string `json:"format"`
+	Catalog string `json:"catalog"`
+	Commit  string `json:"commit"`
+	Repos   int    `json:"repositories"`
+	// SkippedSlow counts files skipped because attributing them took too long.
+	SkippedSlow   int            `json:"files_skipped_too_slow,omitempty"`
 	Since         string         `json:"since"`
 	Languages     []Language     `json:"languages"`
 	Prompting     *Prompting     `json:"prompting,omitempty"`
@@ -137,7 +139,7 @@ type RuleResult struct {
 
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
-	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all"}
+	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow}
 	if !since.IsZero() {
 		r.Since = since.Format("2006-01-02")
 	}
@@ -311,6 +313,10 @@ func WriteText(w io.Writer, r Report) error {
 		scope = fmt.Sprintf("%d repositories", r.Repos)
 	}
 	fmt.Fprintf(&b, "urFluency scan · %s · since %s · catalog %s\n", scope, r.Since, r.Catalog)
+	if r.SkippedSlow > 0 {
+		fmt.Fprintf(&b, "Skipped %d files that took over %s to attribute; they are usually generated or vendored.\n",
+			r.SkippedSlow, analysis.BlameTimeout)
+	}
 	if len(r.Languages) == 0 {
 		b.WriteString("\nNo owned lines in supported languages were found for these authors.\n")
 	}

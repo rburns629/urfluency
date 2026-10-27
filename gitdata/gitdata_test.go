@@ -2,9 +2,11 @@ package gitdata_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,7 +48,7 @@ func TestTrackedFilesAndShow(t *testing.T) {
 	r.Commit("me@example.com", "", map[string]string{"dir/b.go": "package b\n", "a.txt": "x"})
 	repo := gitdata.Repo{Dir: r.Dir}
 	ctx := context.Background()
-	files, err := repo.TrackedFiles(ctx)
+	files, err := repo.TrackedFiles(ctx, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +76,7 @@ func TestTrackedFilesListsOnlyCommittedRegularFiles(t *testing.T) {
 	}
 	r.Git("me@example.com", "", "add", "staged.go")
 
-	files, err := gitdata.Repo{Dir: r.Dir}.TrackedFiles(context.Background())
+	files, err := gitdata.Repo{Dir: r.Dir}.TrackedFiles(context.Background(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,5 +113,24 @@ func TestCommits(t *testing.T) {
 	want := [][]string{{"Claude <noreply@anthropic.com>", "Pat <pat@example.com>"}}
 	if !reflect.DeepEqual(coAuthors, want) {
 		t.Errorf("co-authors = %v, want %v", coAuthors, want)
+	}
+}
+
+func TestTrackedFilesSkipsOversizedFiles(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"small.go": "package a\n", "vendor.json": strings.Repeat("x", 5000)})
+	files, err := gitdata.Repo{Dir: r.Dir}.TrackedFiles(context.Background(), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(files, []string{"small.go"}) {
+		t.Errorf("files = %v, want the oversized file excluded", files)
+	}
+}
+
+func TestHeadWithoutCommits(t *testing.T) {
+	r := testutil.NewRepo(t)
+	if _, err := (gitdata.Repo{Dir: r.Dir}).Head(context.Background()); !errors.Is(err, gitdata.ErrNoCommits) {
+		t.Errorf("err = %v, want ErrNoCommits", err)
 	}
 }

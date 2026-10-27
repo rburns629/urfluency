@@ -118,6 +118,8 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
+	prog := newProgress(stderr)
+	prog.phase("Finding repositories under " + tildePath(abs))
 	repos, err := findRepos(abs)
 	if err != nil {
 		return err
@@ -135,6 +137,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var graded []sessions.Session
 	agentLines := map[string]map[string]map[string]bool{}
 	if *withSessions {
+		prog.phase("Reading agent sessions")
 		if graded, agentLines, err = loadSessions(abs, repos, since); err != nil {
 			return err
 		}
@@ -143,20 +146,27 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	// is reported and skipped; a single-repository scan fails.
 	var labels []string
 	var parts []analysis.Result
-	for _, dir := range repos {
+	for i, dir := range repos {
 		label, _ := filepath.Rel(abs, dir)
 		label = filepath.ToSlash(label)
+		shown := label
+		if label == "." {
+			shown = filepath.Base(dir)
+		}
+		prog.repo(i+1, len(repos), shown)
 		part, err := analysis.Scan(ctx, gitdata.Repo{Dir: dir},
-			analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir]})
+			analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update})
 		if err != nil {
 			if len(repos) == 1 || ctx.Err() != nil {
+				prog.clear()
 				return err
 			}
-			fmt.Fprintf(stderr, "urfluency: skipping %s: %v\n", label, err)
+			prog.note(fmt.Sprintf("urfluency: skipping %s: %v", label, err))
 			continue
 		}
 		labels, parts = append(labels, label), append(parts, part)
 	}
+	prog.finish(len(parts))
 	if len(parts) == 0 {
 		return fmt.Errorf("no repository under %s could be scanned", abs)
 	}
@@ -188,7 +198,7 @@ func findRepos(root string) ([]string, error) {
 			return nil // unreadable entries are skipped
 		}
 		name := d.Name()
-		if p != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || analysis.IsProtectedDir(name)) {
+		if p != root && (strings.HasPrefix(name, ".") || analysis.IsDependencyDir(name) || analysis.IsProtectedDir(name)) {
 			return filepath.SkipDir
 		}
 		if isRepo(p) {
