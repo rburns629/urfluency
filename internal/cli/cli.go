@@ -37,6 +37,7 @@ Usage:
                                   below it (default ".")
   urfluency validate [path]       For maintainers: show whether prompt signals
                                   predict what happened next in agent sessions
+  urfluency doctor                Check dependencies and optional features; installs nothing
   urfluency version               Print the version
 
 Scan flags:
@@ -65,6 +66,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = scan(ctx, args[1:], stdout, stderr)
 	case "validate":
 		err = validate(ctx, args[1:], stdout)
+	case "doctor":
+		err = doctor(ctx, stdout)
 	case "version":
 		_, err = fmt.Fprintln(stdout, "urfluency", Version)
 	case "help", "-h", "--help":

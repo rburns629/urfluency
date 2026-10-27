@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,5 +148,37 @@ func TestWriteValidation(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, b.String())
 		}
+	}
+}
+
+func TestDoctor(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	running := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer running.Close()
+	saved := localRuntimes
+	defer func() { localRuntimes = saved }()
+	localRuntimes = []localRuntime{{"Test runtime", running.URL}, {"Stopped runtime", "http://127.0.0.1:1/"}}
+
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"doctor"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s\n%s", code, errOut.String(), out.String())
+	}
+	for _, want := range []string{"nothing is installed or changed", "[ok]      Git", "commit trailers supported",
+		"[--]      Claude Code: no sessions found", "Local model runtime: Test runtime running", "Everything required is present."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestDoctorWithoutGit(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"doctor"}, &out, &errOut); code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	if !strings.Contains(out.String(), "[missing] Git (required)") || !strings.Contains(out.String(), "Install: ") {
+		t.Errorf("output:\n%s", out.String())
 	}
 }
