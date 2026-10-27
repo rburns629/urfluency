@@ -145,6 +145,9 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			candidates = append(candidates, p)
 		}
 	}
+	if candidates, err = dropVendored(ctx, repo, candidates); err != nil {
+		return Result{}, err
+	}
 
 	files, slow, err := loadOwned(ctx, repo, head, candidates, opts)
 	if err != nil {
@@ -184,6 +187,21 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 	return result, nil
+}
+
+// dropVendored removes the paths .gitattributes marks as vendored or generated.
+func dropVendored(ctx context.Context, repo gitdata.Repo, paths []string) ([]string, error) {
+	vendored, err := repo.Vendored(ctx, paths)
+	if err != nil {
+		return nil, err
+	}
+	kept := paths[:0]
+	for _, p := range paths {
+		if !vendored[p] {
+			kept = append(kept, p)
+		}
+	}
+	return kept, nil
 }
 
 // analyzeFiles runs every analyzer and scanner over the loaded files and fills in

@@ -82,7 +82,7 @@ func TestWriteText(t *testing.T) {
 		}
 	}
 	b.Reset()
-	if err := WriteText(&b, Report{Repos: 1}); err != nil || !strings.Contains(b.String(), "No owned lines") {
+	if err := WriteText(&b, Report{Repos: 1, Since: "all"}); err != nil || !strings.Contains(b.String(), "No lines of yours in supported languages were found in this repository.") {
 		t.Errorf("empty report output = %q, %v", b.String(), err)
 	}
 }
@@ -101,7 +101,7 @@ func TestWriteTextUnversioned(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "No owned lines") {
+	if strings.Contains(out, "No lines of yours") {
 		t.Errorf("folders-only report claims no owned lines:\n%s", out)
 	}
 }

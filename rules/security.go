@@ -6,7 +6,7 @@ func init() {
 	py := []string{"python"}
 	js := []string{"javascript", "typescript"}
 	goLang := []string{"go"}
-	rotate := "Remove it, rotate the credential now (it stays in Git history), and load it from a secret manager or environment variable."
+	rotate := "Remove it, rotate the credential now (copies remain in Git history, backups, and anywhere the code was shared), and load it from a secret manager or environment variable."
 	Register(
 		Rule{ID: "sec.private-key", Category: Security, Languages: files,
 			Title: "Private key committed",

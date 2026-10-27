@@ -115,3 +115,20 @@ func TestScanSkipsCommittedDependencies(t *testing.T) {
 		t.Errorf("go = %+v; dependencies should be skipped and packages/ kept (2 files)", g)
 	}
 }
+
+func TestScanSkipsVendoredFiles(t *testing.T) {
+	r := testutil.NewRepo(t)
+	panics := "package a\n\nfunc f() { panic(1) }\n"
+	r.Commit("me@example.com", "", map[string]string{
+		".gitattributes":   "third_party/** linguist-vendored\n",
+		"a.go":             panics,
+		"third_party/b.go": panics,
+	})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Languages) == 0 || res.Languages[0].Files != 1 || res.Languages[0].OwnedLines != 3 {
+		t.Errorf("languages = %+v", res.Languages)
+	}
+}

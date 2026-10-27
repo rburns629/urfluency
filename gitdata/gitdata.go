@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,10 +27,21 @@ var safeConfig = []string{
 // Repo is a local Git working tree.
 type Repo struct {
 	Dir string
+	// GitDir, if set, is a separate repository whose work tree is Dir; see
+	// Scratch.
+	GitDir string
+}
+
+// base returns the arguments that point git at this repository.
+func (r Repo) base() []string {
+	if r.GitDir != "" {
+		return []string{"--git-dir", r.GitDir, "--work-tree", r.Dir, "-C", r.Dir}
+	}
+	return []string{"-C", r.Dir}
 }
 
 func (r Repo) git(ctx context.Context, args ...string) ([]byte, error) {
-	full := append(append([]string{"-C", r.Dir}, safeConfig...), args...)
+	full := append(append(r.base(), safeConfig...), args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -63,6 +76,63 @@ func (r Repo) TopLevel(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// Scratch returns a Repo for a folder without Git, backed by an empty repository
+// in the system temporary directory, so Git can read the folder's .gitignore and
+// .gitattributes without writing to it. Call cleanup when done.
+func Scratch(ctx context.Context, dir string) (repo Repo, cleanup func(), err error) {
+	tmp, err := os.MkdirTemp("", "urfluency-")
+	if err != nil {
+		return Repo{}, nil, err
+	}
+	cleanup = func() { os.RemoveAll(tmp) }
+	if out, err := exec.CommandContext(ctx, "git", "init", "-q", tmp).CombinedOutput(); err != nil {
+		cleanup()
+		return Repo{}, nil, fmt.Errorf("git init: %w: %s", err, bytes.TrimSpace(out))
+	}
+	return Repo{Dir: dir, GitDir: filepath.Join(tmp, ".git")}, cleanup, nil
+}
+
+// Ignored lists the untracked paths that .gitignore files exclude, relative to
+// the work tree; an ignored directory is listed once, with a trailing slash.
+func (r Repo) Ignored(ctx context.Context) (map[string]bool, error) {
+	out, err := r.git(ctx, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	ignored := map[string]bool{}
+	for p := range strings.SplitSeq(string(out), "\x00") {
+		if p != "" {
+			ignored[p] = true
+		}
+	}
+	return ignored, nil
+}
+
+// Vendored returns the paths .gitattributes marks linguist-vendored or
+// linguist-generated, the convention GitHub uses to leave third-party and
+// generated files out of language statistics.
+func (r Repo) Vendored(ctx context.Context, paths []string) (map[string]bool, error) {
+	vendored := map[string]bool{}
+	if len(paths) == 0 {
+		return vendored, nil
+	}
+	args := append(append(r.base(), safeConfig...), "check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated")
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git check-attr: %w", err)
+	}
+	// Output is path NUL attribute NUL value NUL, repeated.
+	fields := strings.Split(string(out), "\x00")
+	for i := 0; i+2 < len(fields); i += 3 {
+		if v := fields[i+2]; v == "set" || v == "true" {
+			vendored[fields[i]] = true
+		}
+	}
+	return vendored, nil
 }
 
 // ConfiguredName returns user.name as Git resolves it for this repository, or ""

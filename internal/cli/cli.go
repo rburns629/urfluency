@@ -216,12 +216,16 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(folderParts) > 0 {
 		r.Unversioned = report.BuildUnversioned(analysis.Merge(folderLabels, folderParts), *locations)
 	}
-	r.AI = report.BuildAI(res, *withSessions)
 	if *withSessions {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
 	}
-	r.AIEngineering = report.BuildAIEngineering(r)
-	r.Practices = report.BuildPractices(res)
+	// AI and practice measures describe the user's Git history; with no lines of
+	// theirs in it, they would only be zeros.
+	if res.OwnedLines > 0 {
+		r.AI = report.BuildAI(res, *withSessions)
+		r.AIEngineering = report.BuildAIEngineering(r)
+		r.Practices = report.BuildPractices(res)
+	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")

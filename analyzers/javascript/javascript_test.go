@@ -78,6 +78,12 @@ func TestSkip(t *testing.T) {
 		{JavaScript{}, "src/vendor.min.js", "var x;", true},
 		{JavaScript{}, "src/bundle.js", long, true},
 		{JavaScript{}, "src/app.js", "const x = 1;", false},
+		{JavaScript{}, "public/js/Chart.bundle.js", "var x;", true},
+		{JavaScript{}, "public/plugins/js-xlsx/cpexcel.js", "var x;", true},
+		{JavaScript{}, "src/plugins/vuetify.js", "const x = 1;", false}, // the user's own plugins
+		{JavaScript{}, "static/chart.js", "/*!\n * Chart.js v2.9.4\n */\nvar x;", true},
+		{JavaScript{}, "src/lib.js", "// x\n/** @license MIT */\nvar x;", true},
+		{TypeScript{}, "src/app.ts", "/* Copyright Example Corp */\nconst x = 1;", false},
 	}
 	for _, c := range cases {
 		if got := c.a.Skip(analysis.File{Path: c.path, Content: []byte(c.content)}); got != c.want {

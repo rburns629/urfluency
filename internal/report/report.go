@@ -158,7 +158,8 @@ func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
-	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow}
+	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow,
+		Languages: []Language{}}
 	if !since.IsZero() {
 		r.Since = since.Format("2006-01-02")
 	}
@@ -340,7 +341,15 @@ func WriteText(w io.Writer, r Report) error {
 			r.SkippedSlow, analysis.BlameTimeout)
 	}
 	if len(r.Languages) == 0 && r.Repos > 0 {
-		b.WriteString("\nNo owned lines in supported languages were found for these authors.\n")
+		where := "this repository"
+		if r.Repos > 1 {
+			where = fmt.Sprintf("%d repositories", r.Repos)
+		}
+		when := ""
+		if r.Since != "all" {
+			when = " since " + r.Since + " (use --since all for older work)"
+		}
+		fmt.Fprintf(&b, "\nNo lines of yours in supported languages were found in %s%s.\n", where, when)
 	}
 	for _, l := range r.Languages {
 		writeLanguage(&b, l)

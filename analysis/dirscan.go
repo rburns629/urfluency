@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rburns629/urfluency/gitdata"
 )
 
 // declared marks lines whose authorship the user declared rather than Git
@@ -37,14 +39,30 @@ func ProjectFiles(dir string) (manifest, source bool) {
 	return manifest, source
 }
 
+// buildOutputDirs hold generated files. A Git scan leaves them out because they
+// are usually ignored; a folder scan may have no .gitignore to say so.
+var buildOutputDirs = map[string]bool{"dist": true, "build": true, "out": true, "coverage": true, "target": true}
+
 // ScanDir analyzes a folder without Git history. With no history to attribute
 // lines, every line counts as the user's: the result is Declared, and history
 // measures (AI trailers, durability, test habits) are left empty. The same
 // filters as a Git scan apply: dependency folders, secret files, files over
-// maxScanBytes, symlinks, and binaries are never read.
+// maxScanBytes, symlinks, and binaries are never read. Files the folder's
+// .gitignore excludes, build output, and files .gitattributes marks as vendored
+// or generated are skipped too, as they would be in a repository.
 func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
+	// Git reads .gitignore and .gitattributes through a scratch repository; if Git
+	// is unavailable, the folder is scanned without them.
+	ignored := map[string]bool{}
+	repo, cleanup, err := gitdata.Scratch(ctx, dir)
+	if err == nil {
+		defer cleanup()
+		if ig, err := repo.Ignored(ctx); err == nil {
+			ignored = ig
+		}
+	}
 	var paths []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries are skipped
 		}
@@ -53,12 +71,12 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 		if d.IsDir() {
 			name := d.Name()
 			if p != dir && ((strings.HasPrefix(name, ".") && name != ".github") || IsDependencyDir(name) || skippedDirs[name] || IsProtectedDir(name) ||
-				(opts.SkipDir != nil && opts.SkipDir(p))) {
+				buildOutputDirs[name] || ignored[rel+"/"] || (opts.SkipDir != nil && opts.SkipDir(p))) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() || IsProtected(rel) || inSkippedDir(rel) ||
+		if !d.Type().IsRegular() || ignored[rel] || IsProtected(rel) || inSkippedDir(rel) ||
 			!(ForPath(rel) != nil || anyScannerApplies(rel) || readEvenWithoutAnalyzer(rel)) {
 			return nil
 		}
@@ -70,6 +88,11 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	if repo.GitDir != "" {
+		if paths, err = dropVendored(ctx, repo, paths); err != nil {
+			return Result{}, err
+		}
 	}
 
 	var files []ownedFile

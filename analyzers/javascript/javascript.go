@@ -43,9 +43,20 @@ func (TypeScript) Analyze(ctx context.Context, files []analysis.File) ([]analysi
 	return analyze(ctx, files, true)
 }
 
-// skipBundled excludes build output and minified files, which are not hand-written.
+// skipBundled excludes build output, minified files, and third-party libraries
+// copied into a project, which are not the user's code.
 func skipBundled(f analysis.File) bool {
-	if parsing.InDir(f.Path, "dist", "build", "out", ".next", "coverage") || strings.Contains(path.Base(f.Path), ".min.") {
+	base := path.Base(f.Path)
+	if parsing.InDir(f.Path, "dist", "build", "out", ".next", "coverage") || strings.Contains(base, ".min.") || strings.Contains(base, ".bundle.") {
+		return true
+	}
+	// Libraries copied into static assets, such as public/plugins/chartjs.
+	if parsing.InDir(f.Path, "public", "static", "assets") && parsing.InDir(f.Path, "plugins", "lib", "libs", "vendor", "vendors") {
+		return true
+	}
+	// Libraries keep their license banner: /*! or @license near the top.
+	head := f.Content[:min(len(f.Content), 1024)]
+	if bytes.HasPrefix(bytes.TrimSpace(head), []byte("/*!")) || bytes.Contains(head, []byte("@license")) {
 		return true
 	}
 	for _, line := range bytes.Split(f.Content, []byte("\n")) {

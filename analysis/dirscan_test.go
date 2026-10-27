@@ -23,6 +23,12 @@ func TestScanDir(t *testing.T) {
 	write("node_modules/x/index.js", "eval(input)\n")
 	write("skip/b.go", "package b\n\nfunc g() { panic(2) }\n")
 	write("secrets/k.go", "package k\n\nfunc h() { panic(3) }\n")
+	write(".gitignore", "generated/\nscratch.go\n")
+	write(".gitattributes", "third_party.go linguist-vendored\n")
+	write("generated/g.go", "package g\n\nfunc g() { panic(4) }\n")
+	write("scratch.go", "package a\n\nfunc s() { panic(5) }\n")
+	write("third_party.go", "package a\n\nfunc v() { panic(6) }\n")
+	write("dist/d.go", "package d\n\nfunc d() { panic(7) }\n")
 	write("binary.go", "package c\x00\n")
 	write("big.go", "package d\n"+strings.Repeat("// filler\n", maxScanBytes/10+1))
 

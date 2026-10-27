@@ -51,7 +51,11 @@ latest commit, never runs the repository's code, and writes nothing to disk.
 Progress (the repository and stage it is on) goes to stderr, so `--json` output stays
 clean. Files over 2 MB are skipped before anything reads them, since they are
 vendored or generated, and a file that takes more than 60 seconds to attribute is
-skipped and counted in the report.
+skipped and counted in the report. Third-party code is left out even when it was
+committed: files `.gitattributes` marks `linguist-vendored` or `linguist-generated`,
+and JavaScript or TypeScript libraries recognized by a `/*!` or `@license` banner,
+a `.bundle.` or `.min.` name, or a `plugins`, `lib`, or `vendor` folder under
+`public`, `static`, or `assets`.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
 You don't list your email addresses. urFluency starts from your Git name and

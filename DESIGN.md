@@ -513,7 +513,10 @@ urfluency logout
   directly when they hold a manifest, or source files and no other projects; a
   folder of projects with a stray script is a container, not a project. The same
   filters apply as for repositories (dependency and secret folders, files over
-  2 MB, binaries). Every line counts as the user's, so results are reported in a
+  2 MB, binaries), plus what a repository would have left out: the folder's
+  `.gitignore` and `.gitattributes`, read through a scratch repository in the
+  system temporary directory so nothing is written to the folder, and build output
+  (`dist`, `build`, `out`, `coverage`, `target`). Every line counts as the user's, so results are reported in a
   separate section as declared authorship, never merged with attributed results,
   and history measures (AI share, durability, tests with changes) are omitted. This
   relies on honesty, like all self-reported metrics (see Trust tiers).
