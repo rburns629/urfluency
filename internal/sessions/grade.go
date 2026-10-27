@@ -3,6 +3,8 @@ package sessions
 import (
 	"regexp"
 	"strings"
+
+	"github.com/rburns629/urfluency/internal/gates"
 )
 
 // Task types. Prompts are graded by what they ask for: a bug with an evident
@@ -26,9 +28,10 @@ type Prompt struct {
 
 	Explores           int // file reads and searches
 	ExploresBeforeEdit int
-	Edits              int // edits the agent proposed
-	Checks             int // tests, linters, builds, and type checks run
-	Reviewed           int // proposed edits the user rejected or changed before accepting
+	Edits              int       // edits the agent proposed
+	Checks             int       // tests, linters, builds, and type checks run
+	Gates              gates.Set // the quality gates those checks ran
+	Reviewed           int       // proposed edits the user rejected or changed before accepting
 }
 
 var (
@@ -110,6 +113,9 @@ type Grades struct {
 	// Edits the agent proposed anywhere in the sessions, and how many the user
 	// rejected or changed before accepting.
 	Edits, Reviewed int
+	// EditTasks are tasks with edits; GateTasks counts those that ran each gate.
+	EditTasks int
+	GateTasks map[string]int
 }
 
 // signalTypes lists the task types each prompt signal applies to; acceptance
@@ -132,6 +138,7 @@ type Task struct {
 	ExploresBeforeEdit int
 	Edits              int
 	Checks             int
+	Gates              gates.Set
 	Reviewed           int
 }
 
@@ -160,6 +167,7 @@ func Tasks(sessions []Session) []Task {
 			}
 			t.Edits += p.Edits
 			t.Checks += p.Checks
+			t.Gates |= p.Gates
 			t.Reviewed += p.Reviewed
 		}
 	}
@@ -186,7 +194,7 @@ var gradedRules = []struct {
 
 // Grade tallies each rule over the sessions' tasks.
 func Grade(sessions []Session) Grades {
-	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}}
+	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}, GateTasks: map[string]int{}}
 	for _, s := range sessions {
 		for _, p := range s.Prompts {
 			g.Edits += p.Edits
@@ -195,6 +203,14 @@ func Grade(sessions []Session) Grades {
 	}
 	for _, t := range Tasks(sessions) {
 		g.Tasks[t.Prompt.Type]++
+		if t.Edits > 0 {
+			g.EditTasks++
+			for _, gate := range gates.Named {
+				if t.Gates.Has(gate) {
+					g.GateTasks[gate]++
+				}
+			}
+		}
 		for _, r := range gradedRules {
 			if !r.applies(t) {
 				continue

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rburns629/urfluency/internal/gates"
 	"github.com/rburns629/urfluency/internal/gitdata"
 )
 
@@ -56,72 +57,113 @@ func testHabits(added map[string]map[string]int, commits map[string]gitdata.Comm
 	return h
 }
 
-// CI practices, matched in CI configuration and in the Makefile and package.json
-// scripts it may call.
+// ciFile matches CI configuration; agentInstructions matches files that give
+// coding agents written standards.
 var (
-	ciFile = regexp.MustCompile(`^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml|\.circleci/config\.yml|Jenkinsfile|azure-pipelines\.yml|bitbucket-pipelines\.yml|\.pre-commit-config\.yaml)$`)
-	// Practices are checked in this order; each pattern names commands that run it.
-	practicePatterns = []struct {
+	ciFile            = regexp.MustCompile(`^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml|\.circleci/config\.yml|Jenkinsfile|azure-pipelines\.yml|bitbucket-pipelines\.yml|\.pre-commit-config\.yaml)$`)
+	agentInstructions = regexp.MustCompile(`(^|/)(AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.cursorrules|\.windsurfrules|copilot-instructions\.md)$`)
+	// instructionTopics are what agent instructions cover, by keyword.
+	instructionTopics = []struct {
 		name string
 		re   *regexp.Regexp
 	}{
-		{"tests", regexp.MustCompile(`\b(go test|pytest|npm (run )?test|yarn test|pnpm (run )?test|vitest|jest|cargo test|mvn test|gradle test|dotnet test)\b`)},
-		{"lint", regexp.MustCompile(`\b(golangci-lint|staticcheck|go vet|eslint|ruff check|flake8|pylint|npm run lint|pnpm (run )?lint|yarn lint|clippy)\b`)},
-		{"format", regexp.MustCompile(`\b(gofmt|goimports|prettier|black|ruff format|cargo fmt)\b`)},
-		{"types", regexp.MustCompile(`\b(tsc|mypy|pyright|npm run (typecheck|type-check)|pnpm (run )?(typecheck|type-check))\b`)},
-		{"security", regexp.MustCompile(`\b(govulncheck|npm audit|pip-audit|codeql|semgrep|gitleaks|trivy|snyk|osv-scanner)\b`)},
+		{"verification", regexp.MustCompile(`(?i)\b(tests?|verify|verification|quality gates?|lint|type.?check)\b`)},
+		{"secrets", regexp.MustCompile(`(?i)(\.env\b|\bsecrets?\b|\bcredentials?\b|\bprotected\b)`)},
+		{"conventions", regexp.MustCompile(`(?i)\b(conventions?|existing (code|patterns?)|architecture|style guide)\b`)},
 	}
 )
 
-// CIPractices records, for repositories where the user wrote part of the CI
-// configuration, which practices that CI runs.
-type CIPractices struct {
-	Repos     int            // repositories where the user owns CI configuration lines
-	Practices map[string]int // practice → repositories running it
-}
-
-// ciPractices inspects CI files the user owns lines in. buildScripts are the
-// Makefile and package.json contents, which CI commands such as "make check"
-// or "npm run check" delegate to.
-func ciPractices(files []ownedFile, buildScripts []string) CIPractices {
-	out := CIPractices{Practices: map[string]int{}}
-	var config strings.Builder
-	owned := false
-	for _, f := range files {
-		if !ciFile.MatchString(f.file.Path) {
-			continue
-		}
-		config.Write(f.file.Content)
-		config.WriteString("\n")
-		if len(f.owned) > 0 {
-			owned = true
-		}
-	}
-	if !owned {
-		return out
-	}
-	out.Repos = 1
-	text := config.String() + "\n" + strings.Join(buildScripts, "\n")
-	for _, p := range practicePatterns {
-		if p.re.MatchString(text) {
-			out.Practices[p.name] = 1
-		}
-	}
-	return out
-}
-
-// isCIFile reports CI configuration paths; these are read even when no analyzer
-// or scanner applies, so CI practices can be measured.
-func isCIFile(p string) bool { return ciFile.MatchString(p) }
-
-// buildScriptPaths are the top-level files CI commands commonly delegate to.
-var buildScriptPaths = []string{"Makefile", "package.json"}
-
-// PracticeNames lists the CI practices in report order.
-func PracticeNames() []string {
-	names := make([]string, 0, len(practicePatterns))
-	for _, p := range practicePatterns {
-		names = append(names, p.name)
+// InstructionTopics lists what agent instructions are checked for, in order.
+func InstructionTopics() []string {
+	names := make([]string, 0, len(instructionTopics))
+	for _, t := range instructionTopics {
+		names = append(names, t.name)
 	}
 	return names
 }
+
+// RepoPractices summarizes one repository's practices and its AI-assisted and
+// other code, so reports can show gate coverage and compare repositories with
+// and without agent instructions.
+type RepoPractices struct {
+	Label     string   // the repository's path under the scanned folder; "" for one repository
+	Languages []string // analyzed languages with owned lines
+	// CIOwned is true when the user owns lines of the CI configuration; CIGates
+	// are the gates it runs, including those delegated to the Makefile or
+	// package.json.
+	CIOwned bool
+	CIGates []string
+	// InstructionsOwned is true when the user owns lines of an agent instruction
+	// file; InstructionTopics are what those files cover.
+	InstructionsOwned bool
+	InstructionTopics []string
+	AssistedLines     int
+	AssistedFindings  int
+	OtherLines        int
+	OtherFindings     int
+	Tests             TestHabits
+}
+
+// Repo returns the repository's display name.
+func (r RepoPractices) Repo() string {
+	if r.Label == "" {
+		return "this repository"
+	}
+	return r.Label
+}
+
+// practicesOf builds a repository's summary. buildScripts are the Makefile and
+// package.json contents, which CI commands such as "make check" delegate to.
+func practicesOf(files []ownedFile, buildScripts []string, languages []LanguageResult, tests TestHabits) RepoPractices {
+	r := RepoPractices{Tests: tests}
+	var ci, instructions strings.Builder
+	for _, f := range files {
+		switch {
+		case ciFile.MatchString(f.file.Path):
+			ci.Write(f.file.Content)
+			ci.WriteString("\n")
+			r.CIOwned = r.CIOwned || len(f.owned) > 0
+		case agentInstructions.MatchString(f.file.Path) && len(f.owned) > 0:
+			instructions.Write(f.file.Content)
+			instructions.WriteString("\n")
+			r.InstructionsOwned = true
+		}
+	}
+	if r.CIOwned {
+		r.CIGates = gates.Run(ci.String() + "\n" + strings.Join(buildScripts, "\n"))
+	}
+	for _, topic := range instructionTopics {
+		if r.InstructionsOwned && topic.re.MatchString(instructions.String()) {
+			r.InstructionTopics = append(r.InstructionTopics, topic.name)
+		}
+	}
+	for _, lr := range languages {
+		if !isAnalyzerLanguage(lr.Language) {
+			continue // scanners such as secrets are not languages
+		}
+		r.Languages = append(r.Languages, lr.Language)
+		r.AssistedLines += lr.AssistedLines
+		r.AssistedFindings += lr.AssistedFindings
+		r.OtherLines += lr.OwnedLines - lr.AssistedLines
+		r.OtherFindings += len(lr.Findings) - lr.AssistedFindings
+	}
+	return r
+}
+
+func isAnalyzerLanguage(name string) bool {
+	for _, a := range registry {
+		if a.Language() == name {
+			return true
+		}
+	}
+	return false
+}
+
+// readEvenWithoutAnalyzer reports CI configuration and agent instruction files,
+// which are read so practices can be measured.
+func readEvenWithoutAnalyzer(p string) bool {
+	return ciFile.MatchString(p) || agentInstructions.MatchString(p)
+}
+
+// buildScriptPaths are the top-level files CI commands commonly delegate to.
+var buildScriptPaths = []string{"Makefile", "package.json"}

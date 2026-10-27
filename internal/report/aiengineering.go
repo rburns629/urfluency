@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/rburns629/urfluency/internal/gates"
 )
 
 // AIEngineering answers one question: does the user's agent-assisted work hold up
@@ -193,6 +195,13 @@ func writeAIEngineering(b *strings.Builder, r Report) {
 		}
 		fmt.Fprintf(b, "  Lines fixed within %d days of being written: AI-assisted %s; other %s\n",
 			d.WindowDays, rate(d.AssistedRate, d.AssistedFixed, d.AssistedAdded), rate(d.OtherFixedRate, d.OtherFixed, d.OtherAdded))
+	}
+	if p != nil && p.EditTasks > 0 {
+		parts := make([]string, 0, len(gates.Named))
+		for _, g := range gates.Named {
+			parts = append(parts, fmt.Sprintf("%s %.0f%%", g, float64(p.GateTasks[g])*100/float64(p.EditTasks)))
+		}
+		fmt.Fprintf(b, "  Quality gates agents ran, share of %d tasks with edits: %s (shown, not scored)\n", p.EditTasks, strings.Join(parts, ", "))
 	}
 	if e != nil && e.Engagement != nil {
 		g := e.Engagement

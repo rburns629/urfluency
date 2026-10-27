@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rburns629/urfluency/internal/gates"
 )
 
 // Session is what urFluency keeps from one transcript.
@@ -169,19 +171,26 @@ const (
 var (
 	exploreTools = map[string]bool{"Read": true, "Grep": true, "Glob": true, "LS": true}
 	exploreCmd   = regexp.MustCompile(`^\s*(grep|rg|ag|find|fd|ls|cat|head|tail|tree|wc|sed -n|git (grep|log|show|diff|status|blame))\b`)
-	checkCmd     = regexp.MustCompile(`\b(test|tests|pytest|jest|vitest|mocha|tsc|eslint|ruff|mypy|pyright|flake8|lint|typecheck|staticcheck|govulncheck|go (test|vet|build)|cargo (test|check|build|clippy)|(npm|pnpm|yarn|bun)( run)? (build|check))\b`)
 )
 
-// commandKind classifies a shell command as exploration, a check (tests,
-// linters, builds, type checks), or neither.
-func commandKind(cmd string) string {
-	switch {
-	case exploreCmd.MatchString(cmd):
-		return explore
-	case checkCmd.MatchString(cmd):
-		return check
+// recordCommand counts a shell command as exploration, or as a check with the
+// quality gates it runs (see the gates package), or as neither.
+func (s *Session) recordCommand(cmd string) {
+	if exploreCmd.MatchString(cmd) {
+		s.record(explore)
+		return
 	}
-	return ""
+	s.recordGates(gates.Run(cmd)...)
+}
+
+// recordGates counts a check that ran the named gates.
+func (s *Session) recordGates(names ...string) {
+	if len(s.Prompts) == 0 || len(names) == 0 {
+		return
+	}
+	s.record(check)
+	p := &s.Prompts[len(s.Prompts)-1]
+	p.Gates = p.Gates.With(names...)
 }
 
 // record counts agent activity against the latest prompt.

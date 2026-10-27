@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/rburns629/urfluency/internal/gates"
 )
 
 // copilotSession is the part of a VS Code chat session urFluency reads.
@@ -42,7 +44,8 @@ type copilotArgs struct {
 
 var (
 	copilotExploreTools = map[string]bool{"read_file": true, "grep_search": true, "file_search": true, "semantic_search": true, "list_dir": true}
-	copilotCheckTools   = map[string]bool{"run_tests": true, "runTests": true, "get_errors": true, "test_failure": true}
+	// copilotCheckTools are Copilot's built-in checks and the gates they run.
+	copilotCheckTools = map[string]string{"run_tests": gates.Tests, "runTests": gates.Tests, "test_failure": gates.Tests, "get_errors": gates.Types}
 )
 
 // ReadCopilotChat parses a GitHub Copilot Chat session from VS Code. Older VS Code
@@ -105,11 +108,11 @@ func (s *Session) addCopilotCall(name string, a copilotArgs) {
 		s.record(edit)
 		s.addReplacement(a.FilePath, a.OldString, a.NewString)
 	case name == "run_in_terminal":
-		s.record(commandKind(a.Command))
+		s.recordCommand(a.Command)
 	case copilotExploreTools[name]:
 		s.record(explore)
-	case copilotCheckTools[name]:
-		s.record(check)
+	case copilotCheckTools[name] != "":
+		s.recordGates(copilotCheckTools[name])
 	}
 }
 

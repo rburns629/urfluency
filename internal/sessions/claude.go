@@ -92,7 +92,7 @@ func ReadClaude(r io.Reader) (Session, error) {
 				case exploreTools[b.Name]:
 					s.record(explore)
 				case b.Name == "Bash" && json.Unmarshal(b.Input, &shell) == nil:
-					s.record(commandKind(shell.Command))
+					s.recordCommand(shell.Command)
 				}
 			}
 		case "user":

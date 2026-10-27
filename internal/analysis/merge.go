@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, CI: CIPractices{Practices: map[string]int{}}}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -25,9 +25,9 @@ func Merge(labels []string, parts []Result) Result {
 		out.Tests.AssistedWithTests += p.Tests.AssistedWithTests
 		out.Tests.OtherCommits += p.Tests.OtherCommits
 		out.Tests.OtherWithTests += p.Tests.OtherWithTests
-		out.CI.Repos += p.CI.Repos
-		for practice, n := range p.CI.Practices {
-			out.CI.Practices[practice] += n
+		for _, r := range p.PerRepo {
+			r.Label = labels[i]
+			out.PerRepo = append(out.PerRepo, r)
 		}
 		for tool, n := range p.MarkedByTool {
 			out.MarkedByTool[tool] += n

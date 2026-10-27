@@ -62,7 +62,7 @@ type Result struct {
 	MarkedByTool map[string]int
 	Durability   Durability
 	Tests        TestHabits
-	CI           CIPractices
+	PerRepo      []RepoPractices
 }
 
 type ownedFile struct {
@@ -91,7 +91,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	// never read.
 	var candidates []string
 	for _, p := range paths {
-		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || isCIFile(p)) {
+		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || readEvenWithoutAnalyzer(p)) {
 			candidates = append(candidates, p)
 		}
 	}
@@ -130,7 +130,6 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			}
 		}
 	}
-	result.CI = ciPractices(files, scripts)
 	ai := map[string]map[int]bool{}
 	for i := range files {
 		f := &files[i]
@@ -191,6 +190,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 		result.Languages = append(result.Languages, lr)
 	}
+	result.PerRepo = []RepoPractices{practicesOf(files, scripts, result.Languages, result.Tests)}
 	for _, lr := range result.Languages {
 		for _, fd := range lr.Findings {
 			lines, code := ai[fd.Path]

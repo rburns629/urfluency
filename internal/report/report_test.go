@@ -184,6 +184,7 @@ func TestBuildAIEngineering(t *testing.T) {
 		AI: &AIShare{OwnedLines: 6400, Durability: Durability{WindowDays: 90,
 			AssistedAdded: 5000, AssistedFixed: 50, AssistedRate: 0.01, OtherAdded: 5000, OtherFixed: 60, OtherFixedRate: 0.012}},
 		Prompting: &Prompting{Sessions: 4, Tasks: map[string]int{"feature": 9}, Edits: 200, Reviewed: 10,
+			EditTasks: 8, GateTasks: map[string]int{"tests": 6, "lint": 2},
 			Strengths:  []string{"Rarely: tasks that needed a correction (1 of 9 tasks)"},
 			Weaknesses: []PromptRule{{Title: "Agent code changes never tested or checked", Missed: 6, Applicable: 9, Share: 0.67, Why: "w", Focus: "f"}}},
 	}
@@ -207,7 +208,8 @@ func TestBuildAIEngineering(t *testing.T) {
 	if err := WriteText(&b, r); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"AI ENGINEERING", "  Strengths", "  To tighten", "rejected or changed 10 of 200 proposed agent edits (5.0%)", "Based on 9 code-change tasks (feature 9) and 0 questions or other requests, in 4 sessions."} {
+	for _, want := range []string{"AI ENGINEERING", "  Strengths", "  To tighten", "rejected or changed 10 of 200 proposed agent edits (5.0%)", "Based on 9 code-change tasks (feature 9) and 0 questions or other requests, in 4 sessions.",
+		"Quality gates agents ran, share of 8 tasks with edits: format 0%, lint 25%, types 0%, build 0%, tests 75%, security 0%"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
 		}
@@ -221,17 +223,31 @@ func TestBuildPractices(t *testing.T) {
 	res := analysis.Result{
 		Languages: []analysis.LanguageResult{{Language: "go", OwnedLines: 1500, TestLines: 500}, {Language: "secrets", OwnedLines: 9}},
 		Tests:     analysis.TestHabits{AssistedCommits: 10, AssistedWithTests: 8, OtherCommits: 4, OtherWithTests: 1},
-		CI:        analysis.CIPractices{Repos: 2, Practices: map[string]int{"tests": 2, "security": 1}},
+		PerRepo: []analysis.RepoPractices{
+			{Label: "api", Languages: []string{"go", "typescript"}, CIOwned: true, CIGates: []string{"lint", "tests", "security"},
+				InstructionsOwned: true, InstructionTopics: []string{"verification"},
+				AssistedLines: 1000, AssistedFindings: 2, Tests: analysis.TestHabits{AssistedCommits: 10, AssistedWithTests: 9}},
+			{Label: "web", Languages: []string{"python"}, AssistedLines: 500, AssistedFindings: 4,
+				Tests: analysis.TestHabits{AssistedCommits: 4, AssistedWithTests: 1}},
+		},
 	}
 	p := BuildPractices(res)
-	if len(p.Tests) != 1 || p.Tests[0].Ratio != 0.5 || len(p.CIRunsWith) != 2 || p.CIRunsWith[0].Practice != "tests" {
-		t.Errorf("practices = %+v", p)
+	// Go's tests imply its type checking and build; TypeScript's do not.
+	if len(p.Gates) != 1 || !reflect.DeepEqual(p.Gates[0].Missing, []string{"format", "types", "build"}) || !p.Gates[0].Security {
+		t.Errorf("gates = %+v", p.Gates)
+	}
+	in := p.Instructions
+	if in.Repos != 1 || in.With == nil || in.With.FindingsPerK != 2 || in.Without.FindingsPerK != 8 || in.With.AssistedTestsShare != 0.9 {
+		t.Errorf("instructions = %+v with %+v without %+v", in, in.With, in.Without)
 	}
 	var b strings.Builder
-	writePractices(&b, p, 3)
+	writePractices(&b, p, 2)
 	for _, want := range []string{"Tests per code line: Go 0.50 (500 test lines for 1000 code lines)",
 		"committed with tests: AI-assisted 8 of 10 commits (80%); other 1 of 4 commits (25%)",
-		"CI you helped write: 2 of 3 repositories; it runs tests 2, security 1"} {
+		"api: missing format, types, build; security scanning",
+		"Agent instructions you wrote: 1 of 2 repositories (covering verification 1, secrets 0, conventions 0)",
+		"2.00 vs 8.00 findings per 1,000 lines; with tests 90% vs 25% of commits",
+		"standards/QUALITY_GATES.md"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
 		}

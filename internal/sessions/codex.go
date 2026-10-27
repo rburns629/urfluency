@@ -112,7 +112,7 @@ func ReadCodex(r io.Reader) (Session, error) {
 			if patched {
 				s.record(edit)
 			} else {
-				s.record(commandKind(shellCommand(args.Command, args.Cmd)))
+				s.recordCommand(shellCommand(args.Command, args.Cmd))
 			}
 		}
 	})
@@ -162,7 +162,7 @@ func (s *Session) addScript(script string) {
 			s.record(edit)
 			s.addPatch(st.patch)
 		} else {
-			s.record(commandKind(st.cmd))
+			s.recordCommand(st.cmd)
 		}
 	}
 }

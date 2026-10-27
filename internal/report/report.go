@@ -48,6 +48,10 @@ type Prompting struct {
 	Focus      []string       `json:"focus"`
 	Edits      int            `json:"agent_edits_proposed"`
 	Reviewed   int            `json:"agent_edits_rejected_or_changed"`
+	// EditTasks are agent tasks with edits; GateTasks counts those that ran each
+	// quality gate.
+	EditTasks int            `json:"tasks_with_edits"`
+	GateTasks map[string]int `json:"tasks_running_gate"`
 }
 
 // PromptRule is one prompting rule and the share of applicable tasks that missed it.
@@ -225,7 +229,10 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 // BuildPrompting turns session grades into strengths, weaknesses, and focus points.
 func BuildPrompting(g sessions.Grades) *Prompting {
 	p := &Prompting{Sessions: g.Sessions, Tasks: g.Tasks, Rules: []PromptRule{}, Weaknesses: []PromptRule{}, Strengths: []string{}, Focus: []string{},
-		Edits: g.Edits, Reviewed: g.Reviewed}
+		Edits: g.Edits, Reviewed: g.Reviewed, EditTasks: g.EditTasks, GateTasks: map[string]int{}}
+	for gate, n := range g.GateTasks {
+		p.GateTasks[gate] = n
+	}
 	ids := make([]string, 0, len(g.Rules))
 	for id := range g.Rules {
 		ids = append(ids, id)

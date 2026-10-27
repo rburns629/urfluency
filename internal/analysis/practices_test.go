@@ -57,6 +57,7 @@ func TestScanMeasuresPractices(t *testing.T) {
 	r.Commit("me@example.com", "2025-02-04T00:00:00Z", map[string]string{
 		".github/workflows/ci.yml": "jobs:\n  check:\n    steps:\n      - run: go test ./...\n      - run: make check\n",
 		"Makefile":                 "check:\n\tgolangci-lint run\n\tgovulncheck ./...\n",
+		"AGENTS.md":                "# Agents\n\nRun the tests before finishing. Never read .env files.\n",
 	})
 
 	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
@@ -66,8 +67,18 @@ func TestScanMeasuresPractices(t *testing.T) {
 	if want := (analysis.TestHabits{AssistedCommits: 1, AssistedWithTests: 1, OtherCommits: 1}); res.Tests != want {
 		t.Errorf("tests = %+v, want %+v", res.Tests, want)
 	}
-	if want := map[string]int{"tests": 1, "lint": 1, "security": 1}; res.CI.Repos != 1 || !reflect.DeepEqual(res.CI.Practices, want) {
-		t.Errorf("ci = %+v, want practices %v", res.CI, want)
+	if len(res.PerRepo) != 1 {
+		t.Fatalf("per repo = %+v", res.PerRepo)
+	}
+	rp := res.PerRepo[0]
+	if !rp.CIOwned || !reflect.DeepEqual(rp.CIGates, []string{"lint", "tests", "security"}) {
+		t.Errorf("ci = %v %v, want lint, tests, security", rp.CIOwned, rp.CIGates)
+	}
+	if !rp.InstructionsOwned || !reflect.DeepEqual(rp.InstructionTopics, []string{"verification", "secrets"}) {
+		t.Errorf("instructions = %v %v", rp.InstructionsOwned, rp.InstructionTopics)
+	}
+	if !reflect.DeepEqual(rp.Languages, []string{"go"}) || rp.AssistedLines != 17 || rp.Repo() != "this repository" {
+		t.Errorf("repo = %+v", rp)
 	}
 	if g := res.Languages[0]; g.Language != "go" || g.TestLines != 1 {
 		t.Errorf("go = %+v, want 1 owned test line", g)
