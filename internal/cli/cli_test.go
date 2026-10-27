@@ -116,6 +116,68 @@ func TestScanFolderWithSessions(t *testing.T) {
 	}
 }
 
+func TestScanFoldersWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	panics := "package a\n\nfunc f() { panic(1) }\n"
+	write("old/go.mod", "module old\n")
+	write("old/a.go", panics)
+	write("old/cmd/b.go", panics) // part of old, not a project of its own
+	write("archive/x/a.go", panics)
+	write("stray.py", "print(1)\n") // the root holds projects, so it is not one
+	write("fresh/main.py", "print(2)\n")
+	fresh := &testutil.Repo{T: t, Dir: filepath.Join(root, "fresh")}
+	fresh.Git("", "", "init", "-q", "-b", "main") // no commits: scanned as a folder
+	nested := &testutil.Repo{T: t, Dir: filepath.Join(root, "old", "lib")}
+	if err := os.MkdirAll(nested.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nested.Git("", "", "init", "-q", "-b", "main")
+	nested.Commit("me@example.com", "", map[string]string{"c.go": panics})
+
+	var out, errOut bytes.Buffer
+	code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", "--exclude", "archive", root}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Repos != 1 || len(rep.Languages) == 0 || rep.Languages[0].OwnedLines != 3 {
+		t.Errorf("git part = %+v", rep.Languages)
+	}
+	u := rep.Unversioned
+	if u == nil || u.Projects != 2 || len(u.Languages) == 0 || u.Languages[0].OwnedLines != 6 || u.Languages[0].Files != 2 {
+		t.Fatalf("unversioned = %+v", u)
+	}
+
+	// A folder inside a repository is scanned as that repository.
+	sub := filepath.Join(nested.Dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Run(context.Background(), []string{"scan", "--author", "me@example.com", "--json", sub}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	rep = report.Report{}
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Repos != 1 || rep.Unversioned != nil {
+		t.Errorf("subfolder scan = %s", out.String())
+	}
+}
+
 func TestWriteValidation(t *testing.T) {
 	found := []sessions.Session{
 		{Agent: "claude-code", Models: map[string]bool{"claude-test-1": true}, Prompts: []sessions.Prompt{

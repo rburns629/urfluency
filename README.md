@@ -43,6 +43,7 @@ prints the official install command for whatever is missing.
 ./urfluency scan --author you@example.com --since 90d --locations .
 ./urfluency scan --json .
 ./urfluency scan --sessions ~/Projects           # every repo below, plus your agent prompts
+./urfluency scan --exclude 'Archive*' ~/Projects # skip folders by name or relative path
 ```
 
 The scan analyzes only lines that `git blame` attributes to your emails at the
@@ -52,6 +53,14 @@ clean. Files over 2 MB are skipped before anything reads them, since they are
 vendored or generated, and a file that takes more than 60 seconds to attribute is
 skipped and counted in the report.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
+
+Projects that lost their Git history (or never had commits) are scanned too. A
+folder counts as a project when it has a manifest such as `go.mod` or
+`package.json`, or source files and no projects inside it. With no history to
+attribute lines, every line counts as yours, so these results appear in their own
+**Projects without Git** section marked as declared authorship, never mixed with
+attributed results, and without the measures that need history (AI share,
+durability, tests with changes).
 
 Every scan includes an **AI engineering** section: does your agent-assisted work
 hold up as well as your own? Using agents is never counted against you, and the

@@ -404,7 +404,16 @@ urfluency logout
 - `upload` always shows the payload and asks for confirmation unless `--yes` is
   passed.
 - `scan` accepts a repository or a folder; for a folder it scans every repository up
-  to four levels below it and combines the results.
+  to four levels below it and combines the results. A path inside a repository scans
+  that repository. `--exclude` skips folders by name or relative path.
+- Folders without Git (history lost, or `git init` with no commits) are scanned
+  directly when they hold a manifest, or source files and no other projects; a
+  folder of projects with a stray script is a container, not a project. The same
+  filters apply as for repositories (dependency and secret folders, files over
+  2 MB, binaries). Every line counts as the user's, so results are reported in a
+  separate section as declared authorship, never merged with attributed results,
+  and history measures (AI share, durability, tests with changes) are omitted. This
+  relies on honesty, like all self-reported metrics (see Trust tiers).
 - Session adapters read local transcripts only with `--sessions`, and only sessions
   that ran in or edited the scanned repositories. Each adapter records prompts, the
   lines the agent added, and its reads, edits, and checks. Formats are undocumented,
@@ -514,6 +523,7 @@ and every result records the method version.
 
 | Tier | Source | Shown as |
 | --- | --- | --- |
+| **Declared** | Local CLI on folders without Git history | "Declared"; kept apart from attributed results |
 | **Self-reported** | Local CLI | Default label on all CLI metrics |
 | **CI-attested** | urFluency GitHub Action authenticated with GitHub OIDC; signed commits only | "CI-attested" |
 | **Verified** | Server analysis of a public repo | "Verified" |

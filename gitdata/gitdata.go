@@ -55,6 +55,16 @@ func (r Repo) Head(ctx context.Context) (string, error) {
 // ErrNoCommits is returned for a repository with no commits yet.
 var ErrNoCommits = errors.New("no commits yet")
 
+// TopLevel returns the root of the Git working tree containing the directory, or
+// "" when it is not inside one.
+func (r Repo) TopLevel(ctx context.Context) string {
+	out, err := r.git(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // ConfiguredEmail returns user.email as Git resolves it for this repository.
 func (r Repo) ConfiguredEmail(ctx context.Context) (string, error) {
 	out, err := r.git(ctx, "config", "user.email")

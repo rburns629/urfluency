@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {

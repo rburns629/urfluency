@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,8 +34,8 @@ var Version = "dev"
 const usage = `urfluency analyzes your own commits and reports strengths and areas to improve.
 
 Usage:
-  urfluency scan [flags] [path]   Analyze the repository at path, or every repository
-                                  below it (default ".")
+  urfluency scan [flags] [path]   Analyze the repository at path, or every project
+                                  below it, with or without Git (default ".")
   urfluency validate [path]       For maintainers: show whether prompt signals
                                   predict what happened next in agent sessions
   urfluency doctor                Check dependencies and optional features; installs nothing
@@ -49,6 +50,8 @@ Scan flags:
   --sessions       Also grade your prompts in local Claude Code and Codex sessions
                    for these repositories, and report how much code agents wrote.
                    Prompt text is read in memory only; nothing is stored.
+  --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
+                   for several (for example --exclude 'Archive*')
 `
 
 // errUsage marks errors caused by invalid arguments.
@@ -100,6 +103,8 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	asJSON := fs.Bool("json", false, "")
 	locations := fs.Bool("locations", false, "")
 	withSessions := fs.Bool("sessions", false, "")
+	var excludes stringList
+	fs.Var(&excludes, "exclude", "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
@@ -119,15 +124,23 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	prog := newProgress(stderr)
-	prog.phase("Finding repositories under " + tildePath(abs))
-	repos, err := findRepos(abs)
+	for _, pattern := range excludes {
+		if _, err := filepath.Match(pattern, ""); err != nil {
+			return fmt.Errorf("%w: --exclude %q: %v", errUsage, pattern, err)
+		}
+	}
+	prog.phase("Finding projects under " + tildePath(abs))
+	if top := (gitdata.Repo{Dir: abs}).TopLevel(ctx); top != "" && !isRepo(abs) {
+		abs = top // a folder inside a repository is scanned as that repository
+	}
+	repos, folders, err := findProjects(abs, excludes)
 	if err != nil {
 		return err
 	}
-	if len(repos) == 0 {
-		return fmt.Errorf("no Git repositories found at %s", abs)
+	if len(repos) == 0 && len(folders) == 0 {
+		return fmt.Errorf("no projects found at %s", abs)
 	}
-	if len(authors) == 0 {
+	if len(authors) == 0 && len(repos) > 0 {
 		email, err := gitdata.Repo{Dir: repos[0]}.ConfiguredEmail(ctx)
 		if err != nil || email == "" {
 			return fmt.Errorf("%w: no --author given and git user.email is not set", errUsage)
@@ -144,34 +157,61 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	// In a folder scan, a repository that fails (for example one with no commits)
 	// is reported and skipped; a single-repository scan fails.
-	var labels []string
-	var parts []analysis.Result
-	for i, dir := range repos {
+	// Folders without Git are scanned and merged separately: their authorship is
+	// declared, not recorded, so it never mixes with attributed results.
+	total := len(repos) + len(folders)
+	var labels, folderLabels []string
+	var parts, folderParts []analysis.Result
+	for i, dir := range append(repos, folders...) {
 		label, _ := filepath.Rel(abs, dir)
 		label = filepath.ToSlash(label)
 		shown := label
 		if label == "." {
 			shown = filepath.Base(dir)
 		}
-		prog.repo(i+1, len(repos), shown)
-		part, err := analysis.Scan(ctx, gitdata.Repo{Dir: dir},
-			analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update})
+		git := i < len(repos)
+		if !git {
+			shown += " (no Git)"
+		}
+		prog.repo(i+1, total, shown)
+		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update,
+			SkipDir: func(d string) bool { return isRepo(d) || excluded(abs, d, excludes) }}
+		var part analysis.Result
+		if git {
+			part, err = analysis.Scan(ctx, gitdata.Repo{Dir: dir}, opts)
+			if errors.Is(err, gitdata.ErrNoCommits) {
+				git = false // nothing committed yet, so there is no history to attribute
+			}
+		}
+		if !git {
+			part, err = analysis.ScanDir(ctx, dir, opts)
+		}
 		if err != nil {
-			if len(repos) == 1 || ctx.Err() != nil {
+			if total == 1 || ctx.Err() != nil {
 				prog.clear()
 				return err
 			}
 			prog.note(fmt.Sprintf("urfluency: skipping %s: %v", label, err))
 			continue
 		}
-		labels, parts = append(labels, label), append(parts, part)
+		if git {
+			labels, parts = append(labels, label), append(parts, part)
+		} else {
+			folderLabels, folderParts = append(folderLabels, label), append(folderParts, part)
+		}
 	}
-	prog.finish(len(parts))
-	if len(parts) == 0 {
-		return fmt.Errorf("no repository under %s could be scanned", abs)
+	prog.finish(len(parts) + len(folderParts))
+	if len(parts)+len(folderParts) == 0 {
+		return fmt.Errorf("no project under %s could be scanned", abs)
 	}
-	res := analysis.Merge(labels, parts)
+	var res analysis.Result
+	if len(parts) > 0 {
+		res = analysis.Merge(labels, parts)
+	}
 	r := report.Build(res, since, *locations)
+	if len(folderParts) > 0 {
+		r.Unversioned = report.BuildUnversioned(analysis.Merge(folderLabels, folderParts), *locations)
+	}
 	r.AI = report.BuildAI(res, *withSessions)
 	if *withSessions {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
@@ -186,31 +226,81 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	return report.WriteText(stdout, r)
 }
 
-// findRepos returns root if it is a Git repository, otherwise the repositories up
-// to four levels below it. Hidden, dependency, and secret directories are skipped.
-func findRepos(root string) ([]string, error) {
+// findProjects returns root if it is a Git repository; otherwise the repositories
+// and the project folders without Git up to four levels below it. A folder without
+// Git is a project when it holds a manifest, or source files and no other
+// projects (a folder of projects with a stray script is not one). Folders inside
+// a project are part of it, except nested repositories, which are scanned on
+// their own. Hidden, dependency, secret, and excluded directories are skipped.
+func findProjects(root string, excludes []string) (repos, folders []string, err error) {
 	if isRepo(root) {
-		return []string{root}, nil
+		return []string{root}, nil, nil
 	}
-	var repos []string
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	type candidate struct {
+		dir      string
+		manifest bool
+	}
+	var candidates []candidate
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return nil // unreadable entries are skipped
 		}
 		name := d.Name()
-		if p != root && (strings.HasPrefix(name, ".") || analysis.IsDependencyDir(name) || analysis.IsProtectedDir(name)) {
+		if p != root && (strings.HasPrefix(name, ".") || analysis.IsDependencyDir(name) || analysis.IsProtectedDir(name) || excluded(root, p, excludes)) {
 			return filepath.SkipDir
 		}
 		if isRepo(p) {
 			repos = append(repos, p)
 			return filepath.SkipDir
 		}
+		if manifest, source := analysis.ProjectFiles(p); manifest || source {
+			candidates = append(candidates, candidate{p, manifest})
+		}
 		if rel, _ := filepath.Rel(root, p); strings.Count(rel, string(filepath.Separator)) >= 3 {
 			return filepath.SkipDir
 		}
 		return nil
 	})
-	return repos, err
+	// Candidates come in walk order, so a folder's parent project, if any, is
+	// the last one kept.
+	contains := func(dir string) bool {
+		for _, r := range repos {
+			if within(dir, r) {
+				return true
+			}
+		}
+		for _, c := range candidates {
+			if c.dir != dir && within(dir, c.dir) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range candidates {
+		if len(folders) > 0 && within(folders[len(folders)-1], c.dir) {
+			continue
+		}
+		if c.manifest || !contains(c.dir) {
+			folders = append(folders, c.dir)
+		}
+	}
+	return repos, folders, err
+}
+
+// excluded reports whether --exclude matches the directory's name or its path
+// relative to root.
+func excluded(root, dir string, patterns []string) bool {
+	rel, _ := filepath.Rel(root, dir)
+	rel = filepath.ToSlash(rel)
+	for _, pattern := range patterns {
+		if ok, _ := path.Match(pattern, filepath.Base(dir)); ok {
+			return true
+		}
+		if ok, _ := path.Match(pattern, rel); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func isRepo(dir string) bool {

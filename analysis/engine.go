@@ -52,6 +52,9 @@ type Options struct {
 	// its steps are done. It is called from several goroutines and must be safe
 	// for concurrent use.
 	Progress func(stage string, done, total int)
+	// SkipDir, if set, names absolute directories a folder scan without Git
+	// leaves out, such as nested repositories scanned on their own.
+	SkipDir func(dir string) bool
 }
 
 func (o Options) progress(stage string, done, total int) {
@@ -98,6 +101,9 @@ type Result struct {
 	// SkippedSlow counts files skipped because attributing them took longer
 	// than BlameTimeout.
 	SkippedSlow int
+	// Declared is true for folders without Git history, where every line counts
+	// as the user's because nothing records who wrote it.
+	Declared bool
 }
 
 type ownedFile struct {
@@ -174,6 +180,17 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			}
 		}
 	}
+	if err := analyzeFiles(ctx, &result, files, tools, scripts, opts); err != nil {
+		return Result{}, err
+	}
+	return result, nil
+}
+
+// analyzeFiles runs every analyzer and scanner over the loaded files and fills in
+// the result's languages, AI-assisted counts, and per-repository practices. tools
+// maps commits to the coding tools their trailers name; it is empty for folders
+// without Git.
+func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools map[string][]string, scripts []string, opts Options) error {
 	ai := map[string]map[int]bool{}
 	for i := range files {
 		f := &files[i]
@@ -212,7 +229,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		opts.progress("analyzing "+a.Language(), 0, 0)
 		lr, err := run(ctx, a.Language(), group, a.Analyze)
 		if err != nil {
-			return Result{}, err
+			return err
 		}
 		if fd, ok := a.(FrameworkDetector); ok {
 			lr.Frameworks = frameworks(fd, group)
@@ -231,7 +248,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 		lr, err := run(ctx, s.Name(), group, s.Analyze)
 		if err != nil {
-			return Result{}, err
+			return err
 		}
 		result.Languages = append(result.Languages, lr)
 	}
@@ -247,7 +264,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			}
 		}
 	}
-	return result, nil
+	return nil
 }
 
 // run analyzes a group of files and keeps findings on owned lines.

@@ -82,8 +82,27 @@ func TestWriteText(t *testing.T) {
 		}
 	}
 	b.Reset()
-	if err := WriteText(&b, Report{}); err != nil || !strings.Contains(b.String(), "No owned lines") {
+	if err := WriteText(&b, Report{Repos: 1}); err != nil || !strings.Contains(b.String(), "No owned lines") {
 		t.Errorf("empty report output = %q, %v", b.String(), err)
+	}
+}
+
+func TestWriteTextUnversioned(t *testing.T) {
+	res := result(500, "go.ignored-error")
+	res.Repos = 1
+	r := Report{Unversioned: BuildUnversioned(res, false)}
+	var b strings.Builder
+	if err := WriteText(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{"no Git repositories", "PROJECTS WITHOUT GIT: 1 (authorship declared, not verified)", "GO: 500 owned lines"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "No owned lines") {
+		t.Errorf("folders-only report claims no owned lines:\n%s", out)
 	}
 }
 

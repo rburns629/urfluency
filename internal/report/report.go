@@ -38,6 +38,9 @@ type Report struct {
 	AI            *AIShare       `json:"ai_written,omitempty"`
 	AIEngineering *AIEngineering `json:"ai_engineering,omitempty"`
 	Practices     *Practices     `json:"practices,omitempty"`
+	// Unversioned covers folders without Git, kept apart because their
+	// authorship is declared rather than recorded.
+	Unversioned *Unversioned `json:"unversioned,omitempty"`
 }
 
 // Prompting grades task prompts from local agent sessions.
@@ -135,6 +138,22 @@ type RuleResult struct {
 	AssistedCount int `json:"ai_assisted_count"`
 	// Standard links the clean-agent-code document behind the rule, if any.
 	Standard string `json:"standard,omitempty"`
+}
+
+// Unversioned reports findings in project folders without Git history. Every
+// line counts as the user's, so it is declared rather than verified authorship.
+type Unversioned struct {
+	Projects  int        `json:"projects"`
+	Languages []Language `json:"languages"`
+}
+
+// BuildUnversioned reports a merged result from folders without Git.
+func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
+	u := &Unversioned{Projects: res.Repos, Languages: []Language{}}
+	for _, lr := range res.Languages {
+		u.Languages = append(u.Languages, buildLanguage(lr, withLocations))
+	}
+	return u
 }
 
 // Build creates a report from a scan result.
@@ -309,7 +328,10 @@ func BuildAI(res analysis.Result, sessionsRead bool) *AIShare {
 func WriteText(w io.Writer, r Report) error {
 	var b strings.Builder
 	scope := "commit " + r.Commit
-	if r.Repos > 1 {
+	switch {
+	case r.Repos == 0:
+		scope = "no Git repositories"
+	case r.Repos > 1:
 		scope = fmt.Sprintf("%d repositories", r.Repos)
 	}
 	fmt.Fprintf(&b, "urFluency scan · %s · since %s · catalog %s\n", scope, r.Since, r.Catalog)
@@ -317,49 +339,60 @@ func WriteText(w io.Writer, r Report) error {
 		fmt.Fprintf(&b, "Skipped %d files that took over %s to attribute; they are usually generated or vendored.\n",
 			r.SkippedSlow, analysis.BlameTimeout)
 	}
-	if len(r.Languages) == 0 {
+	if len(r.Languages) == 0 && r.Repos > 0 {
 		b.WriteString("\nNo owned lines in supported languages were found for these authors.\n")
 	}
 	for _, l := range r.Languages {
-		name := strings.ToUpper(l.Language)
-		if len(l.Frameworks) > 0 {
-			name += " (" + strings.Join(l.Frameworks, ", ") + ")"
-		}
-		fmt.Fprintf(&b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
-		if !l.Sufficient {
-			fmt.Fprintf(&b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
-		}
-		if a := l.Authorship; a != nil {
-			fmt.Fprintf(&b, "  AI-assisted: %d lines (%.0f%%). Findings per 1,000 lines: AI-assisted %.2f, other %.2f\n",
-				a.AssistedLines, a.AssistedShare*100, a.AssistedFindingsPer, a.OtherFindingsPer)
-		}
-		if len(l.Strengths) > 0 {
-			b.WriteString("  Strengths\n")
-			for _, s := range l.Strengths {
-				fmt.Fprintf(&b, "    + %s\n", s)
-			}
-		}
-		if len(l.Weaknesses) > 0 {
-			b.WriteString("  Areas to improve\n")
-			for _, w := range l.Weaknesses {
-				fmt.Fprintf(&b, "    - %s [%s]: %d (%.2f per 1,000 lines)\n", w.Title, w.Category, w.Count, w.PerKLines)
-				fmt.Fprintf(&b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
-				if w.Standard != "" {
-					fmt.Fprintf(&b, "      Standard: %s\n", w.Standard)
-				}
-				for _, loc := range w.Locations {
-					fmt.Fprintf(&b, "      at %s\n", loc)
-				}
-			}
-		}
-		if len(l.Focus) > 0 {
-			fmt.Fprintf(&b, "  Points of focus: %s\n", strings.Join(l.Focus, ", "))
-		}
+		writeLanguage(&b, l)
 	}
 	writeAIEngineering(&b, r)
 	writePractices(&b, r.Practices, r.Repos)
+	if u := r.Unversioned; u != nil {
+		fmt.Fprintf(&b, "\nPROJECTS WITHOUT GIT: %d (authorship declared, not verified)\n", u.Projects)
+		b.WriteString("Every line in these folders counts as yours; AI share, durability, and test habits need Git history.\n")
+		for _, l := range u.Languages {
+			writeLanguage(&b, l)
+		}
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeLanguage(b *strings.Builder, l Language) {
+	name := strings.ToUpper(l.Language)
+	if len(l.Frameworks) > 0 {
+		name += " (" + strings.Join(l.Frameworks, ", ") + ")"
+	}
+	fmt.Fprintf(b, "\n%s: %d owned lines in %d files\n", name, l.OwnedLines, l.Files)
+	if !l.Sufficient {
+		fmt.Fprintf(b, "  Not enough data for strengths (needs %d owned lines).\n", MinOwnedLines)
+	}
+	if a := l.Authorship; a != nil {
+		fmt.Fprintf(b, "  AI-assisted: %d lines (%.0f%%). Findings per 1,000 lines: AI-assisted %.2f, other %.2f\n",
+			a.AssistedLines, a.AssistedShare*100, a.AssistedFindingsPer, a.OtherFindingsPer)
+	}
+	if len(l.Strengths) > 0 {
+		b.WriteString("  Strengths\n")
+		for _, s := range l.Strengths {
+			fmt.Fprintf(b, "    + %s\n", s)
+		}
+	}
+	if len(l.Weaknesses) > 0 {
+		b.WriteString("  Areas to improve\n")
+		for _, w := range l.Weaknesses {
+			fmt.Fprintf(b, "    - %s [%s]: %d (%.2f per 1,000 lines)\n", w.Title, w.Category, w.Count, w.PerKLines)
+			fmt.Fprintf(b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
+			if w.Standard != "" {
+				fmt.Fprintf(b, "      Standard: %s\n", w.Standard)
+			}
+			for _, loc := range w.Locations {
+				fmt.Fprintf(b, "      at %s\n", loc)
+			}
+		}
+	}
+	if len(l.Focus) > 0 {
+		fmt.Fprintf(b, "  Points of focus: %s\n", strings.Join(l.Focus, ", "))
+	}
 }
 
 func shortHash(h string) string {

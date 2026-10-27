@@ -33,7 +33,7 @@ func validate(ctx context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-	repos, err := findRepos(root)
+	repos, _, err := findProjects(root, nil)
 	if err != nil {
 		return err
 	}
