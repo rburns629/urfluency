@@ -104,7 +104,10 @@ operated, not by CLI versus website.
   install to one command and the tap tiny, and keeps release bot commits out of the
   main history; once urFluency meets homebrew-core's bar (stable releases and enough
   adoption), the formula moves there and installs as `brew install urfluency`. Direct tarball downloads cover other
-  setups; winget or Scoop can follow for Windows. urFluency itself never installs
+  setups; winget or Scoop can follow for Windows. The workflow, build script, and
+  formula template are built (2026-10-27): macOS binaries target macOS 13 and later,
+  Linux binaries are statically linked so they run on any distribution, and the
+  formula renderer fails rather than publish a missing checksum. urFluency itself never installs
   dependencies: `urfluency doctor` checks them by capability and prints the official
   install command for anything missing.
 - **License:** MIT, copyright urFluency contributors (decided 2026-10-27); all

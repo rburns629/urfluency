@@ -18,14 +18,27 @@ TypeScript. See [DESIGN.md](DESIGN.md).
 The CLI command and Go module use lowercase: `urfluency`,
 `github.com/rburns629/urfluency`.
 
-## Try the CLI
+## Install
 
-Requires Go 1.26.10 or later, a C compiler (for tree-sitter), and Git. Run
-`urfluency doctor` to check dependencies and optional features; it never installs
-anything and prints the install command for whatever is missing.
+Once releases are published:
 
 ```sh
-go build -o urfluency ./cmd/urfluency
+brew install rburns629/tap/urfluency    # macOS and Linux; installs Git if missing
+urfluency doctor                        # checks dependencies; installs nothing
+```
+
+Release archives for macOS (Apple Silicon and Intel, macOS 13+) and Linux (x86-64
+and ARM, static binaries) are also attached to each GitHub Release with a
+`checksums.txt`. To build from source you need Go 1.26.10 or later, a C compiler
+(for tree-sitter), and Git: `go build -o urfluency ./cmd/urfluency`.
+
+`urfluency doctor` checks Git by capability, lists the agent sessions `--sessions`
+would read, and looks for a local model runtime. It never installs anything; it
+prints the official install command for whatever is missing.
+
+## Try the CLI
+
+```sh
 ./urfluency scan /path/to/your/repo              # uses git user.email
 ./urfluency scan --author you@example.com --since 90d --locations .
 ./urfluency scan --json .
