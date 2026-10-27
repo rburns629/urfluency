@@ -64,7 +64,7 @@ var Complexity = parsing.ComplexitySyntax{
 	Functions: set("method_declaration", "constructor_declaration", "compact_constructor_declaration", "lambda_expression"),
 	Structures: set("if_statement", "for_statement", "enhanced_for_statement", "while_statement", "do_statement",
 		"switch_expression", "catch_clause", "ternary_expression"),
-	ElseClause: "if_statement",
+	ElseToken:  "else",
 	Logical:    "binary_expression",
 	LogicalOps: set("&&", "||"),
 	Jumps:      set("break_statement", "continue_statement"),

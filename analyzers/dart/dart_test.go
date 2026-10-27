@@ -261,7 +261,10 @@ func TestComplexity(t *testing.T) {
 		src  string
 		want int
 	}{
-		{"void f(int a) {\n if (a == 1) {} else if (a == 2) {} else if (a == 3) {} else {}\n}\n", 1},
+		// if, two else ifs, and else each add 1, none nested.
+		{"void f(int a) {\n if (a == 1) {} else if (a == 2) {} else if (a == 3) {} else {}\n}\n", 4},
+		// One sequence of && and one of || add 1 each.
+		{"void f(bool a, bool b, bool c) {\n if (a && b || c) {}\n}\n", 3},
 		{"void f(List<int> xs) {\n outer: for (final x in xs) { var y = x > 0 ? 1 : 2; break outer; }\n}\n", 4},
 		{"void f(List<int> xs) {\n xs.forEach((x) { if (x > 0) { g(); } });\n}\n", 2},
 		{"void f() {\n try { g(); } catch (e) { while (true) {} }\n}\n", 2},

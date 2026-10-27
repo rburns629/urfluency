@@ -55,8 +55,10 @@ var complexity = parsing.ComplexitySyntax{
 		"subscript_declaration": true, "computed_property": true, "lambda_literal": true},
 	Structures: map[string]bool{"if_statement": true, "for_statement": true, "while_statement": true,
 		"repeat_while_statement": true, "switch_statement": true, "catch_block": true, "ternary_expression": true},
-	Hybrids:    map[string]bool{"else": true},
-	ElseClause: "if_statement",
+	Hybrids:      map[string]bool{"else": true},
+	ElseClause:   "if_statement",
+	LogicalKinds: map[string]string{"conjunction_expression": "&&", "disjunction_expression": "||"},
+	LogicalOps:   map[string]bool{"&&": true, "||": true},
 }
 
 // Analyze applies every Swift rule and idiom to each file.

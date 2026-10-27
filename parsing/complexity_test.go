@@ -79,3 +79,44 @@ func TestCognitive(t *testing.T) {
 		})
 	}
 }
+
+func TestCognitiveElseTokenAndLogicalKinds(t *testing.T) {
+	java := ComplexitySyntax{
+		Functions:  set("method_declaration"),
+		Structures: set("if_statement"),
+		ElseToken:  "else",
+		Logical:    "binary_expression",
+		LogicalOps: set("&&", "||"),
+	}
+	swift := ComplexitySyntax{
+		Functions:    set("function_declaration"),
+		Structures:   set("if_statement"),
+		LogicalKinds: map[string]string{"conjunction_expression": "&&", "disjunction_expression": "||"},
+		LogicalOps:   set("&&", "||"),
+	}
+	tests := []struct {
+		name string
+		g    Grammar
+		syn  ComplexitySyntax
+		src  string
+		want int
+	}{
+		// if +1, else if +1, else +1; none nested.
+		{"java else chain", Java, java, "class A { void m() { if (a) { x(); } else if (b) { y(); } else { z(); } } }", 3},
+		// A braceless if inside an if is nested, not an else if: 1 + (1 + 1).
+		{"java nested braceless if", Java, java, "class A { void m() { if (a) if (b) x(); } }", 3},
+		// if +1, one && sequence +1, one || sequence +1.
+		{"swift logical sequences", Swift, swift, "func m() { if a && b || c { x() } }", 3},
+	}
+	for _, tc := range tests {
+		tree, err := Parse(tc.g, []byte(tc.src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Cognitive(tree, tc.syn)
+		tree.Close()
+		if len(got) != 1 || got[0].Complexity != tc.want {
+			t.Errorf("%s: %+v, want %d", tc.name, got, tc.want)
+		}
+	}
+}

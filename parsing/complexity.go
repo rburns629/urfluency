@@ -16,12 +16,18 @@ type ComplexitySyntax struct {
 	Structures map[string]bool // +1 plus nesting, and nest their children: if, loops, switch, catch, ternary
 	Hybrids    map[string]bool // +1 without a nesting penalty: else, elif
 	ElseClause string          // the node an "else if" sits in, so the inner if is not counted again
+	// ElseToken is the unnamed else keyword in grammars without an else node:
+	// each one in a structure adds 1, and an if right after it is an else if.
+	ElseToken  string
 	Logical    string          // binary logical operator node
 	LogicalOps map[string]bool // operators that count: &&, ||, ?? or and, or
-	Jumps      map[string]bool // break or continue nodes; +1 only when labeled
-	Label      string          // child kind that marks a labeled jump
-	Call       string          // call node; a call to the enclosing function adds 1 (recursion)
-	Self       []string        // receivers of method calls: this, self
+	// LogicalKinds are nodes that are each one logical operator, for grammars
+	// with a node per operator, mapped to that operator.
+	LogicalKinds map[string]string
+	Jumps        map[string]bool // break or continue nodes; +1 only when labeled
+	Label        string          // child kind that marks a labeled jump
+	Call         string          // call node; a call to the enclosing function adds 1 (recursion)
+	Self         []string        // receivers of method calls: this, self
 }
 
 // FunctionComplexity is one top-level function and its cognitive complexity.
@@ -67,20 +73,25 @@ func (c *counter) visit(n *ts.Node, nesting int) {
 	case c.syn.Functions[kind]:
 		childNesting = nesting + 1
 	case c.syn.Structures[kind]:
-		// The if of an "else if" was already counted by its else clause.
-		if parent := n.Parent(); parent != nil && parent.Kind() == c.syn.ElseClause && c.syn.ElseClause != "" {
+		// The if of an "else if" was already counted by its else.
+		if c.isElseIf(n) {
 			childNesting = nesting
 		} else {
 			c.total += 1 + nesting
 			childNesting = nesting + 1
 		}
+		if c.syn.ElseToken != "" {
+			for i := uint(0); i < n.ChildCount(); i++ {
+				if child := n.Child(i); !child.IsNamed() && child.Kind() == c.syn.ElseToken {
+					c.total++
+				}
+			}
+		}
 	case c.syn.Hybrids[kind]:
 		c.total++
-	case kind == c.syn.Logical:
-		if op := n.ChildByFieldName("operator"); op != nil && c.syn.LogicalOps[op.Kind()] {
-			parent := n.Parent()
-			continues := parent != nil && parent.Kind() == c.syn.Logical && sameOperator(parent, op.Kind())
-			if !continues {
+	case kind == c.syn.Logical || c.syn.LogicalKinds[kind] != "":
+		if op := c.operator(n); c.syn.LogicalOps[op] {
+			if parent := n.Parent(); parent == nil || c.operator(parent) != op {
 				c.total++
 			}
 		}
@@ -100,6 +111,27 @@ func (c *counter) visit(n *ts.Node, nesting int) {
 	}
 }
 
+func (c *counter) isElseIf(n *ts.Node) bool {
+	if parent := n.Parent(); c.syn.ElseClause != "" && parent != nil && parent.Kind() == c.syn.ElseClause {
+		return true
+	}
+	prev := n.PrevSibling()
+	return c.syn.ElseToken != "" && prev != nil && !prev.IsNamed() && prev.Kind() == c.syn.ElseToken
+}
+
+// operator returns the logical operator a node applies, or "".
+func (c *counter) operator(n *ts.Node) string {
+	if op, ok := c.syn.LogicalKinds[n.Kind()]; ok {
+		return op
+	}
+	if n.Kind() == c.syn.Logical {
+		if op := n.ChildByFieldName("operator"); op != nil {
+			return op.Kind()
+		}
+	}
+	return ""
+}
+
 func (c *counter) callsSelf(callee string) bool {
 	if callee == c.name {
 		return true
@@ -110,11 +142,6 @@ func (c *counter) callsSelf(callee string) bool {
 		}
 	}
 	return false
-}
-
-func sameOperator(n *ts.Node, op string) bool {
-	o := n.ChildByFieldName("operator")
-	return o != nil && o.Kind() == op
 }
 
 // Complexity syntax for the tree-sitter grammars.

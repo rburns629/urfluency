@@ -79,7 +79,7 @@ var complexity = parsing.ComplexitySyntax{
 	Functions: set("function_declaration", "anonymous_function", "lambda_literal", "getter", "setter", "secondary_constructor"),
 	Structures: set("if_expression", "for_statement", "while_statement", "do_while_statement", "when_expression",
 		"catch_block"),
-	ElseClause: "if_expression",
+	ElseToken:  "else",
 	Logical:    "binary_expression",
 	LogicalOps: set("&&", "||"),
 	Jumps:      set("labeled_expression"),

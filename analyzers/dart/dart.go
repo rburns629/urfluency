@@ -59,9 +59,11 @@ var Complexity = parsing.ComplexitySyntax{
 	Functions: kinds("function_body", "function_expression"),
 	Structures: kinds("if_statement", "for_statement", "while_statement", "do_statement", "switch_statement",
 		"switch_expression", "catch_clause", "conditional_expression", "if_element", "for_element"),
-	ElseClause: "if_statement",
-	Jumps:      kinds("break_statement", "continue_statement"),
-	Label:      "identifier",
+	ElseToken:    "else",
+	LogicalKinds: map[string]string{"logical_and_expression": "&&", "logical_or_expression": "||"},
+	LogicalOps:   kinds("&&", "||"),
+	Jumps:        kinds("break_statement", "continue_statement"),
+	Label:        "identifier",
 }
 
 func kinds(ks ...string) map[string]bool {

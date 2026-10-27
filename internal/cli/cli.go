@@ -22,10 +22,18 @@ import (
 	"github.com/rburns629/urfluency/internal/sessions"
 
 	// Registered analyzers.
+	_ "github.com/rburns629/urfluency/analyzers/c"
+	_ "github.com/rburns629/urfluency/analyzers/cpp"
+	_ "github.com/rburns629/urfluency/analyzers/csharp"
+	_ "github.com/rburns629/urfluency/analyzers/dart"
 	_ "github.com/rburns629/urfluency/analyzers/golang"
+	_ "github.com/rburns629/urfluency/analyzers/java"
 	_ "github.com/rburns629/urfluency/analyzers/javascript"
+	_ "github.com/rburns629/urfluency/analyzers/kotlin"
 	_ "github.com/rburns629/urfluency/analyzers/python"
+	_ "github.com/rburns629/urfluency/analyzers/rust"
 	_ "github.com/rburns629/urfluency/analyzers/secrets"
+	_ "github.com/rburns629/urfluency/analyzers/swift"
 )
 
 // Version is set at build time with -ldflags "-X .../internal/cli.Version=...".
@@ -64,7 +72,8 @@ Scan flags:
   --include-ext EXT
                    Also read files with these extensions, such as .tf,.yml, and
                    check them for secrets. Only supported languages are read
-                   otherwise (Go, Python, JavaScript, TypeScript)
+                   otherwise (Go, Python, JavaScript, TypeScript, Rust, C,
+                   C++, C#, Java, Kotlin, Swift, Dart)
   --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
                    for several (for example --exclude 'Archive*')
 `

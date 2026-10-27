@@ -835,5 +835,5 @@ repository owner has published.
   or microVMs).
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
-- Languages after Go, Python, JavaScript, and TypeScript.
+- Languages after the current twelve, and F# and Visual Basic for .NET.
 

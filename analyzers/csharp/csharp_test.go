@@ -242,8 +242,8 @@ func TestCognitiveComplexity(t *testing.T) {
 }
 
 func TestComplexityElseIf(t *testing.T) {
-	// if (+1), else if (not a new nesting level), &&: the else if is not
-	// counted as nested inside the first if.
+	// if (+1), else if (+1, not a new nesting level), && (+1), else (+1): the
+	// else if is not counted as nested inside the first if.
 	src := `class C {
     int F(int x, bool a, bool b) {
         if (x > 0) { return 1; }
@@ -258,8 +258,8 @@ func TestComplexityElseIf(t *testing.T) {
 	}
 	defer tree.Close()
 	got := parsing.Cognitive(tree, complexity)
-	if len(got) != 1 || got[0].Complexity != 2 {
-		t.Errorf("complexity = %v, want [2]", got)
+	if len(got) != 1 || got[0].Complexity != 4 {
+		t.Errorf("complexity = %v, want [4]", got)
 	}
 }
 
