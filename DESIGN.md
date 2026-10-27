@@ -265,11 +265,17 @@ matches [`internal/review/design.schema.json`](internal/review/design.schema.jso
 The core answers design, testing, and production questions without a model, so
 results are fast, repeatable, and never leave the machine:
 
-- **Durability:** later fix commits per file and per owned line, from Git history
-  (commits whose messages or linked changes mark a fix, following moves). This is
-  also the outcome every other design metric is validated against.
-- **Cognitive complexity** per function, implemented from SonarSource's published
-  specification on the existing parsers (`go/ast` and tree-sitter).
+- **Durability** (built): the SZZ method traces each fix commit's changed lines to
+  the commits that introduced them; owned lines from commits at least 90 days old
+  are compared by whether a fix changed them within 90 days, split by AI-marked
+  commits. This is also the outcome every other design metric is validated against.
+- **Cognitive complexity** per function (built): SonarSource's published
+  specification on the existing parsers (`go/ast` and tree-sitter), including
+  recursion and nested functions, which deepen nesting and count toward the
+  enclosing function. Functions above 15, SonarQube's default, are a clean-code
+  finding, so they get the authorship split and AI engineering parity like every
+  other rule. Tests cover the specification's worked examples and cases adapted
+  from codemetrics.
 - **Structure:** dependency cycles and fan-in and fan-out between packages or
   modules, from imports.
 - **Testing:** tests per owned code file, assertions per test, and tests that

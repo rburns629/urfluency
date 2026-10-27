@@ -124,6 +124,9 @@ func (c *checker) run() {
 		if fn.Body == nil {
 			continue
 		}
+		if !isTest {
+			c.checkComplexity(fn)
+		}
 		allowPanic := !library || isTest || fn.Name.Name == "init" || strings.HasPrefix(fn.Name.Name, "Must")
 		fnLimited := limitsConcurrency(fn.Body)
 		c.checkSendLeak(fn.Body)

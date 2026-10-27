@@ -52,6 +52,13 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		}
 		c := checker{tree: tree, path: f.Path, isTest: isTestFile(f.Path), frameworks: importedFrameworks(tree)}
 		parsing.Walk(tree.Root(), c.visit)
+		if !c.isTest {
+			for _, fn := range parsing.Cognitive(tree, parsing.PythonComplexity) {
+				if fn.Complexity > parsing.CognitiveThreshold {
+					c.findings = append(c.findings, analysis.Finding{Rule: "clean.cognitive-complexity", Path: f.Path, Line: fn.Line})
+				}
+			}
+		}
 		tree.Close()
 		findings = append(findings, c.findings...)
 	}
