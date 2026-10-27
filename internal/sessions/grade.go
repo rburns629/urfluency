@@ -26,8 +26,9 @@ type Prompt struct {
 
 	Explores           int // file reads and searches
 	ExploresBeforeEdit int
-	Edits              int
+	Edits              int // edits the agent proposed
 	Checks             int // tests, linters, builds, and type checks run
+	Reviewed           int // proposed edits the user rejected or changed before accepting
 }
 
 var (
@@ -106,6 +107,9 @@ type Grades struct {
 	Sessions int
 	Tasks    map[string]int
 	Rules    map[string]Tally
+	// Edits the agent proposed anywhere in the sessions, and how many the user
+	// rejected or changed before accepting.
+	Edits, Reviewed int
 }
 
 // signalTypes lists the task types each prompt signal applies to; acceptance
@@ -128,20 +132,19 @@ type Task struct {
 	ExploresBeforeEdit int
 	Edits              int
 	Checks             int
+	Reviewed           int
 }
 
-// Tasks groups each session's prompts into tasks: a task prompt starts one, and
-// corrections and short replies that follow belong to it, with the agent's
-// activity after them. A question or other non-code prompt ends the task.
+// Tasks groups each session's prompts into tasks: a task prompt, including a
+// question, starts one, and corrections and short replies that follow belong to
+// it, with the agent's activity after them. A question that leads to edits ("can
+// this be faster?" then "go ahead") is graded on those edits like any task.
 func Tasks(sessions []Session) []Task {
 	var out []Task
 	for _, s := range sessions {
 		current := -1
 		for _, p := range s.Prompts {
 			switch {
-			case p.Type == Other:
-				current = -1
-				continue
 			case p.Type != "":
 				out = append(out, Task{Prompt: p})
 				current = len(out) - 1
@@ -157,6 +160,7 @@ func Tasks(sessions []Session) []Task {
 			}
 			t.Edits += p.Edits
 			t.Checks += p.Checks
+			t.Reviewed += p.Reviewed
 		}
 	}
 	return out
@@ -165,26 +169,34 @@ func Tasks(sessions []Session) []Task {
 // codeTypes are the task types that ask for code changes.
 var codeTypes = []string{Bug, Feature, Refactor, Test}
 
-// gradedRules apply to code tasks where applies is true. Only rules grounded in
-// what happened ship: the prompt-text signals (context, criteria, verification)
-// did not predict outcomes in validation (see DESIGN.md), so they are reported
-// by "urfluency validate" but not graded.
+// gradedRules apply to tasks where applies is true. Only rules grounded in what
+// happened ship: the prompt-text signals (context, criteria, verification) did
+// not predict outcomes in validation (see DESIGN.md), so they are reported by
+// "urfluency validate" but not graded. Any task with edits is graded on
+// verification; corrections are graded on code-change requests only, since a
+// question's follow-ups are often new questions.
 var gradedRules = []struct {
 	id      string
 	applies func(t Task) bool
 	met     func(t Task) bool
 }{
 	{"prompt.unverified-change", func(t Task) bool { return t.Edits > 0 }, func(t Task) bool { return t.Checks > 0 }},
-	{"prompt.needed-correction", func(Task) bool { return true }, func(t Task) bool { return !t.Corrected }},
+	{"prompt.needed-correction", func(t Task) bool { return contains(codeTypes, t.Prompt.Type) }, func(t Task) bool { return !t.Corrected }},
 }
 
 // Grade tallies each rule over the sessions' tasks.
 func Grade(sessions []Session) Grades {
 	g := Grades{Sessions: len(sessions), Tasks: map[string]int{}, Rules: map[string]Tally{}}
+	for _, s := range sessions {
+		for _, p := range s.Prompts {
+			g.Edits += p.Edits
+			g.Reviewed += p.Reviewed
+		}
+	}
 	for _, t := range Tasks(sessions) {
 		g.Tasks[t.Prompt.Type]++
 		for _, r := range gradedRules {
-			if !contains(codeTypes, t.Prompt.Type) || !r.applies(t) {
+			if !r.applies(t) {
 				continue
 			}
 			tally := g.Rules[r.id]

@@ -131,24 +131,24 @@ func TestGrade(t *testing.T) {
 	s := Session{Prompts: []Prompt{
 		{Type: Feature, Context: true, ExploresBeforeEdit: 2, Edits: 1},
 		{Correction: true, ExploresBeforeEdit: 4, Edits: 1}, {Correction: true}, // same task, corrected
-		{Type: Other, Edits: 5}, {Correction: true}, // a question ends the task; this correction is ignored
+		{Type: Other, Edits: 5}, {Correction: true}, // a question with edits is a task; its correction is not graded
 		{Type: Bug, Context: true, Edits: 1, Checks: 1},
 		{Type: Refactor}, // no edits, so not graded for verification
 	}}
 	tasks := Tasks([]Session{s})
-	if len(tasks) != 3 {
+	if len(tasks) != 4 {
 		t.Fatalf("tasks = %+v", tasks)
 	}
 	if f := tasks[0]; !f.Corrected || f.FollowUps != 2 || f.ExploresBeforeEdit != 2 || f.Edits != 2 || f.Checks != 0 {
 		t.Errorf("feature task = %+v", f)
 	}
 	g := Grade([]Session{s})
-	if g.Sessions != 1 || g.Tasks[Feature] != 1 || g.Tasks[Bug] != 1 || g.Tasks[Refactor] != 1 {
+	if g.Sessions != 1 || g.Tasks[Feature] != 1 || g.Tasks[Bug] != 1 || g.Tasks[Refactor] != 1 || g.Tasks[Other] != 1 || g.Edits != 8 {
 		t.Errorf("grades = %+v", g)
 	}
 	want := map[string]Tally{
 		// Verification grades tasks with edits by whether a check ran.
-		"prompt.unverified-change": {Applicable: 2, Missed: 1},
+		"prompt.unverified-change": {Applicable: 3, Missed: 2},
 		"prompt.needed-correction": {Applicable: 3, Missed: 1},
 	}
 	if len(g.Rules) != len(want) {
@@ -317,5 +317,28 @@ func TestDiscoverCopilotChat(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].Agent != "copilot-vscode" || got[0].Cwd != filepath.FromSlash("/w/my app") {
 		t.Errorf("transcripts = %+v", got)
+	}
+}
+
+func TestReadClaudeReviewActivity(t *testing.T) {
+	in := `{"type":"user","message":{"content":"Add a retry to the upload step in upload.go"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"Edit","input":{"file_path":"/w/upload.go","old_string":"x","new_string":"y"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a","is_error":true,"content":"The user doesn't want to proceed with this tool use. The tool use was rejected."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b","name":"Edit","input":{"file_path":"/w/upload.go","old_string":"x","new_string":"z"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b","content":"ok"}]},"toolUseResult":{"userModified":true,"structuredPatch":[{"lines":["+retryUpload(ctx, file)"]}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"c","name":"Edit","input":{"file_path":"/w/upload.go","old_string":"x","new_string":"w"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"c","is_error":true,"content":"String to replace not found"}]}}
+`
+	s, err := ReadClaude(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One rejection and one edit the user changed; a failed edit is not review.
+	if p := s.Prompts[0]; p.Edits != 3 || p.Reviewed != 2 {
+		t.Errorf("prompt = %+v, want 3 proposed edits and 2 reviewed", p)
+	}
+	g := Grade([]Session{s})
+	if g.Edits != 3 || g.Reviewed != 2 {
+		t.Errorf("grades = %+v", g)
 	}
 }

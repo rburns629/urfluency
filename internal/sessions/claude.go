@@ -29,7 +29,12 @@ type claudeBlock struct {
 	Input     json.RawMessage `json:"input"`
 	ToolUseID string          `json:"tool_use_id"`
 	IsError   bool            `json:"is_error"`
+	Content   json.RawMessage `json:"content"`
 }
+
+// rejection is the tool result Claude Code records when the user declines a
+// proposed tool use.
+const rejection = "doesn't want to proceed with this tool use"
 
 type claudeEdit struct {
 	FilePath  string       `json:"file_path"`
@@ -98,8 +103,13 @@ func ReadClaude(r io.Reader) (Session, error) {
 					text += b.Text + "\n"
 				case "tool_result":
 					toolResult = true
-					if in, ok := pending[b.ToolUseID]; ok && !b.IsError {
-						s.addClaudeEdit(in, l.ToolUseResult)
+					if in, ok := pending[b.ToolUseID]; ok {
+						switch {
+						case b.IsError && strings.Contains(string(b.Content), rejection):
+							s.record(reviewed)
+						case !b.IsError && s.addClaudeEdit(in, l.ToolUseResult):
+							s.record(reviewed)
+						}
 					}
 					delete(pending, b.ToolUseID)
 				}
@@ -113,9 +123,11 @@ func ReadClaude(r io.Reader) (Session, error) {
 }
 
 // addClaudeEdit prefers the applied patch, which holds only added lines; the tool
-// input is the fallback, minus lines the edit kept unchanged.
-func (s *Session) addClaudeEdit(in claudeEdit, result json.RawMessage) {
+// input is the fallback, minus lines the edit kept unchanged. It reports whether
+// the user changed the edit before accepting it.
+func (s *Session) addClaudeEdit(in claudeEdit, result json.RawMessage) (userModified bool) {
 	var applied struct {
+		UserModified    bool `json:"userModified"`
 		StructuredPatch []struct {
 			Lines []string `json:"lines"`
 		} `json:"structuredPatch"`
@@ -128,10 +140,11 @@ func (s *Session) addClaudeEdit(in claudeEdit, result json.RawMessage) {
 				}
 			}
 		}
-		return
+		return applied.UserModified
 	}
 	s.addLines(in.FilePath, strings.Split(in.Content, "\n")...)
 	for _, p := range append(in.Edits, claudePair{in.OldString, in.NewString}) {
 		s.addReplacement(in.FilePath, p.OldString, p.NewString)
 	}
+	return applied.UserModified
 }

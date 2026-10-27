@@ -26,14 +26,15 @@ const MinTasks = 5
 // Report is the local result of a scan. Locations are included only on request
 // and are never part of an upload.
 type Report struct {
-	Format    string     `json:"format"`
-	Catalog   string     `json:"catalog"`
-	Commit    string     `json:"commit"`
-	Repos     int        `json:"repositories"`
-	Since     string     `json:"since"`
-	Languages []Language `json:"languages"`
-	Prompting *Prompting `json:"prompting,omitempty"`
-	AI        *AIShare   `json:"ai_written,omitempty"`
+	Format        string         `json:"format"`
+	Catalog       string         `json:"catalog"`
+	Commit        string         `json:"commit"`
+	Repos         int            `json:"repositories"`
+	Since         string         `json:"since"`
+	Languages     []Language     `json:"languages"`
+	Prompting     *Prompting     `json:"prompting,omitempty"`
+	AI            *AIShare       `json:"ai_written,omitempty"`
+	AIEngineering *AIEngineering `json:"ai_engineering,omitempty"`
 }
 
 // Prompting grades task prompts from local agent sessions.
@@ -44,6 +45,8 @@ type Prompting struct {
 	Weaknesses []PromptRule   `json:"weaknesses"`
 	Strengths  []string       `json:"strengths"`
 	Focus      []string       `json:"focus"`
+	Edits      int            `json:"agent_edits_proposed"`
+	Reviewed   int            `json:"agent_edits_rejected_or_changed"`
 }
 
 // PromptRule is one prompting rule and the share of applicable tasks that missed it.
@@ -120,6 +123,8 @@ type RuleResult struct {
 	Why       string   `json:"why"`
 	Focus     string   `json:"focus"`
 	Locations []string `json:"locations,omitempty"`
+	// AssistedCount is how many of Count are on AI-assisted lines.
+	AssistedCount int `json:"ai_assisted_count"`
 }
 
 // Build creates a report from a scan result.
@@ -163,7 +168,8 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		}
 		rr := byRule[f.Rule]
 		if rr == nil {
-			rr = &RuleResult{ID: rule.ID, Category: string(rule.Category), Title: rule.Title, Why: rule.Why, Focus: rule.Focus}
+			rr = &RuleResult{ID: rule.ID, Category: string(rule.Category), Title: rule.Title, Why: rule.Why, Focus: rule.Focus,
+				AssistedCount: lr.AssistedByRule[f.Rule]}
 			byRule[f.Rule] = rr
 		}
 		rr.Count++
@@ -217,7 +223,8 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 
 // BuildPrompting turns session grades into strengths, weaknesses, and focus points.
 func BuildPrompting(g sessions.Grades) *Prompting {
-	p := &Prompting{Sessions: g.Sessions, Tasks: g.Tasks, Rules: []PromptRule{}, Weaknesses: []PromptRule{}, Strengths: []string{}, Focus: []string{}}
+	p := &Prompting{Sessions: g.Sessions, Tasks: g.Tasks, Rules: []PromptRule{}, Weaknesses: []PromptRule{}, Strengths: []string{}, Focus: []string{},
+		Edits: g.Edits, Reviewed: g.Reviewed}
 	ids := make([]string, 0, len(g.Rules))
 	for id := range g.Rules {
 		ids = append(ids, id)
@@ -329,75 +336,9 @@ func WriteText(w io.Writer, r Report) error {
 			fmt.Fprintf(&b, "  Points of focus: %s\n", strings.Join(l.Focus, ", "))
 		}
 	}
-	if p := r.Prompting; p != nil {
-		writePrompting(&b, p)
-	}
-	if a := r.AI; a != nil && a.OwnedLines > 0 {
-		fmt.Fprintf(&b, "\nAI-ASSISTED CODE (context only, not a score) in %d owned code lines\n", a.OwnedLines)
-		fmt.Fprintf(&b, "  From commits marked AI-assisted: %d lines (%.0f%%)", a.MarkedLines, a.MarkedShare*100)
-		if len(a.MarkedByTool) > 0 {
-			tools := make([]string, 0, len(a.MarkedByTool))
-			for t, n := range a.MarkedByTool {
-				tools = append(tools, fmt.Sprintf("%s %d", t, n))
-			}
-			sort.Strings(tools)
-			fmt.Fprintf(&b, ": %s", strings.Join(tools, ", "))
-		}
-		b.WriteString("\n    A marked commit can also contain your own lines; unmarked commits may still be AI-assisted.\n")
-		if d := a.Durability; d.AssistedAdded+d.OtherAdded > 0 {
-			rate := func(r float64, fixed, added int) string {
-				if added == 0 {
-					return fmt.Sprintf("no commits older than %d days yet", d.WindowDays)
-				}
-				return fmt.Sprintf("%.1f%% (%d of %d)", r*100, fixed, added)
-			}
-			fmt.Fprintf(&b, "  Lines fixed within %d days of being written: AI-assisted %s; other %s\n",
-				d.WindowDays, rate(d.AssistedRate, d.AssistedFixed, d.AssistedAdded), rate(d.OtherFixedRate, d.OtherFixed, d.OtherAdded))
-		}
-		if a.Sessions {
-			fmt.Fprintf(&b, "  Written by an agent in local sessions: at least %d lines (%.0f%%)\n", a.AILines, a.Share*100)
-			if a.AILines > 0 {
-				fmt.Fprintf(&b, "    Findings per 1,000 lines: agent-written %.2f, other %.2f\n", a.AIFindingsPerK, a.OtherFindingsPerK)
-			}
-			b.WriteString("    Counts sessions still on this machine; inline completions and pasted code are not included.\n")
-		}
-	}
+	writeAIEngineering(&b, r)
 	_, err := io.WriteString(w, b.String())
 	return err
-}
-
-func writePrompting(b *strings.Builder, p *Prompting) {
-	types := make([]string, 0, len(p.Tasks))
-	total := 0
-	for t, n := range p.Tasks {
-		types = append(types, fmt.Sprintf("%s %d", t, n))
-		total += n
-	}
-	sort.Strings(types)
-	fmt.Fprintf(b, "\nPROMPTING: %d tasks in %d sessions", total, p.Sessions)
-	if len(types) > 0 {
-		fmt.Fprintf(b, " (%s)", strings.Join(types, ", "))
-	}
-	b.WriteString("\n")
-	if total == 0 {
-		b.WriteString("  No code-change tasks found in sessions for these repositories.\n")
-	}
-	if len(p.Strengths) > 0 {
-		b.WriteString("  Strengths\n")
-		for _, s := range p.Strengths {
-			fmt.Fprintf(b, "    + %s\n", s)
-		}
-	}
-	if len(p.Weaknesses) > 0 {
-		b.WriteString("  Areas to improve\n")
-		for _, w := range p.Weaknesses {
-			fmt.Fprintf(b, "    - %s: %d of %d tasks (%.0f%%)\n", w.Title, w.Missed, w.Applicable, w.Share*100)
-			fmt.Fprintf(b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
-		}
-	}
-	if len(p.Focus) > 0 {
-		fmt.Fprintf(b, "  Points of focus: %s\n", strings.Join(p.Focus, ", "))
-	}
 }
 
 func shortHash(h string) string {

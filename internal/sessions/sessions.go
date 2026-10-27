@@ -160,9 +160,10 @@ func Load(t Transcript) (Session, error) {
 
 // Kinds of agent activity recorded after a prompt.
 const (
-	explore = "explore"
-	edit    = "edit"
-	check   = "check"
+	explore  = "explore"
+	edit     = "edit"
+	check    = "check"
+	reviewed = "reviewed" // the user rejected or changed a proposed edit
 )
 
 var (
@@ -199,6 +200,8 @@ func (s *Session) record(kind string) {
 		p.Edits++
 	case check:
 		p.Checks++
+	case reviewed:
+		p.Reviewed++
 	}
 }
 

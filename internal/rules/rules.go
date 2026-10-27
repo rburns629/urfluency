@@ -4,7 +4,7 @@ package rules
 import "sort"
 
 // Version identifies the catalog; it changes whenever rules are added or redefined.
-const Version = "0.6"
+const Version = "0.7"
 
 // Category groups rules into the metrics users see.
 type Category string
@@ -15,7 +15,7 @@ const (
 	TypeSafety          Category = "type-safety"
 	LanguageProficiency Category = "language-proficiency"
 	Security            Category = "security"
-	Prompting           Category = "prompting"
+	AIEngineering       Category = "ai-engineering"
 )
 
 // Rule describes one detectable practice and how to improve on it.

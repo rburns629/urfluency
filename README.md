@@ -34,17 +34,19 @@ The scan analyzes only lines that `git blame` attributes to your emails at the
 latest commit, never runs the repository's code, and writes nothing to disk.
 `--locations` adds `file:line` for each finding; locations are never uploaded.
 
-Every scan reports how many of your owned code lines come from commits marked
-AI-assisted by their trailers (such as `Co-Authored-By: Claude`), by tool. This is
-context, not a score: a marked commit can include your own lines.
+Every scan includes an **AI engineering** section: does your agent-assisted work
+hold up as well as your own? Using agents is never counted against you, and the
+share of AI-assisted code is shown but never scored. The section compares findings
+on AI-assisted lines (from commit trailers such as `Co-Authored-By: Claude`, and
+from sessions) with your own hand-written baseline per language, names the rules
+where agent code falls short, and shows how often lines needed a fix within 90 days
+of being written.
 
-`--sessions` also reads your local Claude Code, Codex, and GitHub Copilot Chat
-(VS Code) sessions for the scanned repositories. It grades each agent task on what
-happened (were code changes tested or checked, and did the task need a correction),
-with strengths, weaknesses, and points of focus, using fixed local rules and no model
-call. It also reports the lines agents provably wrote, a lower bound next to the
-commit-based share. Prompt text is reduced to signals as it is read and is never
-stored, printed, or uploaded.
+`--sessions` adds what happened in your local Claude Code, Codex, and GitHub
+Copilot Chat (VS Code) sessions for the scanned repositories: whether agent changes
+were tested or checked, whether tasks needed corrections, and how often you
+rejected or changed agent edits. Prompt text is reduced to signals as it is read
+and is never stored, printed, or uploaded.
 
 Prompting rules ship already validated: a rule is graded only if it reflects what
 actually happened in sessions. Maintainers check candidate rules with
@@ -58,7 +60,7 @@ signal and prints counts only (see DESIGN.md).
 | Languages | Go, Python, JavaScript, TypeScript |
 | Frameworks | React, Angular, Express, Fastify, FastAPI, Django, Flask (detected from each file's imports) |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
-| Prompting | With `--sessions`: agent code changes that were never tested or checked, and tasks that needed a correction |
+| AI engineering | Quality of AI-assisted code against your own baseline per language, durability, and with `--sessions` verification, corrections, and review activity |
 | Reliability | Go: fresh contexts where a request context exists, `defer` in loops, HTTP clients without timeouts, a goroutine per channel message without a bound; React effects without dependencies; Django queries inside loops |
 | Categories | Clean code, architecture, type safety, language proficiency, security, prompting |
 

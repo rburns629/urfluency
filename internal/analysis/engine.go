@@ -40,6 +40,7 @@ type LanguageResult struct {
 	// come from commits marked AI-assisted; AssistedFindings are findings on them.
 	AssistedLines    int
 	AssistedFindings int
+	AssistedByRule   map[string]int // findings on AI-assisted lines, per rule
 }
 
 // Result is the outcome of scanning one or more repositories.
@@ -188,7 +189,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 // run analyzes a group of files and keeps findings on owned lines.
 func run(ctx context.Context, name string, group []ownedFile,
 	analyze func(context.Context, []File) ([]Finding, error)) (LanguageResult, error) {
-	lr := LanguageResult{Language: name, Files: len(group)}
+	lr := LanguageResult{Language: name, Files: len(group), AssistedByRule: map[string]int{}}
 	owned := map[string]map[int]string{}
 	assisted := map[string]map[int]bool{}
 	inputs := make([]File, 0, len(group))
@@ -208,6 +209,7 @@ func run(ctx context.Context, name string, group []ownedFile,
 			lr.Findings = append(lr.Findings, fd)
 			if assisted[fd.Path][fd.Line] {
 				lr.AssistedFindings++
+				lr.AssistedByRule[fd.Rule]++
 			}
 		}
 	}

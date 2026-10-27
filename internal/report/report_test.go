@@ -148,8 +148,8 @@ func TestBuildAI(t *testing.T) {
 	if err := WriteText(&b, Report{Repos: 2, AI: a, Prompting: BuildPrompting(sessions.Grades{})}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2 repositories", "From commits marked AI-assisted: 600 lines (60%): claude 600",
-		"local sessions: at least 250 lines (25%)", "not a score", "No code-change tasks",
+	for _, want := range []string{"2 repositories", "Share (never scored): 600 of 1000 owned code lines (60%) from commits marked AI-assisted (claude 600)",
+		"At least 250 lines (25%) were written by an agent", "No code-change tasks",
 		"Lines fixed within 90 days of being written: AI-assisted 1.5% (6 of 400); other 0.5% (4 of 800)"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
@@ -165,5 +165,54 @@ func TestDurabilityWithoutOldEnoughCommits(t *testing.T) {
 	}
 	if want := "AI-assisted no commits older than 90 days yet; other 2.0% (1 of 50)"; !strings.Contains(b.String(), want) {
 		t.Errorf("text missing %q:\n%s", want, b.String())
+	}
+}
+
+func TestBuildAIEngineering(t *testing.T) {
+	ts := Language{Language: "typescript", OwnedLines: 2000,
+		Authorship: &Authorship{AssistedLines: 1500, AssistedShare: 0.75, AssistedFindingsPer: 5.4, OtherFindingsPer: 1.4},
+		Weaknesses: []RuleResult{
+			{Title: "Non-null assertion (x!)", Count: 40, AssistedCount: 34},
+			{Title: "Double type assertion", Count: 10, AssistedCount: 10},
+			{Title: "Explicit any", Count: 4, AssistedCount: 2}, // not concentrated on AI lines
+		}}
+	goLang := Language{Language: "go", OwnedLines: 4000,
+		Authorship: &Authorship{AssistedLines: 2000, AssistedShare: 0.5, AssistedFindingsPer: 2.9, OtherFindingsPer: 3.3}}
+	small := Language{Language: "python", OwnedLines: 400, Authorship: &Authorship{AssistedLines: 380, AssistedFindingsPer: 9}}
+	r := Report{
+		Languages: []Language{ts, goLang, small},
+		AI: &AIShare{OwnedLines: 6400, Durability: Durability{WindowDays: 90,
+			AssistedAdded: 5000, AssistedFixed: 50, AssistedRate: 0.01, OtherAdded: 5000, OtherFixed: 60, OtherFixedRate: 0.012}},
+		Prompting: &Prompting{Sessions: 4, Tasks: map[string]int{"feature": 9}, Edits: 200, Reviewed: 10,
+			Strengths:  []string{"Rarely: tasks that needed a correction (1 of 9 tasks)"},
+			Weaknesses: []PromptRule{{Title: "Agent code changes never tested or checked", Missed: 6, Applicable: 9, Share: 0.67, Why: "w", Focus: "f"}}},
+	}
+	e := BuildAIEngineering(r)
+	strengths := strings.Join(e.Strengths, "\n")
+	for _, want := range []string{"Agent-assisted Go meets your own bar: 2.90", "Agent-assisted code holds up: 1.0% of its lines", "Rarely: tasks that needed a correction"} {
+		if !strings.Contains(strengths, want) {
+			t.Errorf("strengths missing %q:\n%s", want, strengths)
+		}
+	}
+	if len(e.Weaknesses) != 2 || e.Weaknesses[0].Title != "Agent-assisted TypeScript falls below your own bar" ||
+		!strings.Contains(e.Weaknesses[0].Detail, "mostly non-null assertion (x!) (34 of 40) and double type assertion (10 of 10)") ||
+		e.Weaknesses[1].Title != "Agent code changes never tested or checked" {
+		t.Errorf("weaknesses = %+v", e.Weaknesses)
+	}
+	if e.Engagement == nil || e.Engagement.Share != 0.05 {
+		t.Errorf("engagement = %+v", e.Engagement)
+	}
+	r.AIEngineering = e
+	var b strings.Builder
+	if err := WriteText(&b, r); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"AI ENGINEERING", "  Strengths", "  To tighten", "rejected or changed 10 of 200 proposed agent edits (5.0%)", "Based on 9 code-change tasks (feature 9) and 0 questions or other requests, in 4 sessions."} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("text missing %q:\n%s", want, b.String())
+		}
+	}
+	if strings.Contains(b.String(), "Python") {
+		t.Error("a language without a hand-written baseline was judged")
 	}
 }

@@ -27,7 +27,7 @@ func Merge(labels []string, parts []Result) Result {
 		for _, lr := range p.Languages {
 			m := byLanguage[lr.Language]
 			if m == nil {
-				m = &LanguageResult{Language: lr.Language}
+				m = &LanguageResult{Language: lr.Language, AssistedByRule: map[string]int{}}
 				byLanguage[lr.Language] = m
 				frameworks[lr.Language] = map[string]bool{}
 			}
@@ -35,6 +35,9 @@ func Merge(labels []string, parts []Result) Result {
 			m.OwnedLines += lr.OwnedLines
 			m.AssistedLines += lr.AssistedLines
 			m.AssistedFindings += lr.AssistedFindings
+			for rule, n := range lr.AssistedByRule {
+				m.AssistedByRule[rule] += n
+			}
 			for _, fd := range lr.Findings {
 				fd.Path = labels[i] + "/" + fd.Path
 				m.Findings = append(m.Findings, fd)

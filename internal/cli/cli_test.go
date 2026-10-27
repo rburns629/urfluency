@@ -132,7 +132,7 @@ func TestWriteValidation(t *testing.T) {
 	}
 	got := strings.Join(strings.Fields(b.String()), " ")
 	for _, want := range []string{
-		"3 tasks in 2 sessions",
+		"4 tasks in 2 sessions",
 		"claude-code 1 sessions, 2 user messages, 3 edits, 1 checks",
 		"copilot-vscode 1 sessions, 5 user messages, 1 edits, 0 checks",
 		"Models (sessions using each): claude-test-1 2 lmstudio/qwen3-coder 1",
