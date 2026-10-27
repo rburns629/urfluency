@@ -256,9 +256,11 @@ matches [`internal/review/schema.json`](internal/review/schema.json).
   verification, and agent management, in bands (strong, solid, developing, focus
   area, not assessable), per session and overall. No overall score, rank, or
   comparison with other people.
-- **Local only.** It runs only on explicit request, against a model runtime on the
-  same machine (an OpenAI-compatible endpoint on `localhost`, such as Ollama or LM
-  Studio); urFluency never bundles a model or calls a hosted provider. Before
+- **Local by default.** It runs only on explicit request, against a model runtime
+  on the same machine (an OpenAI-compatible endpoint on `localhost`, such as Ollama
+  or LM Studio), or through an installed agent CLI the user names (see
+  [Review agents](#review-agents---review)); urFluency never bundles a model or
+  holds a provider credential. Before
   calling, the CLI removes injected editor blocks, redacts anything the secrets
   scanner matches, truncates each user turn to 2,000 characters and each agent
   excerpt to 400, and includes only sessions for the scanned repositories (at most
@@ -290,8 +292,9 @@ matches [`internal/review/design.schema.json`](internal/review/design.schema.jso
   trailers). The model judges only lines the user wrote without an agent; accepted
   AI code is context, never evidence of skill. Too little authored code yields
   "not assessable", never a low band.
-- **Local only.** It runs only per repository on explicit request, against a model
-  runtime on the same machine, never a hosted provider. Excerpts come from owned
+- **Local by default.** It runs only per repository on explicit request, against a
+  model runtime on the same machine or an agent CLI the user names (see
+  [Review agents](#review-agents---review)). Excerpts come from owned
   lines only, protected files are never read, secrets are redacted, and each
   technology is limited to a sampled set of excerpts.
 - **Complements, never replaces, the deterministic metrics** in
@@ -305,6 +308,95 @@ matches [`internal/review/design.schema.json`](internal/review/design.schema.jso
   and prediction against history: files whose design or testing is banded
   `developing` or `focus_area` should see more later bug-fix commits than files
   banded `strong`.
+
+### Review agents (`--review`; drafted, not built)
+
+`--review <agent>` runs the deep and design reviews through a coding agent CLI the
+user already installed and signed in to. urFluency starts the agent in its
+non-interactive mode, in an empty temporary folder with no tools, and reads its
+JSON answer; the agent uses its own sign-in, so
+urFluency never asks for, reads, stores, or passes an API key or token, and never
+installs an agent. `urfluency doctor` reports which agents are installed.
+
+| `--review` | Agent CLI | Non-interactive call | Sign-in it uses | Status |
+| --- | --- | --- | --- | --- |
+| `local` | Ollama or LM Studio | OpenAI-compatible endpoint on `localhost` | None | Default; code stays on the machine |
+| `claude` | Claude Code (`claude`) | `claude -p <packet> --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence --output-format json`, run in the empty folder | `claude` login (Claude subscription) or the user's API key | Planned; passed the canary test on Claude Code 2.1.308 |
+| `codex` | Codex CLI (`codex`) | `codex exec -C <empty dir> --skip-git-repo-check --sandbox read-only --ephemeral --ignore-user-config --json --disable shell_tool --disable unified_exec --disable apps --disable plugins --disable browser_use --disable in_app_browser --disable computer_use --disable view_image --disable tool_suggest -c 'web_search="disabled"' <packet>` with stdin closed | `codex login` (ChatGPT plan) or the user's API key | Planned; passed the canary test on Codex CLI 0.163.0 |
+| `copilot` | GitHub Copilot CLI (`copilot`) | `copilot -C <empty dir> -p <packet> --available-tools <unknown name> --no-custom-instructions --disable-builtin-mcps --no-ask-user --disable-client-telemetry --output-format json` | `copilot login` (keychain), or `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh` | Planned; call checked against Copilot CLI 1.0.104 |
+
+Copilot Chat in VS Code and Copilot inline completions have no command-line entry
+point, so only Copilot CLI can review.
+
+- **Hosted agents send code off the machine.** Every agent except `local` sends the
+  review packet (redacted excerpts and session signals) to its provider. They are
+  never the default, and they are never selected from configuration alone: each run
+  needs `--review <agent>` and prints the files and sessions it will send before
+  sending. On a work machine, use one only if the employer's agreement with that
+  provider covers the code.
+- **Missing agents.** If the named agent is not on `PATH`, the scan stops before
+  reading anything and prints where to get it for the user's operating system, then
+  how to sign in. urFluency never runs an installer. The official page is the
+  source of truth; the command is a convenience and is only shown for package
+  managers found on the machine (`brew`, `npm`), so the user gets one command they
+  can run instead of a list. `doctor` prints the same hint for each agent it does
+  not find.
+
+  ```
+  urfluency: --review copilot needs GitHub Copilot CLI, which is not installed.
+    Install:  brew install --cask copilot-cli
+    Docs:     https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli
+    Then run `copilot login` once, and try again.
+  ```
+
+  | Agent | macOS | Linux | Windows | Sign in |
+  | --- | --- | --- | --- | --- |
+  | `claude` | `brew install --cask claude-code` | `npm install -g @anthropic-ai/claude-code` | `npm install -g @anthropic-ai/claude-code` | `claude`, then `/login` |
+  | `codex` | `brew install --cask codex` | `npm install -g @openai/codex` | `npm install -g @openai/codex` | `codex login` |
+  | `copilot` | `brew install --cask copilot-cli` | `brew install --cask copilot-cli` or `npm install -g @github/copilot` | `npm install -g @github/copilot` | `copilot login` |
+  | `local` (Ollama) | `brew install ollama` | ollama.com/download | ollama.com/download | None; pull a model |
+  | `local` (LM Studio) | `brew install --cask lm-studio` | lmstudio.ai | lmstudio.ai | None; load a model |
+
+  Docs links: Claude Code `https://docs.claude.com/en/docs/claude-code/setup`,
+  Codex `https://developers.openai.com/codex/cli`, Copilot CLI (above). Without a
+  usable package manager the hint shows only the docs link. When npm is the only
+  route, the hint names Node.js as a prerequisite. Package names were checked on
+  2026-10-27 (Homebrew casks `claude-code`, `codex`, `copilot-cli`, `lm-studio`;
+  formula `ollama`; npm packages above) and live in one table in code, covered by a
+  test, so they change in one place.
+- **Installed but not signed in.** If the agent's first call fails on
+  authentication, urFluency prints the sign-in command from the table and stops;
+  it never retries with other credentials.
+- **No tools, empty folder.** The packet is the whole input: the agent runs in an
+  empty temporary folder with every tool removed, so it cannot read files beyond
+  the redacted packet, and urFluency rejects output that does not match the
+  schema. A read-only sandbox is not enough, because reading is the risk: in
+  non-interactive mode Copilot CLI 1.0.104 runs its file-reading tools (`view`,
+  `glob`) without asking, and Codex CLI 0.163.0 with `--sandbox read-only` read a
+  file outside its working folder with `cat`. Tools must be removed outright:
+  Copilot's `--excluded-tools view glob grep bash` still left `read_bash`
+  available, while `--available-tools` naming a tool that does not exist left
+  none; Claude Code's `--tools ""` left none; Codex needed its tool features
+  disabled one by one, and feature names change between releases. Before an
+  adapter ships, and after agent upgrades, a canary test puts a file in the folder
+  and asks the agent to read it; the adapter passes only if no tool runs and the
+  file's contents are not returned.
+- **Input.** Copilot CLI ignores stdin when given `-p`, so the packet goes in the
+  prompt argument (packets stay well under the operating system's argument limit).
+  Each agent's input path is checked the same way.
+- **The agent's own sign-in, unchanged.** urFluency runs the agent with the user's
+  environment as is and never reads the agent's credential files. Copilot CLI
+  prefers a `GH_TOKEN` or `GITHUB_TOKEN` in the environment over its own login, so
+  `doctor` warns when one is set. Each Copilot prompt counts as a premium request;
+with the model left on `auto`, the model Copilot chose is read from the
+`session.auto_mode_resolved` event for provenance.
+- **Provenance.** Results record `enhanced_with` with the agent as the runtime
+  (for example `"runtime": "codex"`) and the model it reports (see
+  [Upload format](#upload-format)), and pass the same validation as local models
+  before they are shown.
+- **Terms.** urFluency starts the user's own installed agent; it does not reuse a
+  subscription sign-in in its own requests. Check each provider's current terms for
+  automated use of subscription plans before release.
 
 ### Design metrics (deterministic)
 
@@ -508,7 +600,8 @@ format, and service do not change.
 }
 ```
 
-Anything a model produced carries `enhanced_with`: the model, the local runtime,
+Anything a model produced carries `enhanced_with`: the model, the runtime (a local
+one, or the agent CLI named with `--review`),
 the rubric version, and whether that rubric and model pair passed validation. The
 service keeps model-assessed results separate from measured ones, labels them with
 their provenance, and excludes unvalidated pairs from scores, profiles, and badges.
