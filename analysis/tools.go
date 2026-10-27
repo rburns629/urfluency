@@ -1,0 +1,167 @@
+package analysis
+
+import (
+	"path"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/rburns629/urfluency/gitdata"
+)
+
+// ToolUse is how much the user worked with one tool, judged from the paths of
+// files they committed to (or, without Git, files present). Contents are never
+// read for this, so tool files that hold values, such as .tfvars, stay closed.
+type ToolUse struct {
+	Repos   int
+	Files   int
+	Commits int
+	Lines   int       // lines added in the user's commits
+	Last    time.Time // the user's latest commit to the tool's files
+}
+
+// tools identifies the tool behind a path. Kinds group tools in the report.
+var tools = []struct {
+	name, kind string
+	match      func(p, base string) bool
+}{
+	{"terraform", "infrastructure", func(p, base string) bool { return hasExt(base, ".tf", ".tfvars", ".hcl") }},
+	{"docker", "infrastructure", func(p, base string) bool {
+		return base == "Dockerfile" || strings.HasPrefix(base, "Dockerfile.") || strings.HasSuffix(base, ".dockerfile") ||
+			strings.HasPrefix(base, "docker-compose") || base == "compose.yml" || base == "compose.yaml"
+	}},
+	{"helm", "infrastructure", func(p, base string) bool { return base == "Chart.yaml" }},
+	{"kustomize", "infrastructure", func(p, base string) bool { return base == "kustomization.yaml" || base == "kustomization.yml" }},
+	{"serverless", "infrastructure", func(p, base string) bool { return base == "serverless.yml" || base == "serverless.yaml" }},
+	{"github-actions", "ci", func(p, base string) bool {
+		return strings.HasPrefix(p, ".github/workflows/") && hasExt(base, ".yml", ".yaml")
+	}},
+	{"gitlab-ci", "ci", func(p, base string) bool { return base == ".gitlab-ci.yml" }},
+	{"jenkins", "ci", func(p, base string) bool { return base == "Jenkinsfile" }},
+	{"cloud-build", "ci", func(p, base string) bool { return base == "cloudbuild.yaml" || base == "cloudbuild.yml" }},
+	{"azure-pipelines", "ci", func(p, base string) bool { return base == "azure-pipelines.yml" }},
+	{"make", "build", func(p, base string) bool { return base == "Makefile" || hasExt(base, ".mk") }},
+	{"gradle", "build", func(p, base string) bool { return strings.HasPrefix(base, "build.gradle") }},
+	{"maven", "build", func(p, base string) bool { return base == "pom.xml" }},
+	{"npm", "packages", func(p, base string) bool { return base == "package.json" }},
+	{"go-modules", "packages", func(p, base string) bool { return base == "go.mod" }},
+	{"pip", "packages", func(p, base string) bool {
+		return base == "pyproject.toml" || base == "Pipfile" || base == "setup.py" || (strings.HasPrefix(base, "requirements") && hasExt(base, ".txt"))
+	}},
+	{"pre-commit", "quality", func(p, base string) bool { return base == ".pre-commit-config.yaml" }},
+	{"eslint", "quality", func(p, base string) bool {
+		return strings.HasPrefix(base, ".eslintrc") || strings.HasPrefix(base, "eslint.config.")
+	}},
+	{"prettier", "quality", func(p, base string) bool {
+		return strings.HasPrefix(base, ".prettierrc") || strings.HasPrefix(base, "prettier.config.")
+	}},
+	{"golangci-lint", "quality", func(p, base string) bool { return strings.HasPrefix(base, ".golangci.") }},
+}
+
+// ToolKind returns the group a tool belongs to, such as "infrastructure".
+func ToolKind(name string) string {
+	for _, t := range tools {
+		if t.name == name {
+			return t.kind
+		}
+	}
+	return ""
+}
+
+// toolOf returns the tool a path belongs to, or "".
+func toolOf(p string) string {
+	if inSkippedDir(p) || slices.ContainsFunc(strings.Split(path.Dir(p), "/"), IsDependencyDir) {
+		return ""
+	}
+	base := path.Base(p)
+	for _, t := range tools {
+		if t.match(p, base) {
+			return t.name
+		}
+	}
+	return ""
+}
+
+func hasExt(base string, exts ...string) bool {
+	ext := strings.ToLower(path.Ext(base))
+	for _, e := range exts {
+		if ext == e {
+			return true
+		}
+	}
+	return false
+}
+
+// toolUsage sums the user's commits to each tool's files.
+func toolUsage(added map[string]map[string]int, commits map[string]gitdata.Commit, since time.Time) map[string]ToolUse {
+	usage := map[string]ToolUse{}
+	files := map[string]map[string]bool{}
+	for hash, perFile := range added {
+		c, ok := commits[hash]
+		if !ok || c.Time.Before(since) {
+			continue
+		}
+		counted := map[string]bool{}
+		for p, n := range perFile {
+			name := toolOf(p)
+			if name == "" {
+				continue
+			}
+			u := usage[name]
+			u.Repos, u.Lines = 1, u.Lines+n
+			if !counted[name] {
+				counted[name] = true
+				u.Commits++
+			}
+			if files[name] == nil {
+				files[name] = map[string]bool{}
+			}
+			if !files[name][p] {
+				files[name][p] = true
+				u.Files++
+			}
+			if c.Time.After(u.Last) {
+				u.Last = c.Time
+			}
+			usage[name] = u
+		}
+	}
+	return usage
+}
+
+// GitHabits measures how the user writes commits. Subjects are measured, never
+// kept.
+type GitHabits struct {
+	Commits      int
+	ShortSubject int // subject of 72 characters or fewer
+	Descriptive  int // subject of three or more words, not "wip"
+	Conventional int // Conventional Commits form, such as "fix(api): ..."
+	WithBody     int // message explains the change beyond its subject and trailers
+}
+
+var conventional = regexp.MustCompile(`^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]*\))?!?: \S`)
+
+func gitHabits(commits map[string]gitdata.Commit, since time.Time) GitHabits {
+	var g GitHabits
+	for _, c := range commits {
+		if c.Time.Before(since) {
+			continue
+		}
+		g.Commits++
+		s := strings.TrimSpace(c.Subject)
+		if len([]rune(s)) <= 72 {
+			g.ShortSubject++
+		}
+		if words := strings.Fields(s); len(words) >= 3 && !strings.EqualFold(words[0], "wip") {
+			g.Descriptive++
+		}
+		if conventional.MatchString(s) {
+			g.Conventional++
+		}
+		if c.HasBody {
+			g.WithBody++
+		}
+	}
+	return g
+}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -278,19 +279,24 @@ func authorArgs(emails []string) []string {
 	return args
 }
 
-// Commit is what urFluency reads about a commit: its author name and time, and the
-// values of its Co-authored-by trailers.
+// Commit is what urFluency reads about a commit: its author name and time, the
+// values of its Co-authored-by trailers, and its message shape. The subject is
+// only measured (length, form); it is never reported.
 type Commit struct {
 	AuthorName string
 	Time       time.Time
 	CoAuthors  []string
+	Subject    string
+	// HasBody is true when the message explains the change beyond its subject
+	// and trailers.
+	HasBody bool
 }
 
 // Commits returns the non-merge commits reachable from HEAD whose author email is
 // one of emails, keyed by hash.
 func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, error) {
 	args := []string{"log", "--no-merges",
-		"--format=%H%x1f%an%x1f%at%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d"}
+		"--format=%H%x1f%an%x1f%at%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1f%s%x1f%b%x1d"}
 	args = append(args, authorArgs(emails)...)
 	out, err := r.git(ctx, append(args, "HEAD")...)
 	if err != nil {
@@ -298,11 +304,16 @@ func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, 
 	}
 	commits := map[string]Commit{}
 	for _, rec := range strings.Split(string(out), "\x1d") {
-		fields := strings.SplitN(strings.TrimSpace(rec), "\x1f", 4)
+		fields := strings.SplitN(strings.TrimSpace(rec), "\x1f", 6)
 		if len(fields) < 3 {
 			continue
 		}
-		c := Commit{AuthorName: fields[1]}
+		var subject, body string
+		if len(fields) == 6 {
+			subject, body = fields[4], fields[5]
+			fields = fields[:4]
+		}
+		c := Commit{AuthorName: fields[1], Subject: subject, HasBody: explains(body)}
 		if secs, err := strconv.ParseInt(fields[2], 10, 64); err == nil {
 			c.Time = time.Unix(secs, 0)
 		}
@@ -316,6 +327,19 @@ func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, 
 		commits[fields[0]] = c
 	}
 	return commits, nil
+}
+
+// trailerLine matches a "Key: value" trailer such as Co-authored-by.
+var trailerLine = regexp.MustCompile(`^[A-Za-z][A-Za-z-]*: `)
+
+// explains reports whether a commit body has text beyond its trailers.
+func explains(body string) bool {
+	for line := range strings.SplitSeq(body, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !trailerLine.MatchString(line) {
+			return true
+		}
+	}
+	return false
 }
 
 func isHex(s string) bool {

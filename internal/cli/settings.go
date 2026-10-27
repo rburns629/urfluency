@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // settings are what `urfluency init` saves: the addresses the user confirmed as
@@ -15,6 +16,8 @@ import (
 type settings struct {
 	Emails  []string `json:"emails"`
 	NotMine []string `json:"not_mine"`
+	// Extensions are extra file extensions to read, beyond supported languages.
+	Extensions []string `json:"extensions"`
 }
 
 // settingsPath is <user config dir>/urfluency/settings.json, or the same file in
@@ -58,7 +61,7 @@ func (s settings) save() (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	s.Emails, s.NotMine = sortedSet(s.Emails), sortedSet(s.NotMine)
+	s.Emails, s.NotMine, s.Extensions = sortedSet(s.Emails), sortedSet(s.NotMine), sortedSet(s.Extensions)
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return "", err
@@ -76,6 +79,20 @@ func (s settings) save() (string, error) {
 		return "", err
 	}
 	return path, os.Rename(tmp.Name(), path)
+}
+
+// extensions normalizes --include-ext values: comma-separated, with or without
+// the leading dot, any case.
+func extensions(values []string) []string {
+	var out []string
+	for _, v := range values {
+		for e := range strings.SplitSeq(v, ",") {
+			if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+				out = append(out, "."+strings.TrimPrefix(e, "."))
+			}
+		}
+	}
+	return out
 }
 
 func sortedSet(values []string) []string {

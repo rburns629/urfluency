@@ -47,6 +47,8 @@ Usage:
 Init flags:
   --author EMAIL   Also save this address as yours; repeat for several
   --yes            Do not ask about possible addresses; save only those found
+  --include-ext EXT
+                   Save extra file extensions for every scan to read
 
 Scan flags:
   --author EMAIL   Also count this address as yours; repeat for several. Your
@@ -59,6 +61,10 @@ Scan flags:
   --sessions       Also grade your prompts in local Claude Code and Codex sessions
                    for these repositories, and report how much code agents wrote.
                    Prompt text is read in memory only; nothing is stored.
+  --include-ext EXT
+                   Also read files with these extensions, such as .tf,.yml, and
+                   check them for secrets. Only supported languages are read
+                   otherwise (Go, Python, JavaScript, TypeScript)
   --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
                    for several (for example --exclude 'Archive*')
 `
@@ -116,6 +122,8 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	withSessions := fs.Bool("sessions", false, "")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "")
+	var include stringList
+	fs.Var(&include, "include-ext", "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
@@ -151,12 +159,13 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(repos) == 0 && len(folders) == 0 {
 		return fmt.Errorf("no projects found at %s", abs)
 	}
+	saved, err := loadSettings()
+	if err != nil {
+		return fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
+	}
+	exts := sortedSet(append(saved.Extensions, extensions(include)...))
 	if len(repos) > 0 {
 		prog.phase("Finding your commits")
-		saved, err := loadSettings()
-		if err != nil {
-			return fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
-		}
 		id := withoutDeclined(detectIdentity(ctx, repos, append(saved.Emails, authors...)), saved.NotMine)
 		if len(id.Emails) == 0 {
 			return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
@@ -191,7 +200,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			shown += " (no Git)"
 		}
 		prog.repo(i+1, total, shown)
-		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update,
+		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update, Extensions: exts,
 			SkipDir: func(d string) bool { return isRepo(d) || excluded(abs, d, excludes) }}
 		var part analysis.Result
 		if git {

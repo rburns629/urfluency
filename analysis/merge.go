@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared, Tools: map[string]ToolUse{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -18,6 +18,22 @@ func Merge(labels []string, parts []Result) Result {
 		out.Findings += p.Findings
 		out.MarkedLines += p.MarkedLines
 		out.SkippedSlow += p.SkippedSlow
+		out.Git.Commits += p.Git.Commits
+		out.Git.ShortSubject += p.Git.ShortSubject
+		out.Git.Descriptive += p.Git.Descriptive
+		out.Git.Conventional += p.Git.Conventional
+		out.Git.WithBody += p.Git.WithBody
+		for name, u := range p.Tools {
+			sum := out.Tools[name]
+			sum.Repos += u.Repos
+			sum.Files += u.Files
+			sum.Commits += u.Commits
+			sum.Lines += u.Lines
+			if u.Last.After(sum.Last) {
+				sum.Last = u.Last
+			}
+			out.Tools[name] = sum
+		}
 		out.Durability.AssistedAdded += p.Durability.AssistedAdded
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed
 		out.Durability.OtherAdded += p.Durability.OtherAdded

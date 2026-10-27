@@ -62,6 +62,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 		}
 	}
 	var paths []string
+	toolFiles := map[string]ToolUse{}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries are skipped
@@ -76,8 +77,13 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			}
 			return nil
 		}
+		if name := toolOf(rel); name != "" && d.Type().IsRegular() && !ignored[rel] {
+			u := toolFiles[name]
+			u.Repos, u.Files = 1, u.Files+1
+			toolFiles[name] = u
+		}
 		if !d.Type().IsRegular() || ignored[rel] || IsProtected(rel) || inSkippedDir(rel) ||
-			!(ForPath(rel) != nil || anyScannerApplies(rel) || readEvenWithoutAnalyzer(rel)) {
+			!(opts.wanted(rel) || readEvenWithoutAnalyzer(rel)) {
 			return nil
 		}
 		if info, err := d.Info(); err != nil || info.Size() > maxScanBytes {
@@ -128,7 +134,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			scripts = append(scripts, string(content))
 		}
 	}
-	result := Result{Repos: 1, MarkedByTool: map[string]int{}, Declared: true}
+	result := Result{Repos: 1, MarkedByTool: map[string]int{}, Declared: true, Tools: toolFiles}
 	if err := analyzeFiles(ctx, &result, files, nil, scripts, opts); err != nil {
 		return Result{}, err
 	}

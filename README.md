@@ -99,6 +99,26 @@ actually happened in sessions. Maintainers check candidate rules with
 `urfluency validate`, which compares outcomes for tasks with and without each prompt
 signal and prints counts only (see DESIGN.md).
 
+## What is read
+
+Only files in the supported languages (Go, Python, JavaScript, TypeScript) are
+read and checked, plus the CI, build, and agent instruction files that the
+practices measures need. Other extensions are ignored unless you include them,
+for example `--include-ext .tf,.yml` to also check Terraform and YAML for secrets;
+`urfluency init --include-ext ...` saves them for every scan. Secrets in files you
+do not include are not caught.
+
+## Tools
+
+The report lists the tools you work with, judged from the paths of files you
+committed to, never their contents: infrastructure (Terraform, Docker, Helm,
+Kustomize, Serverless), CI (GitHub Actions, GitLab CI, Jenkins, Cloud Build, Azure
+Pipelines), build (Make, Gradle, Maven), packages (npm, Go modules, pip), and
+quality tooling (pre-commit, ESLint, Prettier, golangci-lint), each with commits,
+files, repositories, and when you last used it. Git itself is measured from your
+commit messages: subject length, descriptive subjects, bodies that explain the
+change, and Conventional Commits. Messages are measured, never stored.
+
 ## Proficiency
 
 Each language gets a score from 0 to 100 and a level (Beginner, Developing,

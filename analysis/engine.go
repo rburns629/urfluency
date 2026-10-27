@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -52,9 +54,23 @@ type Options struct {
 	// its steps are done. It is called from several goroutines and must be safe
 	// for concurrent use.
 	Progress func(stage string, done, total int)
+	// Extensions are extra file extensions to read and check for secrets, such as
+	// ".tf" or ".yml". Files of supported languages are always read; others are
+	// ignored unless listed here.
+	Extensions []string
 	// SkipDir, if set, names absolute directories a folder scan without Git
 	// leaves out, such as nested repositories scanned on their own.
 	SkipDir func(dir string) bool
+}
+
+// wanted reports whether a file is read as code: a supported language, or an
+// extension the user included.
+func (o Options) wanted(p string) bool {
+	if ForPath(p) != nil {
+		return true
+	}
+	ext := strings.ToLower(path.Ext(p))
+	return ext != "" && slices.Contains(o.Extensions, ext)
 }
 
 func (o Options) progress(stage string, done, total int) {
@@ -112,6 +128,10 @@ type Result struct {
 	// Declared is true for folders without Git history, where every line counts
 	// as the user's because nothing records who wrote it.
 	Declared bool
+	// Tools is how much the user worked with each tool; Git is how they write
+	// commits (empty without history).
+	Tools map[string]ToolUse
+	Git   GitHabits
 }
 
 type ownedFile struct {
@@ -149,7 +169,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	// never read.
 	var candidates []string
 	for _, p := range paths {
-		if touched[p] && !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || readEvenWithoutAnalyzer(p)) {
+		if touched[p] && !inSkippedDir(p) && !IsProtected(p) && (opts.wanted(p) || readEvenWithoutAnalyzer(p)) {
 			candidates = append(candidates, p)
 		}
 	}
@@ -177,6 +197,8 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
+	result.Tools = toolUsage(added, commits, opts.Since)
+	result.Git = gitHabits(commits, opts.Since)
 	excluded, err := notUserCode(ctx, repo, added, files)
 	if err != nil {
 		return Result{}, err
@@ -297,7 +319,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 	for _, s := range Scanners() {
 		var group []ownedFile
 		for _, f := range files {
-			if f.text && s.Applies(f.file.Path) {
+			if f.text && opts.wanted(f.file.Path) && s.Applies(f.file.Path) {
 				group = append(group, f)
 			}
 		}
@@ -392,15 +414,6 @@ func frameworks(fd FrameworkDetector, group []ownedFile) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func anyScannerApplies(path string) bool {
-	for _, s := range scanners {
-		if s.Applies(path) {
-			return true
-		}
-	}
-	return false
 }
 
 // loadOwned reads each candidate file and its owned lines with a bounded worker

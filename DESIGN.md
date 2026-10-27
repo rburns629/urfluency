@@ -209,6 +209,23 @@ exist, the level bands are set from the distribution across users. Each change t
 the model changes its version, and trends compare only results with the same
 version.
 
+### Tools and Git
+
+Tool usage comes from paths only: a file belongs to a tool by name or extension
+(`*.tf` to Terraform, `Dockerfile` to Docker, `.github/workflows/*.yml` to GitHub
+Actions, and so on), and usage is the user's commits, files, lines added, and
+latest commit to those files. Contents are never read for this, so files that hold
+values, such as `.tfvars`, stay closed. Without Git, only files present are
+counted. Git habits are shares of the user's commits: subjects of 72 characters or
+fewer, descriptive subjects (three or more words, not "wip"), bodies that explain
+beyond trailers, and Conventional Commits. Subjects are measured in memory and
+never reported. Tools and Git are tracked, not yet scored.
+
+Files are read only for supported languages, the CI, build, and agent instruction
+files the practices need, and extensions the user includes (`--include-ext`, or
+saved by `init`). The secrets scanner runs on the same files, so secrets in
+excluded config files are not caught; this is the user's choice to widen.
+
 ### Measurement limits
 
 - Authorship comes from commits matching the user's verified GitHub emails; the

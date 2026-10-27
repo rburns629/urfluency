@@ -38,6 +38,8 @@ type Report struct {
 	AI            *AIShare       `json:"ai_written,omitempty"`
 	AIEngineering *AIEngineering `json:"ai_engineering,omitempty"`
 	Practices     *Practices     `json:"practices,omitempty"`
+	Tools         []Tool         `json:"tools"`
+	Git           *Git           `json:"git,omitempty"`
 	// Unversioned covers folders without Git, kept apart because their
 	// authorship is declared rather than recorded.
 	Unversioned *Unversioned `json:"unversioned,omitempty"`
@@ -152,11 +154,12 @@ type RuleResult struct {
 type Unversioned struct {
 	Projects  int        `json:"projects"`
 	Languages []Language `json:"languages"`
+	Tools     []Tool     `json:"tools"`
 }
 
 // BuildUnversioned reports a merged result from folders without Git.
 func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
-	u := &Unversioned{Projects: res.Repos, Languages: []Language{}}
+	u := &Unversioned{Projects: res.Repos, Languages: []Language{}, Tools: BuildTools(res)}
 	for _, lr := range res.Languages {
 		u.Languages = append(u.Languages, buildLanguage(lr, withLocations))
 	}
@@ -166,7 +169,7 @@ func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
 	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow,
-		Languages: []Language{}}
+		Languages: []Language{}, Tools: BuildTools(res), Git: BuildGit(res)}
 	if !since.IsZero() {
 		r.Since = since.Format("2006-01-02")
 	}
@@ -378,11 +381,16 @@ func WriteText(w io.Writer, r Report) error {
 	}
 	writeAIEngineering(&b, r)
 	writePractices(&b, r.Practices, r.Repos)
+	writeTools(&b, r.Tools, r.Git)
 	if u := r.Unversioned; u != nil {
 		fmt.Fprintf(&b, "\nPROJECTS WITHOUT GIT: %d (authorship declared, not verified)\n", u.Projects)
 		b.WriteString("Every line in these folders counts as yours; AI share, durability, and test habits need Git history.\n")
 		for _, l := range u.Languages {
 			writeLanguage(&b, l)
+		}
+		if len(u.Tools) > 0 {
+			b.WriteString("\n  TOOLS (files present)\n")
+			writeToolList(&b, u.Tools)
 		}
 	}
 	_, err := io.WriteString(w, b.String())

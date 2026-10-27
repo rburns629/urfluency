@@ -32,6 +32,8 @@ func initSettings(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	var authors stringList
 	fs.Var(&authors, "author", "")
 	yes := fs.Bool("yes", false, "")
+	var include stringList
+	fs.Var(&include, "include-ext", "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
@@ -84,7 +86,8 @@ func initSettings(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if len(id.Emails) == 0 {
 		return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
 	}
-	where, err := settings{Emails: append(saved.Emails, id.Emails...), NotMine: notMine}.save()
+	exts := append(slices.Clone(saved.Extensions), extensions(include)...)
+	where, err := settings{Emails: append(saved.Emails, id.Emails...), NotMine: notMine, Extensions: exts}.save()
 	if err != nil {
 		return fmt.Errorf("save settings: %w", err)
 	}
