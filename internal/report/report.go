@@ -70,6 +70,20 @@ type AIShare struct {
 	Share             float64        `json:"share,omitempty"`
 	AIFindingsPerK    float64        `json:"findings_per_1000_ai_lines,omitempty"`
 	OtherFindingsPerK float64        `json:"findings_per_1000_other_lines,omitempty"`
+	// Durability: lines from commits at least 90 days old that a fix changed
+	// within 90 days, for AI-marked commits and the rest.
+	Durability Durability `json:"durability"`
+}
+
+// Durability compares how often added lines were soon fixed.
+type Durability struct {
+	WindowDays     int     `json:"window_days"`
+	AssistedAdded  int     `json:"ai_assisted_added"`
+	AssistedFixed  int     `json:"ai_assisted_fixed"`
+	AssistedRate   float64 `json:"ai_assisted_fixed_rate"`
+	OtherAdded     int     `json:"other_added"`
+	OtherFixed     int     `json:"other_fixed"`
+	OtherFixedRate float64 `json:"other_fixed_rate"`
 }
 
 // Language summarizes one language.
@@ -240,6 +254,15 @@ func BuildPrompting(g sessions.Grades) *Prompting {
 // fields are filled only when sessions were read.
 func BuildAI(res analysis.Result, sessionsRead bool) *AIShare {
 	a := &AIShare{OwnedLines: res.OwnedLines, MarkedLines: res.MarkedLines, MarkedByTool: map[string]int{}, Sessions: sessionsRead}
+	d := res.Durability
+	a.Durability = Durability{WindowDays: int(analysis.DurabilityWindow.Hours() / 24),
+		AssistedAdded: d.AssistedAdded, AssistedFixed: d.AssistedFixed, OtherAdded: d.OtherAdded, OtherFixed: d.OtherFixed}
+	if d.AssistedAdded > 0 {
+		a.Durability.AssistedRate = round4(float64(d.AssistedFixed) / float64(d.AssistedAdded))
+	}
+	if d.OtherAdded > 0 {
+		a.Durability.OtherFixedRate = round4(float64(d.OtherFixed) / float64(d.OtherAdded))
+	}
 	for tool, n := range res.MarkedByTool {
 		a.MarkedByTool[tool] = n
 	}
@@ -321,6 +344,16 @@ func WriteText(w io.Writer, r Report) error {
 			fmt.Fprintf(&b, ": %s", strings.Join(tools, ", "))
 		}
 		b.WriteString("\n    A marked commit can also contain your own lines; unmarked commits may still be AI-assisted.\n")
+		if d := a.Durability; d.AssistedAdded+d.OtherAdded > 0 {
+			rate := func(r float64, fixed, added int) string {
+				if added == 0 {
+					return fmt.Sprintf("no commits older than %d days yet", d.WindowDays)
+				}
+				return fmt.Sprintf("%.1f%% (%d of %d)", r*100, fixed, added)
+			}
+			fmt.Fprintf(&b, "  Lines fixed within %d days of being written: AI-assisted %s; other %s\n",
+				d.WindowDays, rate(d.AssistedRate, d.AssistedFixed, d.AssistedAdded), rate(d.OtherFixedRate, d.OtherFixed, d.OtherAdded))
+		}
 		if a.Sessions {
 			fmt.Fprintf(&b, "  Written by an agent in local sessions: at least %d lines (%.0f%%)\n", a.AILines, a.Share*100)
 			if a.AILines > 0 {
@@ -375,3 +408,5 @@ func shortHash(h string) string {
 }
 
 func round2(v float64) float64 { return float64(int(v*100+0.5)) / 100 }
+
+func round4(v float64) float64 { return float64(int(v*10000+0.5)) / 10000 }

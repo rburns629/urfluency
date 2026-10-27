@@ -134,12 +134,14 @@ func TestBuildPrompting(t *testing.T) {
 }
 
 func TestBuildAI(t *testing.T) {
-	res := analysis.Result{OwnedLines: 1000, AILines: 250, Findings: 10, AIFindings: 1, MarkedLines: 600, MarkedByTool: map[string]int{"claude": 600}}
+	res := analysis.Result{OwnedLines: 1000, AILines: 250, Findings: 10, AIFindings: 1, MarkedLines: 600, MarkedByTool: map[string]int{"claude": 600},
+		Durability: analysis.Durability{AssistedAdded: 400, AssistedFixed: 6, OtherAdded: 800, OtherFixed: 4}}
 	if a := BuildAI(res, false); a.MarkedShare != 0.6 || a.Sessions || a.AILines != 0 {
 		t.Errorf("without sessions: %+v", a)
 	}
 	a := BuildAI(res, true)
-	if a.Share != 0.25 || a.AIFindingsPerK != 4 || a.OtherFindingsPerK != 12 || a.MarkedByTool["claude"] != 600 {
+	if a.Share != 0.25 || a.AIFindingsPerK != 4 || a.OtherFindingsPerK != 12 || a.MarkedByTool["claude"] != 600 ||
+		a.Durability.AssistedRate != 0.015 || a.Durability.OtherFixedRate != 0.005 || a.Durability.WindowDays != 90 {
 		t.Errorf("ai = %+v", a)
 	}
 	var b strings.Builder
@@ -147,9 +149,21 @@ func TestBuildAI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"2 repositories", "From commits marked AI-assisted: 600 lines (60%): claude 600",
-		"local sessions: at least 250 lines (25%)", "not a score", "No code-change tasks"} {
+		"local sessions: at least 250 lines (25%)", "not a score", "No code-change tasks",
+		"Lines fixed within 90 days of being written: AI-assisted 1.5% (6 of 400); other 0.5% (4 of 800)"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("text missing %q:\n%s", want, b.String())
 		}
+	}
+}
+
+func TestDurabilityWithoutOldEnoughCommits(t *testing.T) {
+	a := BuildAI(analysis.Result{OwnedLines: 100, Durability: analysis.Durability{OtherAdded: 50, OtherFixed: 1}}, false)
+	var b strings.Builder
+	if err := WriteText(&b, Report{AI: a}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "AI-assisted no commits older than 90 days yet; other 2.0% (1 of 50)"; !strings.Contains(b.String(), want) {
+		t.Errorf("text missing %q:\n%s", want, b.String())
 	}
 }

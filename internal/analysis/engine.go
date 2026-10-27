@@ -58,6 +58,7 @@ type Result struct {
 	// tool; MarkedByTool splits them by tool (a commit can name several).
 	MarkedLines  int
 	MarkedByTool map[string]int
+	Durability   Durability
 }
 
 type ownedFile struct {
@@ -106,6 +107,9 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		if t := AITools(c); len(t) > 0 {
 			tools[hash] = t
 		}
+	}
+	if result.Durability, err = durability(ctx, repo, opts.Emails, commits, tools, opts.Since, time.Now()); err != nil {
+		return Result{}, err
 	}
 	ai := map[string]map[int]bool{}
 	for i := range files {

@@ -132,10 +132,11 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 	return owned, nil
 }
 
-// Commit is what urFluency reads about a commit: its author name and the values
-// of its Co-authored-by trailers.
+// Commit is what urFluency reads about a commit: its author name and time, and the
+// values of its Co-authored-by trailers.
 type Commit struct {
 	AuthorName string
+	Time       time.Time
 	CoAuthors  []string
 }
 
@@ -143,7 +144,7 @@ type Commit struct {
 // one of emails, keyed by hash.
 func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, error) {
 	args := []string{"log", "--no-merges", "--regexp-ignore-case",
-		"--format=%H%x1f%an%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d"}
+		"--format=%H%x1f%an%x1f%at%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d"}
 	for _, e := range emails {
 		args = append(args, "--author="+regexp.QuoteMeta(e))
 	}
@@ -153,13 +154,16 @@ func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, 
 	}
 	commits := map[string]Commit{}
 	for _, rec := range strings.Split(string(out), "\x1d") {
-		fields := strings.SplitN(strings.TrimSpace(rec), "\x1f", 3)
-		if len(fields) < 2 {
+		fields := strings.SplitN(strings.TrimSpace(rec), "\x1f", 4)
+		if len(fields) < 3 {
 			continue
 		}
 		c := Commit{AuthorName: fields[1]}
-		if len(fields) == 3 {
-			for _, v := range strings.Split(fields[2], "\x1e") {
+		if secs, err := strconv.ParseInt(fields[2], 10, 64); err == nil {
+			c.Time = time.Unix(secs, 0)
+		}
+		if len(fields) == 4 {
+			for _, v := range strings.Split(fields[3], "\x1e") {
 				if v = strings.TrimSpace(v); v != "" {
 					c.CoAuthors = append(c.CoAuthors, v)
 				}

@@ -172,3 +172,30 @@ func TestAITools(t *testing.T) {
 		}
 	}
 }
+
+func TestScanMeasuresDurability(t *testing.T) {
+	r := testutil.NewRepo(t)
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(r.Dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a.go", "package a\n\nfunc f() int { return 1 }\nfunc g() int { return 2 }\n")
+	r.Git("me@example.com", "2025-01-01T00:00:00Z", "add", "a.go")
+	r.Git("me@example.com", "2025-01-01T00:00:00Z", "commit", "-qm", "Add f and g\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+	r.Commit("me@example.com", "2025-01-02T00:00:00Z", map[string]string{"b.go": "package a\n\nfunc h() int { return 3 }\nfunc k() int { return 4 }\n"})
+	write("a.go", "package a\n\nfunc f() int { return 10 }\nfunc g() int { return 2 }\n")
+	r.Git("other@example.com", "2025-01-20T00:00:00Z", "commit", "-qam", "fix: f returned the wrong value")
+	write("b.go", "package a\n\nfunc h() int { return 30 }\nfunc k() int { return 4 }\n")
+	r.Git("other@example.com", "2025-09-01T00:00:00Z", "commit", "-qam", "fix: h, months later")
+
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := analysis.Durability{AssistedAdded: 4, AssistedFixed: 1, OtherAdded: 4, OtherFixed: 0}
+	if res.Durability != want {
+		t.Errorf("durability = %+v, want %+v (the late fix is outside the window)", res.Durability, want)
+	}
+}
