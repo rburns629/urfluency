@@ -297,6 +297,29 @@ checked (2026-10-27), so its tests serve as a cross-check rather than a dependen
 Server platforms such as SonarQube are out of scope for a single local binary. Tools
 a project already configures (ESLint, Ruff, golangci-lint) remain optional adapters.
 
+### clean-agent-code integration
+
+urFluency measures whether the practices clean-agent-code defines actually happen:
+
+- **Quality gates.** `internal/gates` names the gates of
+  [QUALITY_GATES.md](https://github.com/rburns629/clean-agent-code/blob/main/standards/QUALITY_GATES.md)
+  (format, lint, types, build, tests, security) and the commands that run them.
+  CI the user helped write is checked against the mandatory gates that apply to
+  its languages, and the AI engineering section shows which gates agents ran in
+  tasks with edits.
+- **Agent instructions.** Repositories where the user wrote AGENTS.md, CLAUDE.md,
+  or similar files are counted with what the files cover (verification, secret
+  handling, conventions), and AI-assisted work is compared between repositories
+  with and without them: real-world evidence on whether written standards help.
+- **Standards links.** Rules link to the clean-agent-code document behind them
+  (type safety, security, architecture, quality gates); language idiom rules have
+  none.
+- **Evaluation harness** (planned). clean-agent-code's Docker harness generates
+  sessions with known prompt quality and instruction conditions, which gives
+  `urfluency validate` controlled data beyond one author's sessions; and
+  `urfluency scan --json` can score harness runs deterministically next to its
+  model judge. Runs cost API credits and need an explicit budget.
+
 ### Prior art
 
 As of 2026-10-27, open-source work splits into two kinds, and none links agent

@@ -49,6 +49,36 @@ func Register(rs ...Rule) {
 // Duplicates returns IDs that were registered more than once.
 func Duplicates() []string { return append([]string(nil), duplicates...) }
 
+// standardsBase is where clean-agent-code's standards are published.
+const standardsBase = "https://github.com/rburns629/clean-agent-code/blob/main/"
+
+// ruleStandards link rules to the clean-agent-code section that covers them,
+// where a category default would be too broad.
+var ruleStandards = map[string]string{
+	"clean.cognitive-complexity": "standards/ARCHITECTURE.md#simplest-sufficient-solution",
+	"prompt.unverified-change":   "standards/QUALITY_GATES.md",
+}
+
+// categoryStandards are the documents that cover a whole category. Clean-code and
+// language-proficiency rules are language-specific and have no default.
+var categoryStandards = map[Category]string{
+	TypeSafety:   "standards/TYPE_SAFETY.md",
+	Security:     "standards/SECURITY.md",
+	Architecture: "standards/ARCHITECTURE.md",
+}
+
+// Standard returns the clean-agent-code document that explains the practice
+// behind a rule, or "" when none covers it.
+func (r Rule) Standard() string {
+	if p, ok := ruleStandards[r.ID]; ok {
+		return standardsBase + p
+	}
+	if p, ok := categoryStandards[r.Category]; ok {
+		return standardsBase + p
+	}
+	return ""
+}
+
 // Lookup returns the rule with the given ID.
 func Lookup(id string) (Rule, bool) {
 	r, ok := catalog[id]

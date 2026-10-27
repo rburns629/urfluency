@@ -19,9 +19,10 @@ type AIEngineering struct {
 
 // AIWeakness is something to tighten, with the evidence and what to practice.
 type AIWeakness struct {
-	Title  string `json:"title"`
-	Detail string `json:"detail"`
-	Focus  string `json:"focus"`
+	Title    string `json:"title"`
+	Detail   string `json:"detail"`
+	Focus    string `json:"focus"`
+	Standard string `json:"standard,omitempty"`
 }
 
 // ReviewActivity counts agent edits the user rejected or changed before accepting.
@@ -55,9 +56,10 @@ func BuildAIEngineering(r Report) *AIEngineering {
 		e.Strengths = append(e.Strengths, p.Strengths...)
 		for _, w := range p.Weaknesses {
 			e.Weaknesses = append(e.Weaknesses, AIWeakness{
-				Title:  w.Title,
-				Detail: fmt.Sprintf("%d of %d tasks (%.0f%%). %s", w.Missed, w.Applicable, w.Share*100, w.Why),
-				Focus:  w.Focus,
+				Title:    w.Title,
+				Detail:   fmt.Sprintf("%d of %d tasks (%.0f%%). %s", w.Missed, w.Applicable, w.Share*100, w.Why),
+				Focus:    w.Focus,
+				Standard: w.Standard,
 			})
 		}
 		if p.Edits > 0 {
@@ -85,9 +87,10 @@ func (e *AIEngineering) addParity(l Language) {
 			detail += ", mostly " + top
 		}
 		e.Weaknesses = append(e.Weaknesses, AIWeakness{
-			Title:  fmt.Sprintf("Agent-assisted %s falls below your own bar", name),
-			Detail: detail + ".",
-			Focus:  "Review agent changes for these rules before committing, and add them to the project's linters and agent instructions so the agent stops producing them.",
+			Title:    fmt.Sprintf("Agent-assisted %s falls below your own bar", name),
+			Detail:   detail + ".",
+			Focus:    "Review agent changes for these rules before committing, and add them to the project's linters and agent instructions so the agent stops producing them.",
+			Standard: "https://github.com/rburns629/clean-agent-code",
 		})
 	}
 }
@@ -184,6 +187,9 @@ func writeAIEngineering(b *strings.Builder, r Report) {
 		b.WriteString("  To tighten\n")
 		for _, w := range e.Weaknesses {
 			fmt.Fprintf(b, "    - %s: %s\n      Focus: %s\n", w.Title, w.Detail, w.Focus)
+			if w.Standard != "" {
+				fmt.Fprintf(b, "      Standard: %s\n", w.Standard)
+			}
 		}
 	}
 	if d := a.Durability; d.AssistedAdded+d.OtherAdded > 0 {

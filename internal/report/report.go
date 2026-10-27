@@ -63,6 +63,7 @@ type PromptRule struct {
 	Share      float64 `json:"share"`
 	Why        string  `json:"why"`
 	Focus      string  `json:"focus"`
+	Standard   string  `json:"standard,omitempty"`
 }
 
 // AIShare is how much owned code came from coding agents. It is context, not a
@@ -130,6 +131,8 @@ type RuleResult struct {
 	Locations []string `json:"locations,omitempty"`
 	// AssistedCount is how many of Count are on AI-assisted lines.
 	AssistedCount int `json:"ai_assisted_count"`
+	// Standard links the clean-agent-code document behind the rule, if any.
+	Standard string `json:"standard,omitempty"`
 }
 
 // Build creates a report from a scan result.
@@ -174,7 +177,7 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		rr := byRule[f.Rule]
 		if rr == nil {
 			rr = &RuleResult{ID: rule.ID, Category: string(rule.Category), Title: rule.Title, Why: rule.Why, Focus: rule.Focus,
-				AssistedCount: lr.AssistedByRule[f.Rule]}
+				AssistedCount: lr.AssistedByRule[f.Rule], Standard: rule.Standard()}
 			byRule[f.Rule] = rr
 		}
 		rr.Count++
@@ -245,7 +248,7 @@ func BuildPrompting(g sessions.Grades) *Prompting {
 			continue
 		}
 		pr := PromptRule{ID: id, Title: rule.Title, Missed: tally.Missed, Applicable: tally.Applicable,
-			Share: round2(float64(tally.Missed) / float64(tally.Applicable)), Why: rule.Why, Focus: rule.Focus}
+			Share: round2(float64(tally.Missed) / float64(tally.Applicable)), Why: rule.Why, Focus: rule.Focus, Standard: rule.Standard()}
 		p.Rules = append(p.Rules, pr)
 		switch {
 		case tally.Applicable < MinTasks:
@@ -335,6 +338,9 @@ func WriteText(w io.Writer, r Report) error {
 			for _, w := range l.Weaknesses {
 				fmt.Fprintf(&b, "    - %s [%s]: %d (%.2f per 1,000 lines)\n", w.Title, w.Category, w.Count, w.PerKLines)
 				fmt.Fprintf(&b, "      Why: %s\n      Focus: %s\n", w.Why, w.Focus)
+				if w.Standard != "" {
+					fmt.Fprintf(&b, "      Standard: %s\n", w.Standard)
+				}
 				for _, loc := range w.Locations {
 					fmt.Fprintf(&b, "      at %s\n", loc)
 				}

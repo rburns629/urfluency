@@ -16,3 +16,23 @@ func TestCatalogIsComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestStandards(t *testing.T) {
+	tests := map[string]string{
+		"clean.cognitive-complexity":    "standards/ARCHITECTURE.md#simplest-sufficient-solution",
+		"ts.explicit-any":               "standards/TYPE_SAFETY.md",
+		"sec.api-token":                 "standards/SECURITY.md",
+		"prompt.unverified-change":      "standards/QUALITY_GATES.md",
+		"go.waitgroup-add-in-goroutine": "",
+	}
+	for id, want := range tests {
+		r, ok := Lookup(id)
+		if !ok {
+			t.Fatalf("rule %s missing", id)
+		}
+		got := r.Standard()
+		if want == "" && got != "" || want != "" && got != standardsBase+want {
+			t.Errorf("%s standard = %q, want %q", id, got, want)
+		}
+	}
+}
