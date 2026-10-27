@@ -40,6 +40,9 @@ func frameworksOf(t *parsing.Tree, path string) map[string]bool {
 		case module == "react" || module == "react-dom" || strings.HasPrefix(module, "react-dom/") ||
 			module == "next" || strings.HasPrefix(module, "next/") || module == "preact":
 			found["react"] = true
+		case module == "react-native" || strings.HasPrefix(module, "react-native-") || strings.HasPrefix(module, "@react-native") ||
+			module == "expo" || strings.HasPrefix(module, "expo-"):
+			found["react-native"] = true
 		case strings.HasPrefix(module, "@angular/"):
 			found["angular"] = true
 		case module == "fastify":

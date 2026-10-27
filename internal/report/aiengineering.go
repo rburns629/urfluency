@@ -151,6 +151,22 @@ func languageName(id string) string {
 		return "Python"
 	case "go":
 		return "Go"
+	case "rust":
+		return "Rust"
+	case "c":
+		return "C"
+	case "cpp":
+		return "C++"
+	case "csharp":
+		return "C#"
+	case "java":
+		return "Java"
+	case "kotlin":
+		return "Kotlin"
+	case "swift":
+		return "Swift"
+	case "dart":
+		return "Dart"
 	}
 	return id
 }

@@ -6,10 +6,19 @@ import (
 	"errors"
 	"strings"
 
+	dart "github.com/UserNobody14/tree-sitter-dart/bindings/go"
+	kotlin "github.com/tree-sitter-grammars/tree-sitter-kotlin/bindings/go"
 	ts "github.com/tree-sitter/go-tree-sitter"
+	csharp "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
+	c "github.com/tree-sitter/tree-sitter-c/bindings/go"
+	cpp "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
+	java "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
 	python "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+
+	swift "github.com/rburns629/urfluency/third_party/tree-sitter-swift"
 )
 
 // Grammar is a tree-sitter language.
@@ -24,6 +33,14 @@ var (
 	JavaScript = Grammar{ts.NewLanguage(javascript.Language())}
 	TypeScript = Grammar{ts.NewLanguage(typescript.LanguageTypescript())}
 	TSX        = Grammar{ts.NewLanguage(typescript.LanguageTSX())}
+	Rust       = Grammar{ts.NewLanguage(rust.Language())}
+	C          = Grammar{ts.NewLanguage(c.Language())}
+	CPP        = Grammar{ts.NewLanguage(cpp.Language())}
+	CSharp     = Grammar{ts.NewLanguage(csharp.Language())}
+	Java       = Grammar{ts.NewLanguage(java.Language())}
+	Kotlin     = Grammar{ts.NewLanguage(kotlin.Language())}
+	Swift      = Grammar{ts.NewLanguage(swift.Language())}
+	Dart       = Grammar{ts.NewLanguage(dart.Language())}
 )
 
 // Tree is a parsed file. Call Close when done; nodes are invalid afterwards.

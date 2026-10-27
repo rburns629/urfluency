@@ -42,9 +42,20 @@ var tools = []struct {
 	{"cloud-build", "ci", func(p, base string) bool { return base == "cloudbuild.yaml" || base == "cloudbuild.yml" }},
 	{"azure-pipelines", "ci", func(p, base string) bool { return base == "azure-pipelines.yml" }},
 	{"make", "build", func(p, base string) bool { return base == "Makefile" || hasExt(base, ".mk") }},
+	{"cmake", "build", func(p, base string) bool { return base == "CMakeLists.txt" || hasExt(base, ".cmake") }},
+	{"bazel", "build", func(p, base string) bool {
+		return base == "BUILD.bazel" || base == "WORKSPACE" || base == "MODULE.bazel"
+	}},
 	{"gradle", "build", func(p, base string) bool { return strings.HasPrefix(base, "build.gradle") }},
 	{"maven", "build", func(p, base string) bool { return base == "pom.xml" }},
 	{"npm", "packages", func(p, base string) bool { return base == "package.json" }},
+	{"cargo", "packages", func(p, base string) bool { return base == "Cargo.toml" }},
+	{"dotnet", "packages", func(p, base string) bool { return hasExt(base, ".csproj", ".sln", ".fsproj", ".vbproj") }},
+	{"swift-package-manager", "packages", func(p, base string) bool { return base == "Package.swift" }},
+	{"cocoapods", "packages", func(p, base string) bool { return base == "Podfile" }},
+	{"pub", "packages", func(p, base string) bool { return base == "pubspec.yaml" }},
+	{"conan", "packages", func(p, base string) bool { return base == "conanfile.txt" || base == "conanfile.py" }},
+	{"vcpkg", "packages", func(p, base string) bool { return base == "vcpkg.json" }},
 	{"go-modules", "packages", func(p, base string) bool { return base == "go.mod" }},
 	{"pip", "packages", func(p, base string) bool {
 		return base == "pyproject.toml" || base == "Pipfile" || base == "setup.py" || (strings.HasPrefix(base, "requirements") && hasExt(base, ".txt"))

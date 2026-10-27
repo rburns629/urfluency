@@ -58,12 +58,12 @@ var patterns = []struct {
 	gate string
 	re   *regexp.Regexp
 }{
-	{Format, regexp.MustCompile(`\b(gofmt|goimports|prettier|black|ruff format|cargo fmt)\b`)},
-	{Lint, regexp.MustCompile(`\b(golangci-lint|staticcheck|go vet|eslint|ruff check|flake8|pylint|clippy|(npm|pnpm|yarn|bun)( run)? lint|make lint)\b`)},
-	{Types, regexp.MustCompile(`\b(tsc|mypy|pyright|(npm|pnpm|yarn|bun)( run)? (typecheck|type-check))\b`)},
-	{Build, regexp.MustCompile(`\b(go build|cargo build|mvn (package|compile|verify)|gradle build|dotnet build|(npm|pnpm|yarn|bun)( run)? build|make build)\b`)},
-	{Tests, regexp.MustCompile(`\b(go test|pytest|python -m unittest|vitest|jest|cargo test|mvn test|gradle test|dotnet test|(npm|pnpm|yarn|bun)( run)? test|make test)\b`)},
-	{Security, regexp.MustCompile(`\b(govulncheck|npm audit|pnpm audit|yarn audit|pip-audit|codeql|semgrep|gitleaks|trivy|snyk|osv-scanner)\b`)},
+	{Format, regexp.MustCompile(`\b(gofmt|goimports|prettier|black|ruff format|cargo fmt|rustfmt|clang-format|dotnet format|google-java-format|spotless(Apply|Check)|ktfmt|swiftformat|swift-format|dart format|flutter format)\b`)},
+	{Lint, regexp.MustCompile(`\b(golangci-lint|staticcheck|go vet|eslint|ruff check|flake8|pylint|clippy|clang-tidy|cppcheck|checkstyle|spotbugs|pmd|ktlint|detekt|swiftlint|dart analyze|flutter analyze|(npm|pnpm|yarn|bun)( run)? lint|make lint)\b`)},
+	{Types, regexp.MustCompile(`\b(tsc|mypy|pyright|cargo check|(npm|pnpm|yarn|bun)( run)? (typecheck|type-check))\b`)},
+	{Build, regexp.MustCompile(`\b(go build|cargo build|cmake --build|msbuild|mvn (package|compile|verify|install)|(gradle|gradlew) (build|assemble)|dotnet build|swift build|xcodebuild( build)?|flutter build|(npm|pnpm|yarn|bun)( run)? build|make build)\b`)},
+	{Tests, regexp.MustCompile(`\b(go test|pytest|python -m unittest|vitest|jest|cargo (test|nextest)|ctest|mvn (test|verify)|(gradle|gradlew) (test|check)|dotnet test|swift test|xcodebuild test|flutter test|dart test|(npm|pnpm|yarn|bun)( run)? test|make test)\b`)},
+	{Security, regexp.MustCompile(`\b(govulncheck|npm audit|pnpm audit|yarn audit|pip-audit|cargo (audit|deny)|dependency-check|dotnet list package --vulnerable|codeql|semgrep|gitleaks|trivy|snyk|osv-scanner)\b`)},
 }
 
 // delegated targets run some checks without naming which.
@@ -84,25 +84,30 @@ func Run(text string) []string {
 	return out
 }
 
+// compiled languages type-check when they build.
+var compiled = map[string]bool{"go": true, "rust": true, "c": true, "cpp": true, "csharp": true, "java": true,
+	"kotlin": true, "swift": true, "dart": true}
+
 // Applies reports whether a mandatory gate applies to a language: type checking
-// and build apply where the language has them (Go and TypeScript); format, lint,
-// and tests apply everywhere.
+// and build apply where the language has them (compiled languages and
+// TypeScript); format, lint, and tests apply everywhere.
 func Applies(gate, language string) bool {
 	switch gate {
 	case Types, Build:
-		return language == "go" || language == "typescript"
+		return compiled[language] || language == "typescript"
 	}
 	return true
 }
 
-// Implied returns the gates a language satisfies through others: compiling Go
-// type-checks it, and go test and go vet compile it.
+// Implied returns the gates a language satisfies through others: building a
+// compiled language type-checks it, and its test and lint tools compile it (go
+// test, go vet, cargo test, clippy, mvn test, and so on).
 func Implied(language string, ran map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for g := range ran {
 		out[g] = true
 	}
-	if language == "go" && (ran[Tests] || ran[Build] || ran[Lint]) {
+	if compiled[language] && (ran[Tests] || ran[Build] || ran[Lint]) {
 		out[Types], out[Build] = true, true
 	}
 	return out

@@ -17,6 +17,10 @@ func TestIsTestPath(t *testing.T) {
 	tests := map[string]bool{
 		"a/b_test.go": true, "test_api.py": true, "api_test.py": true, "conftest.py": true,
 		"src/App.test.tsx": true, "src/api.spec.ts": true, "src/__tests__/x.js": true, "tests/helpers.py": true,
+		"src/test/java/a/UserServiceTest.java": true, "app/src/main/java/a/UserService.java": false,
+		"Api.Tests/UserTests.cs": true, "Api/UserService.cs": false, "Tests/AppTests/LoginTests.swift": true,
+		"Sources/App/Login.swift": false, "test/widget_test.dart": true, "lib/user_test.dart": true, "lib/user.dart": false,
+		"src/parser_unittest.cc": true, "src/parser.cc": false, "app/src/androidTest/a/LoginTest.kt": true,
 		"a/b.go": false, "src/testing.ts": false, "contest.py": false, "src/latest/x.ts": false,
 	}
 	for p, want := range tests {
