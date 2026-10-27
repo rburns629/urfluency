@@ -72,6 +72,41 @@ object storage for scan reports; a Postgres-backed job queue to start; a
 server-rendered web app (Go templates plus htmx) unless richer interactivity is
 needed. All are decisions to confirm, not requirements.
 
+## Repositories and distribution
+
+Decided 2026-10-27: split by what runs on the user's machine versus what is
+operated, not by CLI versus website.
+
+| Repository | Visibility | Contents |
+| --- | --- | --- |
+| `rburns629/urfluency` | Public, open source | The CLI; all analyzers and the rule catalog; the upload format (the CLI-to-API contract); the scoring formula that turns rule counts into bands; and the safety scanner's detection engine |
+| `rburns629/urfluency-cloud` | Private | The website and dashboard, API and accounts, badge serving, the hosted scan service (job queue, isolated workers, rate limits, abuse controls), and infrastructure and deployment configuration |
+| `rburns629/homebrew-tap` | Public | The Homebrew formula |
+
+- **Why.** Everything that runs on an engineer's laptop or decides their score can be
+  audited, which is urFluency's strongest trust argument for work machines. Scanner
+  rules are public, as in Semgrep and OSV; how scanning is operated stays private.
+  Keeping the scoring formula public follows the honest-provenance principle.
+- **Shared code.** `urfluency-cloud` imports the public module at a pinned version, so
+  the hosted scanner and the CLI run identical detection. Before the cloud repository
+  starts, the shared packages move out of `internal/` to public package paths (the
+  rule catalog, analyzers and engine, report and upload schema, and the scanner
+  engine), which then form a stable API. Everything else stays internal.
+- **Local safety checks.** Because the scanner engine is public, the CLI can check a
+  repository locally: `urfluency check <git-url>` clones into a temporary directory and
+  scans without executing anything.
+- **Homebrew.** `brew install rburns629/tap/urfluency` installs a prebuilt binary.
+  Tagging a version runs a release workflow that builds natively on macOS (Apple
+  Silicon and Intel) and Linux (x86-64 and ARM), because tree-sitter uses cgo;
+  publishes tarballs with SHA-256 checksums to a GitHub Release; and updates the
+  formula, which declares `depends_on "git"`. Direct tarball downloads cover other
+  setups; winget or Scoop can follow for Windows. urFluency itself never installs
+  dependencies: `urfluency doctor` checks them by capability and prints the official
+  install command for anything missing.
+- **Before the repository goes public:** choose the license, audit the full history
+  for anything sensitive, and create a fine-grained token with write access to the
+  tap repository only, stored as an Actions secret.
+
 ## Metrics
 
 Six categories. Each is computed per language where it applies, over a rolling
@@ -592,16 +627,20 @@ repository owner has published.
 
 1. **Local CLI:** Go analyzers (pitfalls, type safety, clean code), local report; no
    accounts.
-2. **Service and web app:** GitHub login, upload, dashboard with strengths,
-   weaknesses, and focus points; public profiles and user badges; API tokens.
-3. **Safety scanner:** static scanning of public URLs in isolated workers; safety
-   badges.
-4. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
+2. **Distribution:** license, history audit, public repository, release workflow,
+   Homebrew tap, `urfluency doctor`, and shared packages moved out of `internal/`.
+3. **Service and web app** (in `urfluency-cloud`): GitHub login, upload, dashboard
+   with strengths, weaknesses, and focus points; public profiles and user badges;
+   API tokens.
+4. **Safety scanner:** the engine and `urfluency check` in the public repository;
+   hosted scanning of public URLs in isolated workers and safety badges in
+   `urfluency-cloud`.
+5. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
    Code, outcome-based grading, and AI-written share (local CLI done); Copilot CLI,
    Cursor, and Gemini CLI next. Commit-trailer detection done.
-5. **Repository connections:** GitHub App for public repos; Action with OIDC for
+6. **Repository connections:** GitHub App for public repos; Action with OIDC for
    private repos.
-6. **More languages and dynamic scanning.**
+7. **More languages and dynamic scanning.**
 
 ## Open decisions
 
@@ -611,5 +650,5 @@ repository owner has published.
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
 - Languages after Go, Python, JavaScript, and TypeScript.
-- License (for example MIT for the CLI and analyzers, with the service code to be
-  decided).
+- License for the public repository (for example MIT), needed before it goes
+  public; `urfluency-cloud` stays private.
