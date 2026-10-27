@@ -15,16 +15,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/gitdata"
 	"github.com/rburns629/urfluency/internal/report"
 	"github.com/rburns629/urfluency/internal/sessions"
 
 	// Registered analyzers.
-	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
-	_ "github.com/rburns629/urfluency/internal/analyzers/javascript"
-	_ "github.com/rburns629/urfluency/internal/analyzers/python"
-	_ "github.com/rburns629/urfluency/internal/analyzers/secrets"
+	_ "github.com/rburns629/urfluency/analyzers/golang"
+	_ "github.com/rburns629/urfluency/analyzers/javascript"
+	_ "github.com/rburns629/urfluency/analyzers/python"
+	_ "github.com/rburns629/urfluency/analyzers/secrets"
 )
 
 // Version is set at build time with -ldflags "-X .../internal/cli.Version=...".

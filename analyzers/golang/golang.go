@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/analysis"
 )
 
 // stubImporter fails every import, so type checking never loads or builds

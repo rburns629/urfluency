@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/analysis"
 )
 
 func findings(t *testing.T, a analysis.Analyzer, path, src string) []string {

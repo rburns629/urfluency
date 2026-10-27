@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	"github.com/rburns629/urfluency/internal/rules"
+	"github.com/rburns629/urfluency/analysis"
 	"github.com/rburns629/urfluency/internal/sessions"
+	"github.com/rburns629/urfluency/rules"
 )
 
 // FormatVersion identifies the report schema.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/gitdata"
 	"github.com/rburns629/urfluency/internal/testutil"
 )
 

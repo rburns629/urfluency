@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
-	_ "github.com/rburns629/urfluency/internal/analyzers/secrets"
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/analysis"
+	_ "github.com/rburns629/urfluency/analyzers/golang"
+	_ "github.com/rburns629/urfluency/analyzers/secrets"
+	"github.com/rburns629/urfluency/gitdata"
 	"github.com/rburns629/urfluency/internal/testutil"
 )
 

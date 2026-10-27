@@ -4,7 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/rburns629/urfluency/internal/parsing"
+	"github.com/rburns629/urfluency/parsing"
 )
 
 // checkComplexity reports a function whose cognitive complexity exceeds the

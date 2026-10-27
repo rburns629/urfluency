@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/gitdata"
 )
 
 // aiMarks identify coding tools in Co-authored-by trailers. They match email

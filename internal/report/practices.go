@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	"github.com/rburns629/urfluency/internal/gates"
+	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/gates"
 )
 
 // Practices are engineering habits measured from code and history. They are

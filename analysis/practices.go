@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/gates"
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/gates"
+	"github.com/rburns629/urfluency/gitdata"
 )
 
 // MinCodeChange is the number of added code lines a commit needs before it is

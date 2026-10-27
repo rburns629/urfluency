@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/analysis"
 )
 
 func init() { analysis.RegisterScanner(Scanner{}) }

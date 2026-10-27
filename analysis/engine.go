@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/gitdata"
 )
 
 // skippedDirs are path segments whose files are not the user's own work.

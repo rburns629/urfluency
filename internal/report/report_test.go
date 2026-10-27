@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	_ "github.com/rburns629/urfluency/internal/analyzers/golang"
+	"github.com/rburns629/urfluency/analysis"
+	_ "github.com/rburns629/urfluency/analyzers/golang"
 	"github.com/rburns629/urfluency/internal/sessions"
 )
 

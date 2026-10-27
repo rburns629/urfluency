@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/analysis"
 )
 
 // Fake credentials are assembled at runtime so this file contains nothing

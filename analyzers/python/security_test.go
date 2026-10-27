@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/analysis"
 )
 
 func TestSecurityRules(t *testing.T) {

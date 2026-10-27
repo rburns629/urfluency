@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/gates"
+	"github.com/rburns629/urfluency/gates"
 )
 
 // Task types. Prompts are graded by what they ask for: a bug with an evident

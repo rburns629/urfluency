@@ -9,8 +9,8 @@ import (
 
 	ts "github.com/tree-sitter/go-tree-sitter"
 
-	"github.com/rburns629/urfluency/internal/analysis"
-	"github.com/rburns629/urfluency/internal/parsing"
+	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/parsing"
 )
 
 func init() { analysis.Register(Analyzer{}) }

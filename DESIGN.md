@@ -88,10 +88,11 @@ operated, not by CLI versus website.
   rules are public, as in Semgrep and OSV; how scanning is operated stays private.
   Keeping the scoring formula public follows the honest-provenance principle.
 - **Shared code.** `urfluency-cloud` imports the public module at a pinned version, so
-  the hosted scanner and the CLI run identical detection. Before the cloud repository
-  starts, the shared packages move out of `internal/` to public package paths (the
-  rule catalog, analyzers and engine, report and upload schema, and the scanner
-  engine), which then form a stable API. Everything else stays internal.
+  the hosted scanner and the CLI run identical detection. The shared packages are public
+  top-level packages (`rules`, `analysis`, `analyzers/*`, `parsing`, `gitdata`, and
+  `gates`), moved out of `internal/` on 2026-10-27; the upload schema, scoring
+  formula, and scanner engine will be created as public packages when built.
+  Sessions, reports, and the CLI stay internal.
 - **Local safety checks.** Because the scanner engine is public, the CLI can check a
   repository locally: `urfluency check <git-url>` clones into a temporary directory and
   scans without executing anything.
@@ -321,7 +322,7 @@ results are fast, repeatable, and never leave the machine:
 - **Testing** (built): owned test lines per owned code line, per language; and the
   share of code-changing commits (10 or more added code lines) that also change
   tests, split by AI-marked commits. Test files follow each language's conventions
-  (`internal/analysis/testpath.go`).
+  (`analysis/testpath.go`).
 - **Production practices** (built): in repositories where the user owns lines of
   the CI configuration, which practices it runs (tests, lint, format, type checks,
   security scanning), including those delegated to the Makefile or `package.json`.
@@ -343,7 +344,7 @@ a project already configures (ESLint, Ruff, golangci-lint) remain optional adapt
 
 urFluency measures whether the practices clean-agent-code defines actually happen:
 
-- **Quality gates.** `internal/gates` names the gates of
+- **Quality gates.** `gates` names the gates of
   [QUALITY_GATES.md](https://github.com/rburns629/clean-agent-code/blob/main/standards/QUALITY_GATES.md)
   (format, lint, types, build, tests, security) and the commands that run them.
   CI the user helped write is checked against the mandatory gates that apply to
@@ -434,13 +435,13 @@ interface, sharing Git access, ownership, and the rule catalog.
    and how to detect them: manifests (`go.mod`, `package.json`, `pyproject.toml`,
    `Cargo.toml`, `pom.xml`, `*.csproj`), file extensions, and dependencies that
    identify frameworks (for example React, Django, Spring).
-2. **Ownership.** `internal/gitdata` lists the user's lines with `git blame` at the
+2. **Ownership.** `gitdata` lists the user's lines with `git blame` at the
    analyzed revision, matched to the user's emails. Analyzers receive files plus the
    owned line ranges and report findings; the engine keeps only findings on owned
    lines.
 3. **Analyzer kinds.**
    - **Native analyzers** parse in process. Go uses `go/ast` with `go/types`. Other
-     languages use the shared `internal/parsing` layer over the official tree-sitter
+     languages use the shared `parsing` layer over the official tree-sitter
      Go bindings, through cgo (decided 2026-10-26; a WebAssembly runtime would have
      kept a pure-Go binary but needed a bridge nobody maintains). Release binaries
      are built per platform.

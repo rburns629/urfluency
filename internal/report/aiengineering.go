@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rburns629/urfluency/internal/gates"
+	"github.com/rburns629/urfluency/gates"
 )
 
 // AIEngineering answers one question: does the user's agent-assisted work hold up

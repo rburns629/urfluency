@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/gitdata"
 )
 
 // DurabilityWindow bounds both how old a commit must be to count and how soon
