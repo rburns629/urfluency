@@ -99,7 +99,10 @@ operated, not by CLI versus website.
   Tagging a version runs a release workflow that builds natively on macOS (Apple
   Silicon and Intel) and Linux (x86-64 and ARM), because tree-sitter uses cgo;
   publishes tarballs with SHA-256 checksums to a GitHub Release; and updates the
-  formula, which declares `depends_on "git"`. Direct tarball downloads cover other
+  formula, which declares `depends_on "git"`. A separate tap repository keeps the
+  install to one command and the tap tiny, and keeps release bot commits out of the
+  main history; once urFluency meets homebrew-core's bar (stable releases and enough
+  adoption), the formula moves there and installs as `brew install urfluency`. Direct tarball downloads cover other
   setups; winget or Scoop can follow for Windows. urFluency itself never installs
   dependencies: `urfluency doctor` checks them by capability and prints the official
   install command for anything missing.
