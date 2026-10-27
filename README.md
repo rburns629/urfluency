@@ -72,3 +72,6 @@ and variables, and directories such as `secrets/` or `.ssh/`. Secret findings sh
 the rule and line only. Credential values are never printed, stored, or uploaded,
 and nothing about a scanned repository is kept: only scores.
 
+## License
+
+MIT. See [LICENSE](LICENSE).

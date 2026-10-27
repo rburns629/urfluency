@@ -106,9 +106,13 @@ operated, not by CLI versus website.
   setups; winget or Scoop can follow for Windows. urFluency itself never installs
   dependencies: `urfluency doctor` checks them by capability and prints the official
   install command for anything missing.
-- **Before the repository goes public:** choose the license, audit the full history
-  for anything sensitive, and create a fine-grained token with write access to the
-  tap repository only, stored as an Actions secret.
+- **License:** MIT, copyright urFluency contributors (decided 2026-10-27); all
+  dependencies are MIT, ISC, or BSD licensed.
+- **History audit** (2026-10-27): all 290 file versions and 70 commits were checked
+  for credentials, personal addresses, local paths, and private project names; none
+  were found.
+- **Before the repository goes public:** create a fine-grained token with write
+  access to the tap repository only, stored as an Actions secret.
 
 ## Metrics
 
@@ -653,5 +657,4 @@ repository owner has published.
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
 - Languages after Go, Python, JavaScript, and TypeScript.
-- License for the public repository (for example MIT), needed before it goes
-  public; `urfluency-cloud` stays private.
+
