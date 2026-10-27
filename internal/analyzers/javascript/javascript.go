@@ -79,7 +79,7 @@ func analyze(ctx context.Context, files []analysis.File, typescript bool) ([]ana
 		}
 		c := checker{tree: tree, path: f.Path, typescript: typescript, frameworks: frameworksOf(tree, f.Path)}
 		parsing.Walk(tree.Root(), c.visit)
-		if !isTestFile(f.Path) {
+		if !analysis.IsTestPath(f.Path) {
 			for _, fn := range parsing.Cognitive(tree, parsing.JavaScriptComplexity) {
 				if fn.Complexity > parsing.CognitiveThreshold {
 					findings = append(findings, analysis.Finding{Rule: "clean.cognitive-complexity", Path: f.Path, Line: fn.Line})
@@ -90,13 +90,6 @@ func analyze(ctx context.Context, files []analysis.File, typescript bool) ([]ana
 		findings = append(findings, c.findings...)
 	}
 	return findings, nil
-}
-
-// isTestFile reports test files by the common .test., .spec., and __tests__
-// conventions.
-func isTestFile(p string) bool {
-	base := path.Base(p)
-	return strings.Contains(base, ".test.") || strings.Contains(base, ".spec.") || parsing.InDir(p, "__tests__")
 }
 
 type checker struct {

@@ -5,7 +5,6 @@ package python
 import (
 	"bytes"
 	"context"
-	"path"
 	"strings"
 
 	ts "github.com/tree-sitter/go-tree-sitter"
@@ -50,7 +49,7 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		if err != nil {
 			continue
 		}
-		c := checker{tree: tree, path: f.Path, isTest: isTestFile(f.Path), frameworks: importedFrameworks(tree)}
+		c := checker{tree: tree, path: f.Path, isTest: analysis.IsTestPath(f.Path), frameworks: importedFrameworks(tree)}
 		parsing.Walk(tree.Root(), c.visit)
 		if !c.isTest {
 			for _, fn := range parsing.Cognitive(tree, parsing.PythonComplexity) {
@@ -63,13 +62,6 @@ func (Analyzer) Analyze(ctx context.Context, files []analysis.File) ([]analysis.
 		findings = append(findings, c.findings...)
 	}
 	return findings, nil
-}
-
-func isTestFile(p string) bool {
-	base := path.Base(p)
-	return strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py") ||
-		strings.HasSuffix(base, "_tests.py") || base == "tests.py" || base == "conftest.py" ||
-		parsing.InDir(p, "tests", "test")
 }
 
 // testFunctionNames are unittest and pytest hooks, which are rarely annotated.

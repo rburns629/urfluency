@@ -8,7 +8,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}}
+	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, CI: CIPractices{Practices: map[string]int{}}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -21,6 +21,14 @@ func Merge(labels []string, parts []Result) Result {
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed
 		out.Durability.OtherAdded += p.Durability.OtherAdded
 		out.Durability.OtherFixed += p.Durability.OtherFixed
+		out.Tests.AssistedCommits += p.Tests.AssistedCommits
+		out.Tests.AssistedWithTests += p.Tests.AssistedWithTests
+		out.Tests.OtherCommits += p.Tests.OtherCommits
+		out.Tests.OtherWithTests += p.Tests.OtherWithTests
+		out.CI.Repos += p.CI.Repos
+		for practice, n := range p.CI.Practices {
+			out.CI.Practices[practice] += n
+		}
 		for tool, n := range p.MarkedByTool {
 			out.MarkedByTool[tool] += n
 		}
@@ -35,6 +43,7 @@ func Merge(labels []string, parts []Result) Result {
 			m.OwnedLines += lr.OwnedLines
 			m.AssistedLines += lr.AssistedLines
 			m.AssistedFindings += lr.AssistedFindings
+			m.TestLines += lr.TestLines
 			for rule, n := range lr.AssistedByRule {
 				m.AssistedByRule[rule] += n
 			}

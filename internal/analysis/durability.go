@@ -22,14 +22,10 @@ type Durability struct {
 
 // durability applies the SZZ method: each fix commit's changed lines are traced
 // back to the commits that introduced them.
-func durability(ctx context.Context, repo gitdata.Repo, emails []string, commits map[string]gitdata.Commit,
+func durability(ctx context.Context, repo gitdata.Repo, added map[string]map[string]int, commits map[string]gitdata.Commit,
 	tools map[string][]string, since, now time.Time) (Durability, error) {
 	var d Durability
 	isCode := func(p string) bool { return !inSkippedDir(p) && !IsProtected(p) && ForPath(p) != nil }
-	added, err := repo.AddedLines(ctx, emails)
-	if err != nil {
-		return d, err
-	}
 	eligible := map[string]bool{}
 	var oldest, newest time.Time
 	for hash, c := range commits {

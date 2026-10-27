@@ -1,0 +1,75 @@
+package analysis_test
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/rburns629/urfluency/internal/analysis"
+	"github.com/rburns629/urfluency/internal/gitdata"
+	"github.com/rburns629/urfluency/internal/testutil"
+)
+
+func TestIsTestPath(t *testing.T) {
+	tests := map[string]bool{
+		"a/b_test.go": true, "test_api.py": true, "api_test.py": true, "conftest.py": true,
+		"src/App.test.tsx": true, "src/api.spec.ts": true, "src/__tests__/x.js": true, "tests/helpers.py": true,
+		"a/b.go": false, "src/testing.ts": false, "contest.py": false, "src/latest/x.ts": false,
+	}
+	for p, want := range tests {
+		if got := analysis.IsTestPath(p); got != want {
+			t.Errorf("IsTestPath(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+func TestScanMeasuresPractices(t *testing.T) {
+	r := testutil.NewRepo(t)
+	lines := func(n int, prefix string) string {
+		var b strings.Builder
+		b.WriteString("package a\n")
+		for i := 0; i < n; i++ {
+			b.WriteString("var " + prefix + string(rune('a'+i)) + " = 1\n")
+		}
+		return b.String()
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(r.Dir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(r.Dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An AI-marked commit with tests, a hand-written one without, and one too
+	// small to need tests.
+	write("a.go", lines(15, "x"))
+	write("a_test.go", "package a\n")
+	r.Git("me@example.com", "2025-02-01T00:00:00Z", "add", "-A")
+	r.Git("me@example.com", "2025-02-01T00:00:00Z", "commit", "-qm", "Add a\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+	r.Commit("me@example.com", "2025-02-02T00:00:00Z", map[string]string{"b.go": lines(12, "y")})
+	r.Commit("me@example.com", "2025-02-03T00:00:00Z", map[string]string{"c.go": lines(2, "z")})
+	// CI the user wrote, delegating to the Makefile.
+	r.Commit("me@example.com", "2025-02-04T00:00:00Z", map[string]string{
+		".github/workflows/ci.yml": "jobs:\n  check:\n    steps:\n      - run: go test ./...\n      - run: make check\n",
+		"Makefile":                 "check:\n\tgolangci-lint run\n\tgovulncheck ./...\n",
+	})
+
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (analysis.TestHabits{AssistedCommits: 1, AssistedWithTests: 1, OtherCommits: 1}); res.Tests != want {
+		t.Errorf("tests = %+v, want %+v", res.Tests, want)
+	}
+	if want := map[string]int{"tests": 1, "lint": 1, "security": 1}; res.CI.Repos != 1 || !reflect.DeepEqual(res.CI.Practices, want) {
+		t.Errorf("ci = %+v, want practices %v", res.CI, want)
+	}
+	if g := res.Languages[0]; g.Language != "go" || g.TestLines != 1 {
+		t.Errorf("go = %+v, want 1 owned test line", g)
+	}
+}

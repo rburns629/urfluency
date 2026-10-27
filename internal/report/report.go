@@ -35,6 +35,7 @@ type Report struct {
 	Prompting     *Prompting     `json:"prompting,omitempty"`
 	AI            *AIShare       `json:"ai_written,omitempty"`
 	AIEngineering *AIEngineering `json:"ai_engineering,omitempty"`
+	Practices     *Practices     `json:"practices,omitempty"`
 }
 
 // Prompting grades task prompts from local agent sessions.
@@ -337,6 +338,7 @@ func WriteText(w io.Writer, r Report) error {
 		}
 	}
 	writeAIEngineering(&b, r)
+	writePractices(&b, r.Practices, r.Repos)
 	_, err := io.WriteString(w, b.String())
 	return err
 }

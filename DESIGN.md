@@ -276,12 +276,19 @@ results are fast, repeatable, and never leave the machine:
   finding, so they get the authorship split and AI engineering parity like every
   other rule. Tests cover the specification's worked examples and cases adapted
   from codemetrics.
-- **Structure:** dependency cycles and fan-in and fan-out between packages or
-  modules, from imports.
-- **Testing:** tests per owned code file, assertions per test, and tests that
-  exercise error paths.
-- **Production practices:** formatting, linting, type checking, and tests wired
-  into CI or build configuration.
+- **Testing** (built): owned test lines per owned code line, per language; and the
+  share of code-changing commits (10 or more added code lines) that also change
+  tests, split by AI-marked commits. Test files follow each language's conventions
+  (`internal/analysis/testpath.go`).
+- **Production practices** (built): in repositories where the user owns lines of
+  the CI configuration, which practices it runs (tests, lint, format, type checks,
+  security scanning), including those delegated to the Makefile or `package.json`.
+- **Structure** (not built): import cycles between JavaScript and TypeScript modules.
+  Go forbids import cycles, so Go needs no check.
+
+These are reported as "Practices" and shown but not scored until each is validated
+against durability. On the author's projects (2026-10-27), 88% of AI-assisted code
+changes came with tests against 47% of hand-written ones.
 
 Libraries were evaluated before writing these. `codemetrics` (Go, MIT) computes
 both complexity measures across 17 languages, but requires Go 1.27, brings a second

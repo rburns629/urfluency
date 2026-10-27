@@ -164,6 +164,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
 	}
 	r.AIEngineering = report.BuildAIEngineering(r)
+	r.Practices = report.BuildPractices(res)
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")

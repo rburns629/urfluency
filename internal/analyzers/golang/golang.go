@@ -91,7 +91,7 @@ func (c *checker) report(rule string, pos token.Pos) {
 }
 
 func (c *checker) run() {
-	isTest := strings.HasSuffix(c.path, "_test.go")
+	isTest := analysis.IsTestPath(c.path)
 	library := c.file.Name.Name != "main"
 	checkedAsserts := map[*ast.TypeAssertExpr]bool{}
 	c.waitGroups = c.collectWaitGroups()

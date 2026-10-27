@@ -41,6 +41,7 @@ type LanguageResult struct {
 	AssistedLines    int
 	AssistedFindings int
 	AssistedByRule   map[string]int // findings on AI-assisted lines, per rule
+	TestLines        int            // owned lines in test files, included in OwnedLines
 }
 
 // Result is the outcome of scanning one or more repositories.
@@ -60,6 +61,8 @@ type Result struct {
 	MarkedLines  int
 	MarkedByTool map[string]int
 	Durability   Durability
+	Tests        TestHabits
+	CI           CIPractices
 }
 
 type ownedFile struct {
@@ -88,7 +91,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	// never read.
 	var candidates []string
 	for _, p := range paths {
-		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p)) {
+		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || isCIFile(p)) {
 			candidates = append(candidates, p)
 		}
 	}
@@ -109,9 +112,25 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			tools[hash] = t
 		}
 	}
-	if result.Durability, err = durability(ctx, repo, opts.Emails, commits, tools, opts.Since, time.Now()); err != nil {
+	added, err := repo.AddedLines(ctx, opts.Emails)
+	if err != nil {
 		return Result{}, err
 	}
+	if result.Durability, err = durability(ctx, repo, added, commits, tools, opts.Since, time.Now()); err != nil {
+		return Result{}, err
+	}
+	result.Tests = testHabits(added, commits, tools, opts.Since)
+	var scripts []string
+	for _, p := range paths {
+		for _, s := range buildScriptPaths {
+			if p == s {
+				if content, err := repo.Show(ctx, head, p); err == nil {
+					scripts = append(scripts, string(content))
+				}
+			}
+		}
+	}
+	result.CI = ciPractices(files, scripts)
 	ai := map[string]map[int]bool{}
 	for i := range files {
 		f := &files[i]
@@ -199,6 +218,9 @@ func run(ctx context.Context, name string, group []ownedFile,
 		assisted[f.file.Path] = f.assisted
 		lr.OwnedLines += len(f.owned)
 		lr.AssistedLines += len(f.assisted)
+		if IsTestPath(f.file.Path) {
+			lr.TestLines += len(f.owned)
+		}
 	}
 	findings, err := analyze(ctx, inputs)
 	if err != nil {

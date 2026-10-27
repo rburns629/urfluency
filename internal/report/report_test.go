@@ -216,3 +216,24 @@ func TestBuildAIEngineering(t *testing.T) {
 		t.Error("a language without a hand-written baseline was judged")
 	}
 }
+
+func TestBuildPractices(t *testing.T) {
+	res := analysis.Result{
+		Languages: []analysis.LanguageResult{{Language: "go", OwnedLines: 1500, TestLines: 500}, {Language: "secrets", OwnedLines: 9}},
+		Tests:     analysis.TestHabits{AssistedCommits: 10, AssistedWithTests: 8, OtherCommits: 4, OtherWithTests: 1},
+		CI:        analysis.CIPractices{Repos: 2, Practices: map[string]int{"tests": 2, "security": 1}},
+	}
+	p := BuildPractices(res)
+	if len(p.Tests) != 1 || p.Tests[0].Ratio != 0.5 || len(p.CIRunsWith) != 2 || p.CIRunsWith[0].Practice != "tests" {
+		t.Errorf("practices = %+v", p)
+	}
+	var b strings.Builder
+	writePractices(&b, p, 3)
+	for _, want := range []string{"Tests per code line: Go 0.50 (500 test lines for 1000 code lines)",
+		"committed with tests: AI-assisted 8 of 10 commits (80%); other 1 of 4 commits (25%)",
+		"CI you helped write: 2 of 3 repositories; it runs tests 2, security 1"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("text missing %q:\n%s", want, b.String())
+		}
+	}
+}
