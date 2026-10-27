@@ -59,3 +59,46 @@ func TestFixHistory(t *testing.T) {
 		t.Errorf("fixed lines = %v, want the rewritten line traced to %s", fixed, first)
 	}
 }
+
+func TestTouchedPathsFollowsRenames(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "", map[string]string{"old/a.go": "package a\n"})
+	r.Commit("other@example.com", "", map[string]string{"theirs.go": "package b\n"})
+	r.Git("other@example.com", "", "mv", "old/a.go", "a.go")
+	r.Git("other@example.com", "", "commit", "-qm", "Move a")
+	repo := gitdata.Repo{Dir: r.Dir}
+
+	touched, err := repo.TouchedPaths(context.Background(), []string{"ME@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !touched["a.go"] || touched["theirs.go"] {
+		t.Errorf("touched = %v, want a.go (renamed by someone else) and not theirs.go", touched)
+	}
+	none, err := repo.TouchedPaths(context.Background(), []string{"nobody@example.com"})
+	if err != nil || len(none) != 0 {
+		t.Errorf("touched for an author with no commits = %v, %v", none, err)
+	}
+}
+
+func TestAuthorMatchingIsLiteralAndExact(t *testing.T) {
+	r := testutil.NewRepo(t)
+	noreply := "16638916+someone@users.noreply.github.com"
+	r.Commit(noreply, "", map[string]string{"mine.go": "package a\n"})
+	r.Commit("nome@example.com", "", map[string]string{"theirs.go": "package a\n"})
+	repo := gitdata.Repo{Dir: r.Dir}
+	ctx := context.Background()
+
+	commits, err := repo.Commits(ctx, []string{noreply})
+	if err != nil || len(commits) != 1 {
+		t.Errorf("a noreply address with + matched %d commits (%v), want 1", len(commits), err)
+	}
+	touched, err := repo.TouchedPaths(ctx, []string{"ME@example.com"})
+	if err != nil || len(touched) != 0 {
+		t.Errorf("me@example.com must not match nome@example.com: %v %v", touched, err)
+	}
+	added, err := repo.AddedLines(ctx, []string{noreply})
+	if err != nil || len(added) != 1 {
+		t.Errorf("added lines for the noreply address: %v %v", added, err)
+	}
+}

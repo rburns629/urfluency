@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -147,6 +146,19 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 	return owned, nil
 }
 
+// authorArgs limits git log to commits whose author email is one of emails. The
+// emails are matched as fixed strings with their angle brackets, so "+" in a
+// GitHub noreply address is literal (Git's basic regular expressions read an
+// escaped "\+" as "one or more") and "me@example.com" does not also match
+// "nome@example.com". Case is ignored, as email addresses are case-insensitive.
+func authorArgs(emails []string) []string {
+	args := []string{"--fixed-strings", "--regexp-ignore-case"}
+	for _, e := range emails {
+		args = append(args, "--author=<"+e+">")
+	}
+	return args
+}
+
 // Commit is what urFluency reads about a commit: its author name and time, and the
 // values of its Co-authored-by trailers.
 type Commit struct {
@@ -158,11 +170,9 @@ type Commit struct {
 // Commits returns the non-merge commits reachable from HEAD whose author email is
 // one of emails, keyed by hash.
 func (r Repo) Commits(ctx context.Context, emails []string) (map[string]Commit, error) {
-	args := []string{"log", "--no-merges", "--regexp-ignore-case",
+	args := []string{"log", "--no-merges",
 		"--format=%H%x1f%an%x1f%at%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x1d"}
-	for _, e := range emails {
-		args = append(args, "--author="+regexp.QuoteMeta(e))
-	}
+	args = append(args, authorArgs(emails)...)
 	out, err := r.git(ctx, append(args, "HEAD")...)
 	if err != nil {
 		return nil, err

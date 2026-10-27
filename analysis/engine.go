@@ -124,11 +124,18 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
+	// Only files the authors ever committed to can hold their lines, and blame is
+	// most of a scan's cost, so other files are never blamed. (Code someone else
+	// moved into a file the authors never touched is the one case this misses.)
+	touched, err := repo.TouchedPaths(ctx, opts.Emails)
+	if err != nil {
+		return Result{}, err
+	}
 	// Protected files are dropped here, before blame or show, so their contents are
 	// never read.
 	var candidates []string
 	for _, p := range paths {
-		if !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || readEvenWithoutAnalyzer(p)) {
+		if touched[p] && !inSkippedDir(p) && !IsProtected(p) && (ForPath(p) != nil || anyScannerApplies(p) || readEvenWithoutAnalyzer(p)) {
 			candidates = append(candidates, p)
 		}
 	}
@@ -153,7 +160,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	if result.Durability, err = durability(ctx, repo, added, commits, tools, opts.Since, time.Now(), opts.progress); err != nil {
+	if result.Durability, err = durability(ctx, repo, added, commits, tools, touched, opts.Since, time.Now(), opts.progress); err != nil {
 		return Result{}, err
 	}
 	result.Tests = testHabits(added, commits, tools, opts.Since)

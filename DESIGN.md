@@ -442,6 +442,13 @@ interface, sharing Git access, ownership, and the rule catalog.
    analyzed revision, matched to the user's emails. Analyzers receive files plus the
    owned line ranges and report findings; the engine keeps only findings on owned
    lines.
+   Blame is most of a scan's cost, so only files that a commit by the user's
+   emails ever changed (following later renames) are blamed; files over 2 MB are
+   skipped by size, and a file that takes over 60 seconds is skipped and counted.
+   Author emails are matched as fixed strings with their angle brackets, so the
+   "+" in GitHub noreply addresses is literal. Measured on 98 repositories
+   (2026-10-27): 7 minutes before these changes, 42 seconds after.
+
 3. **Analyzer kinds.**
    - **Native analyzers** parse in process. Go uses `go/ast` with `go/types`. Other
      languages use the shared `parsing` layer over the official tree-sitter

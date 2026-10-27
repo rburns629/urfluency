@@ -13,10 +13,8 @@ import (
 // AddedLines returns the lines each non-merge commit by one of emails added, per
 // path. Renames are followed, so moving a file does not count as adding it.
 func (r Repo) AddedLines(ctx context.Context, emails []string) (map[string]map[string]int, error) {
-	args := []string{"log", "--no-merges", "--regexp-ignore-case", "-M", "--numstat", "--format=%x1e%H"}
-	for _, e := range emails {
-		args = append(args, "--author="+regexp.QuoteMeta(e))
-	}
+	args := []string{"log", "--no-merges", "-M", "--numstat", "--format=%x1e%H"}
+	args = append(args, authorArgs(emails)...)
 	out, err := r.git(ctx, append(args, "HEAD")...)
 	if err != nil {
 		return nil, err
@@ -59,6 +57,49 @@ func renamedTo(p string) string {
 		return after
 	}
 	return p
+}
+
+// TouchedPaths returns the current paths of files that a non-merge commit by one
+// of emails ever changed, following later renames by anyone, so a file the user
+// wrote that someone else renamed still counts.
+func (r Repo) TouchedPaths(ctx context.Context, emails []string) (map[string]bool, error) {
+	args := []string{"log", "--no-merges", "--name-only", "--format="}
+	args = append(args, authorArgs(emails)...)
+	out, err := r.git(ctx, append(args, "HEAD")...)
+	if err != nil {
+		return nil, err
+	}
+	touched := map[string]bool{}
+	for _, p := range strings.Split(string(out), "\n") {
+		if p != "" {
+			touched[p] = true
+		}
+	}
+	if len(touched) == 0 {
+		return touched, nil
+	}
+	// Renames by any author, newest first: "R100\told\tnew".
+	out, err = r.git(ctx, "log", "--no-merges", "-M", "--name-status", "--diff-filter=R", "--format=", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	renamed := map[string]string{}
+	for _, l := range strings.Split(string(out), "\n") {
+		if f := strings.Split(l, "\t"); len(f) == 3 && strings.HasPrefix(f[0], "R") {
+			renamed[f[1]] = f[2]
+		}
+	}
+	for p := range touched {
+		for range 100 { // bounded, in case of rename cycles
+			next, ok := renamed[p]
+			if !ok || touched[next] {
+				break
+			}
+			touched[next] = true
+			p = next
+		}
+	}
+	return touched, nil
 }
 
 // FixCommit is a non-merge commit whose subject marks a bug fix.
