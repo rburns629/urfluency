@@ -506,6 +506,12 @@ urfluency logout
   listed (top 10) as possible and not counted. A shared name can link a
   namesake's address; the counted addresses are always printed so the user can
   see it. Addresses go to stderr only and never into the report or an upload.
+- `init [path]` runs the same detection over the repositories under a path, asks
+  about each possible address in a terminal (`--yes` skips the questions), and
+  saves confirmed and declined addresses to `settings.json` in the user config
+  directory with owner-only permissions. Scans seed detection with the saved
+  addresses and drop declined ones from the possible list. Running `init` again
+  merges with what is saved. Nothing about repositories is saved.
 - `scan` accepts a repository or a folder; for a folder it scans every repository up
   to four levels below it and combines the results. A path inside a repository scans
   that repository. `--exclude` skips folders by name or relative path.

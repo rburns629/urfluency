@@ -66,6 +66,12 @@ found. Bots and GitHub's shared web address never link. Addresses that only look
 like yours are listed as possible and not counted; add any that are yours with
 `--author`. Addresses are shown in your terminal and never written to the report.
 
+To settle this once, run `urfluency init ~/Projects`. It asks about each possible
+address and saves your answers to `settings.json` in your user config folder
+(`~/Library/Application Support/urfluency` on macOS, `~/.config/urfluency` on
+Linux), readable only by you and never uploaded. Later scans start from the saved
+addresses, still find new ones, and stop suggesting the ones you declined.
+
 Projects that lost their Git history (or never had commits) are scanned too. A
 folder counts as a project when it has a manifest such as `go.mod` or
 `package.json`, or source files and no projects inside it. With no history to

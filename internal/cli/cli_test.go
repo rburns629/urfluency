@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -215,6 +217,59 @@ func TestScanDetectsIdentity(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "@") {
 		t.Errorf("an address leaked into the report:\n%s", out.String())
+	}
+}
+
+func TestInitSavesConfirmedAddresses(t *testing.T) {
+	global := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(global, []byte("[user]\n\tname = Ana Diaz\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	config := t.TempDir()
+	t.Setenv("URFLUENCY_CONFIG_DIR", config)
+	r := testutil.NewRepo(t)
+	for i, author := range []string{"Ana Diaz <ana@old.example>", "Cleo <anadiaz@personal.example>", "Ben Diaz <ben@example.com>"} {
+		if err := os.WriteFile(filepath.Join(r.Dir, fmt.Sprintf("f%d.go", i)), []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r.Git("x@example.com", "", "add", "-A")
+		r.Git("x@example.com", "", "commit", "-q", "-m", "change", "--author="+author)
+	}
+	stdin, interactive = strings.NewReader("y\nn\n"), func() bool { return true }
+	t.Cleanup(func() { stdin, interactive = os.Stdin, func() bool { return false } })
+
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"init", r.Dir}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "Is anadiaz@personal.example yours?") || !strings.Contains(out.String(), "Is ben@example.com yours?") {
+		t.Errorf("prompts missing:\n%s", out.String())
+	}
+	data, err := os.ReadFile(filepath.Join(config, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s settings
+	if err := json.Unmarshal(data, &s); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(s.Emails, []string{"ana@old.example", "anadiaz@personal.example"}) || !slices.Equal(s.NotMine, []string{"ben@example.com"}) {
+		t.Errorf("settings = %+v", s)
+	}
+	if info, err := os.Stat(filepath.Join(config, "settings.json")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("settings mode = %v, %v", info.Mode(), err)
+	}
+
+	// Scans start from the saved answers: the claimed address counts and the
+	// declined one is not suggested again.
+	out.Reset()
+	errOut.Reset()
+	if code := Run(context.Background(), []string{"scan", "--json", r.Dir}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "ana@old.example, anadiaz@personal.example") || strings.Contains(errOut.String(), "Possibly yours") {
+		t.Errorf("scan stderr:\n%s", errOut.String())
 	}
 }
 

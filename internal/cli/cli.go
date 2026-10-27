@@ -34,12 +34,19 @@ var Version = "dev"
 const usage = `urfluency analyzes your own commits and reports strengths and areas to improve.
 
 Usage:
+  urfluency init [path]           Find your commit addresses in the repositories
+                                  below path, confirm any it is unsure of, and
+                                  save them for later scans (optional)
   urfluency scan [flags] [path]   Analyze the repository at path, or every project
                                   below it, with or without Git (default ".")
   urfluency validate [path]       For maintainers: show whether prompt signals
                                   predict what happened next in agent sessions
   urfluency doctor                Check dependencies and optional features; installs nothing
   urfluency version               Print the version
+
+Init flags:
+  --author EMAIL   Also save this address as yours; repeat for several
+  --yes            Do not ask about possible addresses; save only those found
 
 Scan flags:
   --author EMAIL   Also count this address as yours; repeat for several. Your
@@ -67,6 +74,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	var err error
 	switch args[0] {
+	case "init":
+		err = initSettings(ctx, args[1:], stdout, stderr)
 	case "scan":
 		err = scan(ctx, args[1:], stdout, stderr)
 	case "validate":
@@ -144,7 +153,11 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	if len(repos) > 0 {
 		prog.phase("Finding your commits")
-		id := detectIdentity(ctx, repos, authors)
+		saved, err := loadSettings()
+		if err != nil {
+			return fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
+		}
+		id := withoutDeclined(detectIdentity(ctx, repos, append(saved.Emails, authors...)), saved.NotMine)
 		if len(id.Emails) == 0 {
 			return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
 		}
