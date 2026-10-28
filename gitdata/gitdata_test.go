@@ -41,6 +41,14 @@ func TestOwnedLines(t *testing.T) {
 	if len(got) != 0 {
 		t.Errorf("lines before since should not count, got %v", got)
 	}
+
+	// Everyone owns every line; a commit list for Everyone has both authors'.
+	if got, err = repo.OwnedLines(ctx, head, "a.go", gitdata.Everyone, time.Time{}); err != nil || len(got) != 4 {
+		t.Errorf("Everyone's lines = %v, %v; want all 4", got, err)
+	}
+	if commits, err := repo.Commits(ctx, gitdata.Everyone); err != nil || len(commits) != 2 {
+		t.Errorf("Everyone's commits = %d, %v; want 2", len(commits), err)
+	}
 }
 
 func TestTrackedFilesAndShow(t *testing.T) {

@@ -18,6 +18,9 @@ import (
 type CloneLimits struct {
 	Timeout  time.Duration
 	MaxBytes int64 // checked-out size; larger repositories are refused
+	// Since, if set, keeps the history back to that time, for scoring the
+	// repository's practices; otherwise only the latest commit is fetched.
+	Since time.Time
 }
 
 // DefaultCloneLimits suit public repositories people run tools from.
@@ -77,31 +80,20 @@ var gitConfig = []string{
 func Clone(ctx context.Context, repoURL, dir string, limits CloneLimits) error {
 	ctx, cancel := context.WithTimeout(ctx, limits.Timeout)
 	defer cancel()
-	args := []string{}
-	for _, c := range gitConfig {
-		args = append(args, "-c", c)
+	depth := "--depth=1"
+	if !limits.Since.IsZero() {
+		depth = "--shallow-since=" + limits.Since.UTC().Format(time.RFC3339)
 	}
-	args = append(args, "clone", "--depth=1", "--single-branch", "--no-tags", "--no-recurse-submodules", "--quiet", "--", repoURL, dir)
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_ASKPASS=/bin/false",
-		"GIT_LFS_SKIP_SMUDGE=1",
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL=/dev/null",
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("clone took longer than %s", limits.Timeout)
-		}
-		msg := strings.TrimSpace(string(out))
-		if strings.Contains(msg, "not found") || strings.Contains(msg, "Authentication failed") || strings.Contains(msg, "could not read Username") {
-			return errors.New("repository not found or not public")
-		}
-		return fmt.Errorf("clone failed: %s", firstLine(msg))
+	err := clone(ctx, repoURL, dir, depth, limits.Timeout)
+	if errors.Is(err, errNothingSince) {
+		// Nothing was committed since then: the latest commit still has the code.
+		err = clone(ctx, repoURL, dir, "--depth=1", limits.Timeout)
+	}
+	if err != nil {
+		return err
 	}
 	var size int64
-	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -113,7 +105,39 @@ func Clone(ctx context.Context, repoURL, dir string, limits CloneLimits) error {
 		}
 		return nil
 	})
-	return err
+}
+
+// errNothingSince is Git refusing --shallow-since when no commit is that recent.
+var errNothingSince = errors.New("no commits in the history window")
+
+func clone(ctx context.Context, repoURL, dir, depth string, timeout time.Duration) error {
+	args := []string{}
+	for _, c := range gitConfig {
+		args = append(args, "-c", c)
+	}
+	args = append(args, "clone", depth, "--single-branch", "--no-tags", "--no-recurse-submodules", "--quiet", "--", repoURL, dir)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ASKPASS=/bin/false",
+		"GIT_LFS_SKIP_SMUDGE=1",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("clone took longer than %s", timeout)
+		}
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "no commits selected for shallow") || strings.Contains(msg, "error processing shallow info") {
+			return errNothingSince
+		}
+		if strings.Contains(msg, "not found") || strings.Contains(msg, "Authentication failed") || strings.Contains(msg, "could not read Username") {
+			return errors.New("repository not found or not public")
+		}
+		return fmt.Errorf("clone failed: %s", firstLine(msg))
+	}
+	return nil
 }
 
 func firstLine(s string) string {

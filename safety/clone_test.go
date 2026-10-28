@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // hostileRepo builds a bare repository whose content tries the classic clone
@@ -125,4 +126,64 @@ func gitOutput(t *testing.T, args ...string) string {
 		t.Fatal(err)
 	}
 	return string(out)
+}
+
+// datedRepo serves a bare repository whose commits are dated in dates.
+func datedRepo(t *testing.T, dates ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	git := func(dir string, env []string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"), env...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	os.MkdirAll(work, 0o755)
+	git(work, nil, "init", "-q", "-b", "main")
+	for i, d := range dates {
+		os.WriteFile(filepath.Join(work, "f.txt"), []byte(strings.Repeat("x", i+1)), 0o644)
+		git(work, nil, "add", "-A")
+		git(work, []string{"GIT_AUTHOR_DATE=" + d, "GIT_COMMITTER_DATE=" + d}, "commit", "-q", "-m", "c")
+	}
+	git(root, nil, "clone", "-q", "--bare", work, "repo.git")
+	return root
+}
+
+// A clone with Since keeps the commits since then; with none that recent, it
+// still fetches the latest one.
+func TestCloneSince(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	backend := filepath.Join(strings.TrimSpace(gitOutput(t, "--exec-path")), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Skip("git-http-backend not available")
+	}
+	root := datedRepo(t, "2020-01-01T00:00:00Z", "2025-06-01T00:00:00Z", "2026-06-01T00:00:00Z")
+	srv := httptest.NewServer(&cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}})
+	defer srv.Close()
+
+	for _, c := range []struct {
+		since time.Time
+		want  string
+	}{
+		{time.Time{}, "1"},
+		{time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), "2"},
+		{time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), "1"},
+	} {
+		dest := filepath.Join(t.TempDir(), "clone")
+		limits := DefaultCloneLimits
+		limits.Since = c.since
+		if err := Clone(context.Background(), srv.URL+"/repo.git", dest, limits); err != nil {
+			t.Fatalf("Clone since %v: %v", c.since, err)
+		}
+		if got := strings.TrimSpace(gitOutput(t, "-C", dest, "rev-list", "--count", "HEAD")); got != c.want {
+			t.Errorf("since %v: %s commits, want %s", c.since, got, c.want)
+		}
+	}
 }

@@ -57,6 +57,10 @@ Usage:
   urfluency upload [flags] [path] Scan like scan, show what would be sent, and
                                   upload the ratings after you confirm
   urfluency logout                Delete the upload token on this machine
+  urfluency attest [--since WHEN] In GitHub Actions: rate the checked-out repository,
+                                  every author's code, and send the ratings for its
+                                  badges with the job's OIDC token (CI-attested).
+                                  The code stays on the runner. --dry-run prints them
   urfluency doctor                Check dependencies and optional features; installs nothing
   urfluency version               Print the version
 
@@ -115,6 +119,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = uploadCmd(ctx, args[1:], stdout, stderr)
 	case "logout":
 		err = logout(args[1:], stdout)
+	case "attest":
+		err = attest(ctx, args[1:], stdout)
 	case "validate":
 		err = validate(ctx, args[1:], stdout)
 	case "doctor":

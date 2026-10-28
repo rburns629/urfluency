@@ -215,14 +215,14 @@ func (r Repo) Show(ctx context.Context, rev, path string) ([]byte, error) {
 }
 
 // OwnedLines maps the 1-based line numbers of path at rev whose blamed author
-// email is in emails, and whose author time is not before since, to the commit
+// email is in emails (or any, for Everyone), and whose author time is not before since, to the commit
 // that last changed them.
 func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string, since time.Time) (map[int]string, error) {
 	out, err := r.git(ctx, "blame", "--line-porcelain", "-w", "-M", "-C", "--no-textconv", rev, "--", path)
 	if err != nil {
 		return nil, err
 	}
-	wanted := map[string]bool{}
+	all, wanted := everyone(emails), map[string]bool{}
 	for _, e := range emails {
 		wanted[strings.ToLower(e)] = true
 	}
@@ -236,7 +236,7 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 		text := scanner.Text()
 		switch {
 		case strings.HasPrefix(text, "\t"):
-			if wanted[email] && !authored.Before(since) {
+			if (all || wanted[email]) && !authored.Before(since) {
 				owned[line] = commit
 			}
 		case strings.HasPrefix(text, "author-mail "):
@@ -266,12 +266,22 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 	return owned, nil
 }
 
+// Everyone, passed as the emails, selects every author's work: for scoring a
+// whole repository rather than one person's part of it. It is explicit so an
+// empty list can never mean everyone by accident.
+var Everyone = []string{"*"}
+
+func everyone(emails []string) bool { return len(emails) == 1 && emails[0] == "*" }
+
 // authorArgs limits git log to commits whose author email is one of emails. The
 // emails are matched as fixed strings with their angle brackets, so "+" in a
 // GitHub noreply address is literal (Git's basic regular expressions read an
 // escaped "\+" as "one or more") and "me@example.com" does not also match
 // "nome@example.com". Case is ignored, as email addresses are case-insensitive.
 func authorArgs(emails []string) []string {
+	if everyone(emails) {
+		return nil
+	}
 	args := []string{"--fixed-strings", "--regexp-ignore-case"}
 	for _, e := range emails {
 		args = append(args, "--author=<"+e+">")

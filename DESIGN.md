@@ -900,11 +900,19 @@ README never change the scanner's behavior.
 
 Owners connect repositories through a urFluency GitHub App:
 
-- **Public repositories** are analyzed on the server at each push to the default
-  branch (Verified tier).
-- **Private repositories** use the urFluency GitHub Action, which analyzes in CI and
-  uploads metrics with an OIDC token, so code never leaves the CI runner
-  (CI-attested tier).
+- **Public repositories** are analyzed on the server, in the same isolated job as
+  safety scans, when a release is published and when the owner asks (with a
+  daily cap), not at every push, which would tie cost to activity (decided
+  2026-10-28). Every author's code is rated (`score.Repo`), with history since
+  365 days for the practice ratings (Verified tier).
+- **Private repositories** use the urFluency GitHub Action (`action.yml`), which
+  runs `urfluency attest` in CI: it rates the checkout and sends only the
+  summary and combined result, like an upload, with the job's GitHub OIDC token
+  (audience `https://api.urfluency.com`). Code never leaves the CI runner
+  (CI-attested tier). The service accepts it only for a connected repository on
+  its default branch.
+- Badges show only ratings the owner turned on, and only earned ones: Advanced
+  (70) and above, and a safety badge only for "No indicators found".
 
 Badges are SVG, with a shields.io-compatible JSON variant:
 

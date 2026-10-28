@@ -1,0 +1,58 @@
+# urFluency repository ratings for private repositories (CI-attested tier).
+# Rates the checked-out repository on the runner and sends only the ratings,
+# the same summary an upload sends, with the job's GitHub OIDC token. The code
+# never leaves the runner. Connect the repository on urfluency.com first.
+#
+#   permissions:
+#     contents: read
+#     id-token: write
+#   steps:
+#     - uses: actions/checkout@<sha>  # with fetch-depth: 0, for practice ratings
+#       with:
+#         fetch-depth: 0
+#     - uses: rburns629/urfluency@<tag>
+name: urFluency repository ratings
+description: Rate this repository's code in CI and send only the ratings to urFluency for its README badges.
+author: urFluency contributors
+branding:
+  icon: award
+  color: green
+inputs:
+  since:
+    description: How far back history counts for practice ratings, like 365d or 2026-01-31.
+    default: 365d
+  version:
+    description: CLI version to run. Defaults to this action's tag; set it when pinning the action by commit.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Rate and send
+      shell: bash
+      env:
+        SINCE: ${{ inputs.since }}
+        VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        set -euo pipefail
+        version="${VERSION:-$ACTION_REF}"
+        version="${version#v}"
+        if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Set the version input to a release like 0.2.0 when the action is pinned by commit (got '${version}')."
+          exit 1
+        fi
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) platform=linux_amd64 ;;
+          Linux-ARM64) platform=linux_arm64 ;;
+          macOS-ARM64) platform=darwin_arm64 ;;
+          macOS-X64) platform=darwin_amd64 ;;
+          *) echo "::error::No urFluency build for ${RUNNER_OS} ${RUNNER_ARCH}."; exit 1 ;;
+        esac
+        archive="urfluency_${version}_${platform}.tar.gz"
+        work="$(mktemp -d)"
+        base="https://github.com/rburns629/urfluency/releases/download/v${version}"
+        curl -fsSL --proto '=https' -o "${work}/${archive}" "${base}/${archive}"
+        curl -fsSL --proto '=https' -o "${work}/checksums.txt" "${base}/checksums.txt"
+        (cd "$work" && grep -E "  ${archive}\$" checksums.txt | shasum -a 256 -c -)
+        tar -xzf "${work}/${archive}" -C "$work" urfluency
+        "${work}/urfluency" attest --since "$SINCE"
