@@ -845,28 +845,31 @@ and installed dependency folders.
   release with `git`, as a non-root user. Not Cloud Build, which queues, keeps
   build records with the URL, and cannot restrict egress cheaply; not Homebrew,
   since releases ship static Linux binaries.
-- **Identity:** the job's service account has no roles. It returns the report to
-  the API with a one-time token (stored hashed) that can only submit that scan's
-  result, so a compromised job has nothing to steal.
+- **Identity:** the job's service account has no roles. The job's settings hold
+  only the scan ID and a one-time token (stored hashed); it fetches the
+  repository from the API and returns the report, each time with that token and
+  a Google-signed ID token for its service account. A compromised job has
+  nothing to steal.
 - **Network:** direct VPC egress with firewall rules allowing only the Git hosts
   and the API.
 - **Access:** signed-in users can scan and keep a private history of
   `owner/repo`, verdict, score, and date for public repositories. Without an
   account, three scans per IP address per 24 hours, with Firebase App Check;
-  anonymous results are not stored. The URL is never logged.
+  anonymous results are not stored. The URL is never logged, and an anonymous
+  scan's record forgets it once the job has it.
 - **Flow:** `POST /v1/scans` validates the URL against allowed hosts, reads the
   default branch's commit with Git's smart HTTP protocol (a missing or private
   repository is answered at once, with no job and no quota charge), records the
-  scan with a TTL, and starts the job; the browser polls `GET /v1/scans/{id}`,
-  which returns the report once.
+  scan with a one-hour TTL, and starts the job; the browser polls
+  `GET /v1/scans/{id}`, which returns the result once and deletes the record.
+  The API deletes finished job executions after each result.
 - **Cost bounds:** three anonymous scans per client IP and at most 300 new
   anonymous jobs per day across everyone; past that, anonymous visitors are
   asked to sign in or use `urfluency check`, which runs locally at no cost to
   the service and needs no account. A VPN changes the IP but not the global
   budget. App Check is to follow before the scanner is promoted.
-- **Reuse:** a report for the same repository at the same commit is kept for 24
-  hours and reused, with no new job. The cache holds the repository, commit, and
-  report, never who asked.
+- **No reuse:** reports are not cached, so every anonymous scan is a new job
+  within the global budget.
 
 ### Isolation
 
