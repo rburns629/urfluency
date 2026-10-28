@@ -55,14 +55,14 @@ safe to run.
 ```
 ┌────────── user machine ──────────┐        ┌──────────── urfluency.com ────────────┐
 │ urfluency CLI                    │        │ API (Go)                              │
-│  ├ login (GitHub device flow)    │ HTTPS  │  ├ auth: GitHub OAuth, API tokens     │
+│  ├ login (device flow)           │ HTTPS  │  ├ auth: Firebase, upload tokens      │
 │  ├ analyzers (local)             │──────► │  ├ metrics ingest + scoring           │
 │  │  ├ code: per-language rules   │ metrics│  ├ public profile + badge endpoints   │
 │  │  └ sessions: agent logs       │  only  │  └ repo connections (GitHub App)      │
 │  └ upload (aggregates)           │        │ Web app: login, dashboard, settings   │
 └──────────────────────────────────┘        │ Scan workers (isolated)               │
                                             │  └ safety scanner for public Git URLs │
-┌────────── repository CI ─────────┐ OIDC   │ Postgres · object storage · job queue │
+┌────────── repository CI ─────────┐ OIDC   │ Firestore · Cloud Run · API Gateway   │
 │ urfluency Action (later)         │──────► │                                       │
 └──────────────────────────────────┘        └───────────────────────────────────────┘
 ```
@@ -80,17 +80,18 @@ operated, not by CLI versus website.
 | Repository | Visibility | Contents |
 | --- | --- | --- |
 | `rburns629/urfluency` | Public, open source | The CLI; all analyzers and the rule catalog; the upload format (the CLI-to-API contract); the scoring formula that turns rule counts into bands; and the safety scanner's detection engine |
-| `rburns629/urfluency-cloud` | Private | The website and dashboard, API and accounts, badge serving, the hosted scan service (job queue, isolated workers, rate limits, abuse controls), and infrastructure and deployment configuration |
+| `rburns629/urfluency-app` | Private | The website and dashboard, API and accounts, badge serving, the hosted scan service (job queue, isolated workers, rate limits, abuse controls), and infrastructure and deployment configuration |
 | `rburns629/homebrew-tap` | Public | The Homebrew formula |
 
 - **Why.** Everything that runs on an engineer's laptop or decides their score can be
   audited, which is urFluency's strongest trust argument for work machines. Scanner
   rules are public, as in Semgrep and OSV; how scanning is operated stays private.
   Keeping the scoring formula public follows the honest-provenance principle.
-- **Shared code.** `urfluency-cloud` imports the public module at a pinned version, so
+- **Shared code.** `urfluency-app` imports the public module at a pinned version, so
   the hosted scanner and the CLI run identical detection. The shared packages are public
   top-level packages (`rules`, `analysis`, `analyzers/*`, `parsing`, `gitdata`, and
-  `gates`), moved out of `internal/` on 2026-10-27; the upload schema, scoring
+  `gates`), moved out of `internal/` on 2026-10-27, and `upload`, the upload
+  contract (2026-10-27); the scoring
   formula, and scanner engine will be created as public packages when built.
   Sessions, reports, and the CLI stay internal.
 - **Local safety checks.** Because the scanner engine is public, the CLI can check a
@@ -710,6 +711,34 @@ format, and service do not change.
 
 ### Upload format
 
+Built (2026-10-27) as the public `upload` package, which the CLI and the API
+both validate with. `urfluency upload` sends a report's `summary` and `combined`
+objects with version information:
+
+```json
+{
+  "format": "1",
+  "tool": "0.1.8",
+  "report_format": "0.4",
+  "catalog": "0.10",
+  "model": "0.2-uncalibrated",
+  "tier": "self-reported",
+  "since": "all",
+  "summary": {"headline": "…", "ratings": [], "strengths": []},
+  "combined": {"repositories": 94, "languages": [], "design": []}
+}
+```
+
+`upload.Validate` rejects a payload with fields named like locations, paths,
+repositories, commits, emails, or code, or with strings that look like email
+addresses, home-directory paths, or commit hashes, so a bug that leaks them fails
+on the user's machine and again on the server. The CLI only claims
+`self-reported` (or `declared` when nothing came from Git); the service assigns
+the tiers it verifies. `--dry-run` prints the exact payload.
+
+The first sketch, kept for the server-side scoring it describes (raw rule counts
+so scoring can improve without a CLI release):
+
 ```json
 {
   "method": "1.0",
@@ -831,19 +860,28 @@ repository owner has published.
 
 | Method and path | Auth | Purpose |
 | --- | --- | --- |
-| `POST /auth/device` | none | Start CLI device flow |
-| `POST /metrics` | user token | Upload CLI metrics |
+| `POST /auth/device` | none | Start a CLI device login (RFC 8628) |
+| `POST /auth/device/token` | device code | Poll for the upload token |
+| `POST /auth/device/approve` | Firebase | Approve or deny a code as the signed-in user |
+| `POST /metrics` | upload token | Upload a payload from `urfluency upload` |
+| `PUT /me` | Firebase | Set handle, name, and whether the profile is public |
 | `GET /users/{handle}` | none | Published profile: categories, languages, tiers, trends |
 | `GET /users/{handle}/languages/{language}` | none | Published per-language metrics |
-| `GET /me` | user token | Full private metrics with strengths, weaknesses, focus points |
-| `DELETE /me` | user token | Delete account and all data |
+| `GET /me` | Firebase | Account and latest upload |
+| `DELETE /me` | Firebase | Delete account and all data |
 | `GET /repos/{owner}/{repo}` | none | Published repository metrics |
 | `POST /scans` | user token | Submit a public Git URL for a safety scan |
 | `GET /scans/{id}` | scan owner, or public if shared | Scan status and report |
 | `GET /rules/{id}` | none | Rule catalog entry |
 
-- Tokens: GitHub OAuth for the web app; device flow for the CLI; personal API tokens
-  with read-only scopes for portfolio use.
+- Sign-in: Firebase Authentication with Google and email (decided 2026-10-27),
+  verified by API Gateway. The CLI uses a device flow: `urfluency login` shows a
+  code, the user approves it at urfluency.com/connect, and the CLI receives an
+  upload-only token that expires after 90 days; only its hash is stored, and the
+  CLI keeps it in `credentials.json` beside the settings, readable only by the user.
+  Personal API tokens with read-only scopes for portfolio use come later.
+- Built in `urfluency-app/api` with an OpenAPI 2.0 spec for API Gateway; the
+  remaining endpoints in this table are planned.
 - Public endpoints allow CORS and are cached; all endpoints are rate limited.
 - Responses include `method`, `tier`, `period`, and `sample` so consumers can show
   provenance.
@@ -885,12 +923,12 @@ repository owner has published.
    accounts.
 2. **Distribution:** license, history audit, public repository, release workflow,
    Homebrew tap, `urfluency doctor`, and shared packages moved out of `internal/`.
-3. **Service and web app** (in `urfluency-cloud`): GitHub login, upload, dashboard
+3. **Service and web app** (in `urfluency-app`): Google and email sign-in, upload, dashboard
    with strengths, weaknesses, and focus points; public profiles and user badges;
    API tokens.
 4. **Safety scanner:** the engine and `urfluency check` in the public repository;
    hosted scanning of public URLs in isolated workers and safety badges in
-   `urfluency-cloud`.
+   `urfluency-app`.
 5. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
    Code, outcome-based grading, and AI-written share (local CLI done); Copilot CLI,
    Cursor, and Gemini CLI next. Commit-trailer detection done.

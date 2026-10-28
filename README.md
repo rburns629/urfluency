@@ -99,6 +99,21 @@ actually happened in sessions. Maintainers check candidate rules with
 `urfluency validate`, which compares outcomes for tasks with and without each prompt
 signal and prints counts only (see DESIGN.md).
 
+## Sharing your results (optional)
+
+Scans never send anything. To publish a profile and badges on urfluency.com:
+
+```
+urfluency login                      # approve the code at urfluency.com/connect
+urfluency upload --since all ~/Projects
+```
+
+`upload` scans like `scan`, says what it will send, and asks first;
+`--dry-run` prints the exact payload instead. It sends the report's summary and
+ratings only: never code, prompt text, repository names, paths, commit hashes,
+or email addresses, and it refuses a payload that looks like it contains them.
+Uploads start private. `urfluency logout` deletes the token on this machine.
+
 ## What is read
 
 Only files in the supported languages (Go, Python, JavaScript, TypeScript, Rust, C, C++, C#, Java, Kotlin, Swift, Dart) are

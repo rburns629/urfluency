@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -103,5 +104,17 @@ func TestCombinedScoresAllWorkAsOne(t *testing.T) {
 	}
 	if got := langs[0].evidence(); !strings.HasPrefix(got, "30,000 lines with Git, 10,000 without") {
 		t.Errorf("evidence = %q", got)
+	}
+}
+
+func TestSummaryListsAreNeverNull(t *testing.T) {
+	r := Report{Repos: 1, Languages: []Language{}}
+	Summarize(&r)
+	data, err := json.Marshal(r.Summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "null") {
+		t.Errorf("summary JSON has null lists: %s", data)
 	}
 }

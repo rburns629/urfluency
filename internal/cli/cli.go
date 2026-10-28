@@ -49,6 +49,11 @@ Usage:
                                   below it, with or without Git (default ".")
   urfluency validate [path]       For maintainers: show whether prompt signals
                                   predict what happened next in agent sessions
+  urfluency login                 Link this CLI to your urfluency.com account
+                                  (optional; only needed to upload)
+  urfluency upload [flags] [path] Scan like scan, show what would be sent, and
+                                  upload the ratings after you confirm
+  urfluency logout                Delete the upload token on this machine
   urfluency doctor                Check dependencies and optional features; installs nothing
   urfluency version               Print the version
 
@@ -76,6 +81,12 @@ Scan flags:
                    C++, C#, Java, Kotlin, Swift, Dart)
   --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
                    for several (for example --exclude 'Archive*')
+
+Upload flags: the scan flags except --json and --locations, and
+  --dry-run        Print the exact payload instead of sending it
+  --yes            Send without asking (required when not in a terminal)
+Uploads contain ratings, counts, and the summary only: never code, prompt text,
+repository names, paths, commit hashes, or email addresses.
 `
 
 // errUsage marks errors caused by invalid arguments.
@@ -93,6 +104,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = initSettings(ctx, args[1:], stdout, stderr)
 	case "scan":
 		err = scan(ctx, args[1:], stdout, stderr)
+	case "login":
+		err = login(ctx, args[1:], stdout)
+	case "upload":
+		err = uploadCmd(ctx, args[1:], stdout, stderr)
+	case "logout":
+		err = logout(args[1:], stdout)
 	case "validate":
 		err = validate(ctx, args[1:], stdout)
 	case "doctor":
@@ -120,74 +137,107 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
+// scanFlags are the flags scan and upload share.
+type scanFlags struct {
+	authors, excludes, include stringList
+	since                      *string
+	sessions                   *bool
+}
+
+func addScanFlags(fs *flag.FlagSet) *scanFlags {
+	f := &scanFlags{}
+	fs.Var(&f.authors, "author", "")
+	f.since = fs.String("since", "365d", "")
+	f.sessions = fs.Bool("sessions", false, "")
+	fs.Var(&f.excludes, "exclude", "")
+	fs.Var(&f.include, "include-ext", "")
+	return f
+}
+
+// onePath returns the command's optional path argument, "." by default.
+func onePath(fs *flag.FlagSet, command string) (string, error) {
+	switch fs.NArg() {
+	case 0:
+		return ".", nil
+	case 1:
+		return fs.Arg(0), nil
+	}
+	return "", fmt.Errorf("%w: %s takes at most one path", errUsage, command)
+}
+
 func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	var authors stringList
-	fs.Var(&authors, "author", "")
-	sinceFlag := fs.String("since", "365d", "")
+	sf := addScanFlags(fs)
 	asJSON := fs.Bool("json", false, "")
 	locations := fs.Bool("locations", false, "")
-	withSessions := fs.Bool("sessions", false, "")
-	var excludes stringList
-	fs.Var(&excludes, "exclude", "")
-	var include stringList
-	fs.Var(&include, "include-ext", "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
-	if fs.NArg() > 1 {
-		return fmt.Errorf("%w: scan takes at most one path", errUsage)
+	path, err := onePath(fs, "scan")
+	if err != nil {
+		return err
 	}
-	path := "."
-	if fs.NArg() == 1 {
-		path = fs.Arg(0)
+	r, err := buildReport(ctx, sf, path, *locations, stderr)
+	if err != nil {
+		return err
 	}
+	if *asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	return report.WriteText(stdout, r)
+}
+
+// buildReport scans the projects at path and builds the full report.
+func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations bool, stderr io.Writer) (report.Report, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("resolve path: %w", err)
+		return report.Report{}, fmt.Errorf("resolve path: %w", err)
 	}
-	since, err := parseSince(*sinceFlag, time.Now())
+	since, err := parseSince(*sf.since, time.Now())
 	if err != nil {
-		return fmt.Errorf("%w: %v", errUsage, err)
+		return report.Report{}, fmt.Errorf("%w: %v", errUsage, err)
 	}
 	prog := newProgress(stderr)
-	for _, pattern := range excludes {
+	for _, pattern := range sf.excludes {
 		if _, err := filepath.Match(pattern, ""); err != nil {
-			return fmt.Errorf("%w: --exclude %q: %v", errUsage, pattern, err)
+			return report.Report{}, fmt.Errorf("%w: --exclude %q: %v", errUsage, pattern, err)
 		}
 	}
 	prog.phase("Finding projects under " + tildePath(abs))
 	if top := (gitdata.Repo{Dir: abs}).TopLevel(ctx); top != "" && !isRepo(abs) {
 		abs = top // a folder inside a repository is scanned as that repository
 	}
-	repos, folders, err := findProjects(abs, excludes)
+	repos, folders, err := findProjects(abs, sf.excludes)
 	if err != nil {
-		return err
+		return report.Report{}, err
 	}
 	if len(repos) == 0 && len(folders) == 0 {
-		return fmt.Errorf("no projects found at %s", abs)
+		return report.Report{}, fmt.Errorf("no projects found at %s", abs)
 	}
 	saved, err := loadSettings()
 	if err != nil {
-		return fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
+		return report.Report{}, fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
 	}
-	exts := sortedSet(append(saved.Extensions, extensions(include)...))
+	exts := sortedSet(append(saved.Extensions, extensions(sf.include)...))
+	var authors []string
 	if len(repos) > 0 {
 		prog.phase("Finding your commits")
-		id := withoutDeclined(detectIdentity(ctx, repos, append(saved.Emails, authors...)), saved.NotMine)
+		id := withoutDeclined(detectIdentity(ctx, repos, append(saved.Emails, sf.authors...)), saved.NotMine)
 		if len(id.Emails) == 0 {
-			return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
+			return report.Report{}, fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
 		}
 		prog.note(describeIdentity(id, len(repos)))
 		authors = id.Emails
 	}
 	var graded []sessions.Session
 	agentLines := map[string]map[string]map[string]bool{}
-	if *withSessions {
+	if *sf.sessions {
 		prog.phase("Reading agent sessions")
 		if graded, agentLines, err = loadSessions(abs, repos, since); err != nil {
-			return err
+			return report.Report{}, err
 		}
 	}
 	// In a folder scan, a repository that fails (for example one with no commits)
@@ -210,7 +260,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		prog.repo(i+1, total, shown)
 		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update, Extensions: exts,
-			SkipDir: func(d string) bool { return isRepo(d) || excluded(abs, d, excludes) }}
+			SkipDir: func(d string) bool { return isRepo(d) || excluded(abs, d, sf.excludes) }}
 		var part analysis.Result
 		if git {
 			part, err = analysis.Scan(ctx, gitdata.Repo{Dir: dir}, opts)
@@ -224,7 +274,7 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			if total == 1 || ctx.Err() != nil {
 				prog.clear()
-				return err
+				return report.Report{}, err
 			}
 			prog.note(fmt.Sprintf("urfluency: skipping %s: %v", label, err))
 			continue
@@ -237,36 +287,31 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	prog.finish(len(parts) + len(folderParts))
 	if len(parts)+len(folderParts) == 0 {
-		return fmt.Errorf("no project under %s could be scanned", abs)
+		return report.Report{}, fmt.Errorf("no project under %s could be scanned", abs)
 	}
 	var res analysis.Result
 	if len(parts) > 0 {
 		res = analysis.Merge(labels, parts)
 	}
-	r := report.Build(res, since, *locations)
+	r := report.Build(res, since, withLocations)
 	var folderRes analysis.Result
 	if len(folderParts) > 0 {
 		folderRes = analysis.Merge(folderLabels, folderParts)
-		r.Unversioned = report.BuildUnversioned(folderRes, *locations)
+		r.Unversioned = report.BuildUnversioned(folderRes, withLocations)
 	}
 	r.Combined = report.BuildCombined(res, folderRes)
-	if *withSessions {
+	if *sf.sessions {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
 	}
 	// AI and practice measures describe the user's Git history; with no lines of
 	// theirs in it, they would only be zeros.
 	if res.OwnedLines > 0 {
-		r.AI = report.BuildAI(res, *withSessions)
+		r.AI = report.BuildAI(res, *sf.sessions)
 		r.AIEngineering = report.BuildAIEngineering(r)
 		r.Practices = report.BuildPractices(res)
 	}
 	report.Summarize(&r)
-	if *asJSON {
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(r)
-	}
-	return report.WriteText(stdout, r)
+	return r, nil
 }
 
 // findProjects returns root if it is a Git repository; otherwise the repositories

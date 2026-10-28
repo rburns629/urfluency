@@ -172,13 +172,13 @@ func Summarize(r *Report) {
 		s.Strengths = append(s.Strengths, fmt.Sprintf("Agent work holds up: %d (%s); %s", prompting.Score, prompting.Level, prompting.Evidence))
 	}
 
-	s.Design = designTrends(design, max(c.Repos+c.Projects, 1))
+	s.Design = append(s.Design, designTrends(design, max(c.Repos+c.Projects, 1))...)
 	if p := r.Prompting; p != nil && p.Communication != nil {
 		s.Communication = append(s.Communication, p.Communication.Traits...)
 	}
-	s.Growth = growthAreas(r, c, langs, practices)
+	s.Growth = append(s.Growth, growthAreas(r, c, langs, practices)...)
 	s.Headline = headline(s.Overall, langs, design, max(c.Repos+c.Projects, 1))
-	s.Caveats = caveats(r, langs)
+	s.Caveats = append(s.Caveats, caveats(r, langs)...)
 	r.Summary = s
 }
 
