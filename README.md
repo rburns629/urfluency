@@ -99,6 +99,25 @@ actually happened in sessions. Maintainers check candidate rules with
 `urfluency validate`, which compares outcomes for tasks with and without each prompt
 signal and prints counts only (see DESIGN.md).
 
+## Check a repository before you run it
+
+```
+urfluency check https://github.com/owner/repo
+urfluency check ./some-folder
+```
+
+`check` looks for signs of malicious or privacy-invasive behavior: install-time
+scripts, downloaded code that is run, data sent to fixed addresses, reads of SSH
+keys, cloud credentials, or browser profiles, obfuscated payloads, persistence
+such as cron jobs or reverse shells, risky dependencies, and committed secrets.
+It reads files only and runs nothing. A URL is cloned into a temporary folder
+with Git hooks, submodules, symlinks, and LFS off and without your Git
+configuration or credentials, then deleted. The report gives a verdict
+(No indicators found, Review recommended, or High-risk indicators) and a score
+out of 100; it can find indicators but never proves a repository is safe.
+Findings in tests, CI, and container builds count less, since they do not run on
+install. `--json` prints the report as data.
+
 ## Sharing your results (optional)
 
 Scans never send anything. To publish a profile and badges on urfluency.com:

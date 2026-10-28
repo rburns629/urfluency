@@ -49,6 +49,9 @@ Usage:
                                   below it, with or without Git (default ".")
   urfluency validate [path]       For maintainers: show whether prompt signals
                                   predict what happened next in agent sessions
+  urfluency check URL|PATH        Check a repository for signs of malicious behavior
+                                  before running it; clones a URL with hooks,
+                                  submodules, and LFS off, and runs nothing
   urfluency login                 Link this CLI to your urfluency.com account
                                   (optional; only needed to upload)
   urfluency upload [flags] [path] Scan like scan, show what would be sent, and
@@ -104,6 +107,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = initSettings(ctx, args[1:], stdout, stderr)
 	case "scan":
 		err = scan(ctx, args[1:], stdout, stderr)
+	case "check":
+		err = check(ctx, args[1:], stdout, stderr)
 	case "login":
 		err = login(ctx, args[1:], stdout)
 	case "upload":

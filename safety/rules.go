@@ -1,0 +1,422 @@
+package safety
+
+import (
+	"encoding/json"
+	"path"
+	"regexp"
+	"strings"
+
+	"github.com/rburns629/urfluency/analysis"
+)
+
+// lineRule matches single lines of the files it applies to.
+type lineRule struct {
+	id, category, title, why string
+	severity                 Severity
+	confidence               Confidence
+	re                       *regexp.Regexp
+	applies                  func(p string) bool // nil: every text file
+}
+
+func ext(p string) string { return strings.ToLower(path.Ext(p)) }
+
+func isDoc(p string) bool {
+	switch ext(p) {
+	case ".md", ".rst", ".txt", ".adoc", ".html":
+		return true
+	}
+	return false
+}
+
+func isCode(p string) bool { return !isDoc(p) }
+
+// isScript is where a pipe to a shell runs as written.
+func isScript(p string) bool {
+	base := path.Base(p)
+	switch {
+	case base == "Makefile" || base == "Dockerfile" || strings.HasPrefix(base, "Dockerfile.") || base == "package.json":
+		return true
+	case strings.HasPrefix(p, ".github/workflows/"):
+		return true
+	}
+	switch ext(p) {
+	case ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd", ".mk":
+		return true
+	}
+	return false
+}
+
+var lineRules = []lineRule{
+	// Remote code execution.
+	{"safety.pipe-to-shell", "remote-code", "Downloads a script and runs it",
+		"Piping a download straight into a shell runs whatever the server returns, with no chance to read it first.",
+		Medium, Possible, regexp.MustCompile(`(?i)\b(curl|wget)\b[^|\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b`), isScript},
+	{"safety.pipe-to-shell-docs", "remote-code", "Install instructions pipe a download into a shell",
+		"Common in install docs, but the script should be pinned to a version and checked before running.",
+		Low, Weak, regexp.MustCompile(`(?i)\b(curl|wget)\b[^|\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b`), isDoc},
+	{"safety.powershell-download-exec", "remote-code", "PowerShell downloads and runs code",
+		"Invoke-Expression on downloaded content runs remote code directly.",
+		High, Likely, regexp.MustCompile(`(?i)\b(iex|invoke-expression)\b\s*\(?\s*\(?\s*(iwr|irm|invoke-webrequest|invoke-restmethod|new-object\s+net\.webclient)`), isCode},
+	{"safety.exec-decoded", "obfuscation", "Runs decoded or decompressed code",
+		"Executing code that is decoded at run time hides what it does from readers and reviewers.",
+		High, Likely, regexp.MustCompile(`\b(exec|eval)\s*\(\s*(compile\s*\(\s*)?(base64\.b64decode|zlib\.decompress|marshal\.loads|codecs\.decode|bytes\.fromhex|atob|Buffer\.from)\b`), isCode},
+	{"safety.exec-fetched", "remote-code", "Runs code fetched from the network",
+		"Evaluating a network response runs whatever the server sends.",
+		High, Likely, regexp.MustCompile(`\b(exec|eval)\s*\(\s*(requests\.get|urllib\.request\.urlopen|urlopen|await\s+fetch|fetch)\s*\(`), isCode},
+
+	// Data collection.
+	{"safety.chat-webhook", "data-collection", "Sends data to a Discord or Telegram endpoint",
+		"Chat webhooks are a common channel for quietly sending stolen data.",
+		High, Possible, regexp.MustCompile(`(?i)(discord(app)?\.com/api/webhooks/|api\.telegram\.org/bot)`), isCode},
+	{"safety.env-dump", "data-collection", "Serializes every environment variable",
+		"Environment variables often hold tokens and keys; collecting all of them is rarely needed.",
+		Medium, Possible, regexp.MustCompile(`JSON\.stringify\(\s*process\.env\s*\)|dict\(\s*os\.environ\s*\)|os\.environ\.copy\(\)|json\.dumps\(\s*(dict\()?os\.environ`), isCode},
+
+	// Credential access.
+	{"safety.ssh-keys", "credentials", "Reads SSH private keys",
+		"Code that opens ~/.ssh keys can impersonate the user on every server they can reach.",
+		Medium, Possible, regexp.MustCompile(`\.ssh/(id_(rsa|ed25519|ecdsa|dsa)|identity)\b`), isCode},
+	{"safety.cloud-credentials", "credentials", "Reads cloud or container credentials",
+		"Cloud, Kubernetes, and Docker credential files grant access to infrastructure.",
+		Medium, Possible, regexp.MustCompile(`\.aws/credentials|\.config/gcloud|application_default_credentials\.json|\.kube/config|\.docker/config\.json`), isCode},
+	{"safety.tool-credentials", "credentials", "Reads package or HTTP credential files",
+		"Package managers and HTTP clients read .netrc, .npmrc, and .pypirc legitimately; elsewhere it is worth a look.",
+		Low, Weak, regexp.MustCompile(`\.npmrc|\.pypirc|\.netrc`), isCode},
+	{"safety.browser-data", "credentials", "Reads browser profiles",
+		"Browser Login Data, Cookies, and Local State files hold saved passwords and sessions.",
+		High, Possible, regexp.MustCompile(`(?i)(google[/\\]chrome|chromium|bravesoftware|microsoft[/\\]edge|mozilla[/\\]firefox)[^"'\n]{0,80}(login data|cookies|local state|logins\.json|key4\.db)`), isCode},
+	{"safety.keychain", "credentials", "Reads the macOS keychain",
+		"Querying the keychain from code can extract saved passwords.",
+		Medium, Possible, regexp.MustCompile(`\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain)`), isCode},
+	{"safety.crypto-wallets", "credentials", "Looks for cryptocurrency wallets",
+		"Wallet files and wallet browser extensions are a frequent target of stealers.",
+		High, Possible, regexp.MustCompile(`(?i)(exodus[/\\]exodus\.wallet|electrum[/\\]wallets|nkbihfbeogaeaoehlefnkodbefgpgknn|metamask[/\\]|wallet\.dat\b)`), isCode},
+
+	// Persistence and abuse.
+	{"safety.reverse-shell", "persistence", "Opens a reverse shell",
+		"Connecting a shell to a remote host gives that host control of the machine.",
+		High, Likely, regexp.MustCompile(`/dev/tcp/[\w.-]+/\d+|\bnc(at)?\s+(-\w+\s+)*-[ec]\s+/?(bin/)?(ba)?sh|pty\.spawn\(\s*["']/bin/(ba)?sh`), isCode},
+	{"safety.crypto-miner", "persistence", "References a cryptocurrency miner",
+		"Mining pools and miners use the machine's resources for someone else.",
+		High, Possible, regexp.MustCompile(`(?i)stratum\+(tcp|ssl)://|\bxmrig\b|\bcoinhive\b|\bcryptonight\b`), isCode},
+	{"safety.cron", "persistence", "Installs a scheduled task",
+		"Writing to crontab or cron directories keeps code running after the program exits.",
+		Medium, Possible, regexp.MustCompile(`\bcrontab\s+-|/etc/cron\.|/var/spool/cron`), isCode},
+	{"safety.launch-agent", "persistence", "Installs a macOS launch agent",
+		"Launch agents and daemons start code at every login or boot.",
+		Medium, Possible, regexp.MustCompile(`Library/Launch(Agents|Daemons)`), isCode},
+	{"safety.windows-run-key", "persistence", "Adds a Windows startup entry",
+		"Run keys start code at every login.",
+		Medium, Possible, regexp.MustCompile(`(?i)currentversion\\+run(once)?\b`), isCode},
+	{"safety.shell-profile", "persistence", "Appends to a shell startup file",
+		"Changing .bashrc or .zshrc runs code in every new terminal.",
+		Medium, Possible, regexp.MustCompile(`>>\s*["']?(~|\$HOME|\$\{HOME\})/\.(bashrc|zshrc|bash_profile|profile)`), isScript},
+	{"safety.shell-profile-text", "persistence", "Mentions appending to a shell startup file",
+		"Usually setup instructions printed for the user, such as shell completions; worth confirming nothing writes it automatically.",
+		Low, Weak, regexp.MustCompile(`>>\s*["']?(~|\$HOME|\$\{HOME\})/\.(bashrc|zshrc|bash_profile|profile)`), func(p string) bool { return isCode(p) && !isScript(p) }},
+
+	// Supply chain.
+	{"safety.docker-add-url", "supply-chain", "Dockerfile adds a file from a URL",
+		"ADD with a URL fetches whatever is there at build time, unpinned and unverified.",
+		Low, Possible, regexp.MustCompile(`(?i)^\s*ADD\s+https?://`), func(p string) bool {
+			b := path.Base(p)
+			return b == "Dockerfile" || strings.HasPrefix(b, "Dockerfile.")
+		}},
+}
+
+// printedText recognizes lines that print a message: echo, printf, Make's
+// $(warning …), $(info …), and $(error …), and Write-Host.
+var printedText = regexp.MustCompile(`(?i)^\s*(@?echo\b|printf\b|\$\((warning|info|error)\s|write-host\b)`)
+
+// isCommentLine recognizes whole-line comments in common languages.
+func isCommentLine(line string) bool {
+	t := strings.TrimSpace(line)
+	for _, p := range []string{"#", "//", "/*", "*", "--", ";", "rem ", "REM "} {
+		if strings.HasPrefix(t, p) && !strings.HasPrefix(t, "#!") {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	// Go caps repeat counts at 1000, so 2,000+ characters is two runs.
+	longBase64 = regexp.MustCompile(`["'` + "`" + `][A-Za-z0-9+/]{1000}[A-Za-z0-9+/]{1000,}={0,2}["'` + "`" + `]`)
+	hexEscapes = regexp.MustCompile(`(\\x[0-9a-fA-F]{2}){80,}`)
+)
+
+// checkFile applies the line rules and the file-level rules to one file.
+func checkFile(f analysis.File) []Finding {
+	if isBinary(f.Content) {
+		if isExecutable(f.Content) {
+			return []Finding{{Rule: "safety.executable", Category: "obfuscation", Title: "Committed executable",
+				Severity: Medium, Confidence: Possible, Path: f.Path,
+				Why: "A compiled program in the repository cannot be read or checked against its source."}}
+		}
+		return nil
+	}
+	var out []Finding
+	lines := strings.Split(string(f.Content), "\n")
+	for i, line := range lines {
+		if len(line) > 20000 {
+			line = line[:20000]
+		}
+		comment := isCode(f.Path) && isCommentLine(line)
+		for _, r := range lineRules {
+			if r.applies != nil && !r.applies(f.Path) {
+				continue
+			}
+			if comment || !r.re.MatchString(line) {
+				continue
+			}
+			fd := Finding{Rule: r.id, Category: r.category, Title: r.title, Severity: r.severity, Confidence: r.confidence,
+				Path: f.Path, Line: i + 1, Evidence: excerpt(line), Why: r.why}
+			// Text printed for a person to read runs nothing by itself.
+			if fd.Severity != Low && printedText.MatchString(line) {
+				fd.Severity, fd.Confidence = Low, Weak
+				fd.Why = "Printed as a message rather than run here; " + strings.ToLower(fd.Why[:1]) + fd.Why[1:]
+			}
+			out = append(out, fd)
+		}
+		if isCode(f.Path) && !generated(f.Path) {
+			if loc := longBase64.FindStringIndex(line); loc != nil {
+				out = append(out, Finding{Rule: "safety.encoded-blob", Category: "obfuscation", Title: "Large encoded blob in source",
+					Severity: Medium, Confidence: Possible, Path: f.Path, Line: i + 1, Evidence: excerpt(line[:min(len(line), loc[0]+60)]),
+					Why: "Kilobytes of base64 in source code often hide a payload that is decoded at run time."})
+			}
+			if hexEscapes.MatchString(line) {
+				out = append(out, Finding{Rule: "safety.hex-escapes", Category: "obfuscation", Title: "Long run of hex-escaped bytes",
+					Severity: Medium, Confidence: Possible, Path: f.Path, Line: i + 1, Evidence: excerpt(line),
+					Why: "Long hex-escaped strings are a common way to hide code from readers."})
+			}
+		}
+	}
+	return append(out, checkCoOccurrence(f, lines)...)
+}
+
+// generated reports files where long lines and blobs are expected.
+func generated(p string) bool {
+	low := strings.ToLower(p)
+	for _, s := range []string{".min.js", ".map", ".lock", "-lock.json", ".svg", "/dist/", "/build/", "/vendor/", "/testdata/", "/fixtures/"} {
+		if strings.Contains(low, s) || strings.HasPrefix(low, strings.TrimPrefix(s, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	collects  = regexp.MustCompile(`os\.hostname\(|os\.userInfo\(|os\.networkInterfaces\(|getpass\.getuser\(|socket\.gethostname\(|platform\.node\(|os\.getlogin\(|whoami`)
+	sends     = regexp.MustCompile(`\b(fetch|axios\.(post|put)|requests\.(post|put)|http\.request|https\.request|urllib\.request\.urlopen|XMLHttpRequest)\b`)
+	hardURL   = regexp.MustCompile(`https?://[a-zA-Z0-9.-]+\.[a-z]{2,}`)
+	fetches   = regexp.MustCompile(`\b(fetch|requests\.get|urlopen|http\.get|https\.get|axios\.get)\s*\(`)
+	evaluates = regexp.MustCompile(`\beval\s*\(|new\s+Function\s*\(|\bexec\s*\(`)
+)
+
+// checkCoOccurrence flags combinations that are only suspicious together: a
+// file that collects machine identity and sends to a hard-coded address, or
+// one that both fetches and evaluates code.
+func checkCoOccurrence(f analysis.File, lines []string) []Finding {
+	if !isCode(f.Path) || generated(f.Path) {
+		return nil
+	}
+	text := string(f.Content)
+	firstLine := func(re *regexp.Regexp) (int, string) {
+		for i, l := range lines {
+			if re.MatchString(l) {
+				return i + 1, l
+			}
+		}
+		return 0, ""
+	}
+	var out []Finding
+	if collects.MatchString(text) && sends.MatchString(text) && hardURL.MatchString(text) {
+		n, l := firstLine(sends)
+		out = append(out, Finding{Rule: "safety.identity-beacon", Category: "data-collection", Title: "Collects machine details and sends them to a fixed address",
+			Severity: Medium, Confidence: Possible, Path: f.Path, Line: n, Evidence: excerpt(l),
+			Why: "Reading the hostname or username and posting to a hard-coded server is how undisclosed telemetry and stealers report back."})
+	}
+	if fetches.MatchString(text) && evaluates.MatchString(text) {
+		n, l := firstLine(evaluates)
+		out = append(out, Finding{Rule: "safety.fetch-and-eval", Category: "remote-code", Title: "Fetches from the network and evaluates code in the same file",
+			Severity: Medium, Confidence: Weak, Path: f.Path, Line: n, Evidence: excerpt(l),
+			Why: "Worth reading: evaluating text from a network response runs remote code."})
+	}
+	return out
+}
+
+// checkRepository applies rules that read manifests rather than lines.
+func checkRepository(files []analysis.File) []Finding {
+	var out []Finding
+	for _, f := range files {
+		switch path.Base(f.Path) {
+		case "package.json":
+			out = append(out, checkPackageJSON(f)...)
+		case "setup.py":
+			out = append(out, checkSetupPy(f)...)
+		case "requirements.txt":
+			out = append(out, checkRequirements(f)...)
+		}
+	}
+	return out
+}
+
+var risky = regexp.MustCompile(`(?i)\b(curl|wget|node\s+-e|python\s+-c|https?://|eval|base64)\b`)
+
+func checkPackageJSON(f analysis.File) []Finding {
+	var pkg struct {
+		Scripts         map[string]string `json:"scripts"`
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if json.Unmarshal(f.Content, &pkg) != nil {
+		return nil
+	}
+	var out []Finding
+	for _, hook := range []string{"preinstall", "install", "postinstall"} {
+		script, ok := pkg.Scripts[hook]
+		if !ok {
+			continue
+		}
+		sev, conf := Medium, Possible
+		if risky.MatchString(script) {
+			sev, conf = High, Likely
+		}
+		out = append(out, Finding{Rule: "safety.npm-install-script", Category: "install", Title: "Runs a script when the package is installed",
+			Severity: sev, Confidence: conf, Path: f.Path, Line: lineOf(f.Content, `"`+hook+`"`), Evidence: excerpt(hook + ": " + script),
+			Why: "npm runs " + hook + " scripts automatically during install, before anyone has used the package."})
+	}
+	for name, spec := range merge(pkg.Dependencies, pkg.DevDependencies) {
+		if strings.HasPrefix(spec, "http://") || strings.HasPrefix(spec, "https://") || strings.HasPrefix(spec, "git+") || strings.HasPrefix(spec, "git://") {
+			out = append(out, Finding{Rule: "safety.url-dependency", Category: "supply-chain", Title: "Dependency installed from a URL",
+				Severity: Low, Confidence: Possible, Path: f.Path, Line: lineOf(f.Content, `"`+name+`"`), Evidence: excerpt(name + ": " + spec),
+				Why: "URL dependencies skip the registry's checks and can change without a version bump."})
+		}
+		if near := typosquat(name, popularNPM); near != "" {
+			out = append(out, typosquatFinding(f, name, near))
+		}
+	}
+	return out
+}
+
+var (
+	setupCmdclass = regexp.MustCompile(`cmdclass\s*=`)
+	setupActions  = regexp.MustCompile(`\b(urllib|requests|subprocess|os\.system|socket|base64)\b`)
+)
+
+func checkSetupPy(f analysis.File) []Finding {
+	text := string(f.Content)
+	var out []Finding
+	if setupCmdclass.MatchString(text) {
+		sev, conf := Medium, Possible
+		if setupActions.MatchString(text) {
+			sev, conf = High, Possible
+		}
+		out = append(out, Finding{Rule: "safety.setup-py-hook", Category: "install", Title: "setup.py overrides install commands",
+			Severity: sev, Confidence: conf, Path: f.Path, Line: lineOf(f.Content, "cmdclass"),
+			Why: "Custom install commands in setup.py run arbitrary code when the package is installed."})
+	} else if setupActions.MatchString(text) {
+		n := lineOf(f.Content, setupActions.FindString(text))
+		out = append(out, Finding{Rule: "safety.setup-py-actions", Category: "install", Title: "setup.py runs commands or network calls",
+			Severity: Medium, Confidence: Possible, Path: f.Path, Line: n,
+			Why: "setup.py runs during install; network calls or subprocesses there execute on every installing machine."})
+	}
+	return out
+}
+
+var reqName = regexp.MustCompile(`^\s*([A-Za-z0-9][A-Za-z0-9._-]*)`)
+
+func checkRequirements(f analysis.File) []Finding {
+	var out []Finding
+	for _, line := range strings.Split(string(f.Content), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if m := reqName.FindStringSubmatch(line); m != nil {
+			if near := typosquat(strings.ToLower(m[1]), popularPyPI); near != "" {
+				out = append(out, typosquatFinding(f, m[1], near))
+			}
+		}
+	}
+	return out
+}
+
+func typosquatFinding(f analysis.File, name, near string) Finding {
+	return Finding{Rule: "safety.typosquat", Category: "supply-chain", Title: "Dependency name is one letter from a popular package",
+		Severity: Low, Confidence: Weak, Path: f.Path, Line: lineOf(f.Content, name), Evidence: name + " (did you mean " + near + "?)",
+		Why: "Typosquatted packages copy a popular name with one letter changed; confirm this is the package you meant."}
+}
+
+func merge(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+func lineOf(content []byte, needle string) int {
+	for i, l := range strings.Split(string(content), "\n") {
+		if strings.Contains(l, needle) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// popular packages often typosquatted; a dependency one edit away from one of
+// these, and not itself on the list, is flagged.
+var (
+	popularNPM = []string{"react", "express", "lodash", "axios", "chalk", "commander", "request", "moment", "debug", "webpack", "typescript",
+		"eslint", "dotenv", "colors", "electron", "jquery", "underscore", "mongoose", "socket.io", "nodemailer", "bcrypt", "crypto-js",
+		"cross-env", "babel-cli", "node-fetch", "discord.js", "puppeteer", "prettier", "nodemon", "vue", "next"}
+	popularPyPI = []string{"requests", "numpy", "pandas", "urllib3", "setuptools", "django", "flask", "boto3", "pyyaml", "cryptography",
+		"beautifulsoup4", "selenium", "matplotlib", "colorama", "pillow", "scipy", "tensorflow", "pytorch", "openai", "httpx", "aiohttp", "discord.py"}
+)
+
+func typosquat(name string, popular []string) string {
+	if len(name) < 5 {
+		return ""
+	}
+	for _, p := range popular {
+		if name == p {
+			return ""
+		}
+	}
+	for _, p := range popular {
+		if len(p) >= 5 && editDistance(name, p) == 1 {
+			return p
+		}
+	}
+	return ""
+}
+
+// editDistance is the optimal string alignment distance: insertions,
+// deletions, substitutions, and swaps of adjacent letters each cost one, since
+// swapped letters ("lodahs") are a favourite of typosquats.
+func editDistance(a, b string) int {
+	d := make([][]int, len(a)+1)
+	for i := range d {
+		d[i] = make([]int, len(b)+1)
+		d[i][0] = i
+	}
+	for j := range d[0] {
+		d[0][j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
+		}
+	}
+	return d[len(a)][len(b)]
+}
