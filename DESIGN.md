@@ -232,8 +232,11 @@ parts show counts only, so a part never reads as a rating.
   scores weighted by lines.
 - **Frameworks, tools, and design areas** get an *experience* rating:
   `60 × min(1, log2(1 + repos) / log2(1 + R)) + 40 × min(1, log2(1 + files) / log2(1 + F))`,
-  with R = 10 and F = 200 for frameworks and tools, and R = 25 and F = 500 for
-  design areas, which pool many libraries. The logarithm makes the first projects
+  with R = 10 and F = 200 for frameworks and tools. Design areas pool many
+  libraries and differ in how their code spreads: broad areas (cloud, APIs,
+  data, front ends, mobile) use R = 25 and F = 500; narrow ones whose code sits
+  in a few modules per service (messaging, auth, observability, command-line
+  tools, AI) use R = 15 and F = 100; the rest use R = 15 and F = 200. The logarithm makes the first projects
   count most, and repositories weigh more than files because one large project
   can reflect a team's choices. Confidence: high from five repositories, medium
   from two. Package managers are listed but not rated: a manifest shows a
@@ -252,7 +255,11 @@ prefixes to an area and a library name, such as `google.cloud`, `@google-cloud/`
 or `cloud.google.com/go` to cloud/gcp, or `requests`, `axios`, and `okhttp3` to
 integrations/http-client. A bare name matches the import or its subpackages, never
 a domain, so `github` (PyGithub) does not match `github.com/...`. Relative imports
-are the user's own code and are ignored. Infrastructure also counts the user's
+are the user's own code and are ignored. Some work shows without a client
+import, so a few content patterns also count: Pub/Sub-triggered functions
+(`functions.pubsub.topic`, `onMessagePublished`; scheduled functions are cron, not
+messaging), push-subscription handlers that read `message.data`, and CloudEvent
+handlers (`@functions_framework.cloud_event`, `functions.CloudEvent`). Infrastructure also counts the user's
 infrastructure tool files. Only area and library names and counts are kept.
 Areas that appear together in at least three repositories and a tenth of those
 scanned name the kind of work: cloud integration (cloud and integrations),

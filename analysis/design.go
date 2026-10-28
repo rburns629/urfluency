@@ -55,14 +55,14 @@ var designLibraries = []struct {
 	{"cloud", "cloudflare", []string{"@cloudflare/", "cloudflare"}},
 	{"cloud", "vercel", []string{"@vercel/"}},
 
-	{"messaging", "pubsub", []string{"cloud.google.com/go/pubsub", "google.cloud.pubsub", "google.cloud.pubsub_v1", "@google-cloud/pubsub", "com.google.cloud.pubsub", "google.cloud.pubsub.v1"}},
+	{"messaging", "pubsub", []string{"cloud.google.com/go/pubsub", "google.cloud.pubsub", "google.cloud.pubsub_v1", "@google-cloud/pubsub", "com.google.cloud.pubsub", "google.cloud.pubsub.v1", "firebase-functions/v2/pubsub", "firebase-functions/v1/pubsub"}},
 	{"messaging", "kafka", []string{"kafka", "kafkajs", "confluent_kafka", "github.com/segmentio/kafka-go", "github.com/confluentinc/", "github.com/ibm/sarama", "github.com/shopify/sarama", "org.apache.kafka", "rdkafka", "confluent.kafka"}},
 	{"messaging", "rabbitmq", []string{"pika", "aio_pika", "amqplib", "amqp", "github.com/rabbitmq/", "github.com/streadway/amqp", "com.rabbitmq", "rabbitmq.client", "lapin"}},
 	{"messaging", "nats", []string{"github.com/nats-io/", "nats"}},
 	{"messaging", "sqs-sns", []string{"@aws-sdk/client-sqs", "@aws-sdk/client-sns", "github.com/aws/aws-sdk-go-v2/service/sqs", "github.com/aws/aws-sdk-go-v2/service/sns", "aws_sdk_sqs", "aws_sdk_sns"}},
 	{"messaging", "celery", []string{"celery"}},
 	{"messaging", "bullmq", []string{"bullmq", "bull"}},
-	{"messaging", "eventarc", []string{"cloudevents", "@google/events", "github.com/cloudevents/"}},
+	{"messaging", "cloud-events", []string{"cloudevents", "@google/events", "github.com/cloudevents/"}},
 
 	{"api", "flask", []string{"flask"}},
 	{"api", "fastapi", []string{"fastapi", "starlette"}},
@@ -182,6 +182,33 @@ var designLibraries = []struct {
 	{"cli", "swift-argument-parser", []string{"argumentparser"}},
 }
 
+// designPatterns find design areas that code shows without importing a
+// client library: functions triggered by Pub/Sub, CloudEvent handlers, and
+// push-subscription endpoints, which receive messages as plain HTTP requests.
+var designPatterns = []struct {
+	area, library string
+	re            *regexp.Regexp
+}{
+	{"messaging", "pubsub", regexp.MustCompile(`\bfunctions\.pubsub\.topic\(|\bonMessagePublished\(`)},
+	// A push subscription posts {"message": {"data": ...}, "subscription": ...}.
+	{"messaging", "pubsub", regexp.MustCompile(`\[\s*["']message["']\s*\]\s*\[\s*["']data["']\s*\]|\b(?:req|request)\.body\.message\.data\b|json:"subscription"`)},
+	{"messaging", "cloud-events", regexp.MustCompile(`@functions_framework\.cloud_event\b|\bfunctions\.(?:cloudEvent|CloudEvent)\(`)},
+}
+
+// designInContent returns the design areas and libraries designPatterns find.
+func designInContent(content []byte) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	for _, p := range designPatterns {
+		if p.re.Match(content) {
+			if out[p.area] == nil {
+				out[p.area] = map[string]bool{}
+			}
+			out[p.area][p.library] = true
+		}
+	}
+	return out
+}
+
 // importPatterns extract the imported module of each import statement. Go is
 // read with its parser instead.
 var importPatterns = map[string]*regexp.Regexp{
@@ -287,7 +314,16 @@ func designUsage(files []ownedFile) map[string]DesignUse {
 		if f.analyzer == nil || len(f.owned) == 0 {
 			continue
 		}
-		for area, libs := range DesignOf(Imports(f.analyzer.Language(), f.file)) {
+		found := DesignOf(Imports(f.analyzer.Language(), f.file))
+		for area, libs := range designInContent(f.file.Content) {
+			if found[area] == nil {
+				found[area] = map[string]bool{}
+			}
+			for lib := range libs {
+				found[area][lib] = true
+			}
+		}
+		for area, libs := range found {
 			u := out[area]
 			if u.Libraries == nil {
 				u.Libraries = map[string]int{}

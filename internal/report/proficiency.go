@@ -140,9 +140,23 @@ func level(score int) string {
 // measures how much, not how well; language scores measure how well.
 func experience(repos, files int) int { return experienceAt(repos, files, 10, 200) }
 
-// areaExperience rates a design area. An area pools many libraries, so it
-// needs 25 repositories and 500 files to rate 100.
-func areaExperience(repos, files int) int { return experienceAt(repos, files, 25, 500) }
+// areaScales set the repositories and files that rate a design area 100.
+// Broad areas spread across many files of a project; narrow ones sit in a
+// few modules per service, such as one publisher or one auth middleware, so
+// they need fewer files. Unlisted areas are medium.
+var areaScales = map[string][2]int{
+	"cloud": {25, 500}, "api": {25, 500}, "data": {25, 500}, "frontend": {25, 500}, "mobile": {25, 500},
+	"messaging": {15, 100}, "auth": {15, 100}, "observability": {15, 100}, "cli": {15, 100}, "ai": {15, 100},
+}
+
+// areaExperience rates a design area on its scale.
+func areaExperience(area string, repos, files int) int {
+	scale, ok := areaScales[area]
+	if !ok {
+		scale = [2]int{15, 200}
+	}
+	return experienceAt(repos, files, scale[0], scale[1])
+}
 
 // experienceAt grows with the logarithm of use, so the first projects count
 // most; repositories weigh more than files, since one large project can

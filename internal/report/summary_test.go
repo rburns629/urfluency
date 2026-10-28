@@ -61,6 +61,13 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+func TestAreaExperience(t *testing.T) {
+	// The same use rates higher in a narrow area than a broad one.
+	if narrow, broad := areaExperience("messaging", 17, 35), areaExperience("frontend", 17, 35); narrow != 91 || broad != 76 {
+		t.Errorf("17 repos, 35 files: messaging %d, frontend %d; want 91 and 76", narrow, broad)
+	}
+}
+
 func TestExperience(t *testing.T) {
 	for _, tc := range []struct{ repos, files, want int }{{0, 0, 0}, {1, 5, 31}, {10, 200, 100}, {40, 1000, 100}} {
 		if got := experience(tc.repos, tc.files); got != tc.want {

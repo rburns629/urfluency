@@ -67,7 +67,7 @@ func BuildDesign(res analysis.Result, tools []Tool) []DesignArea {
 			}
 			return d.Libraries[i].Name < d.Libraries[j].Name
 		})
-		d.Score = areaExperience(d.Repos, d.Files)
+		d.Score = areaExperience(d.ID, d.Repos, d.Files)
 		d.Level = level(d.Score)
 		out = append(out, d)
 	}

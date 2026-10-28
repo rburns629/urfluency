@@ -55,3 +55,25 @@ func TestDesignOf(t *testing.T) {
 		}
 	}
 }
+
+func TestDesignInContent(t *testing.T) {
+	tests := []struct {
+		src, library string
+		want         bool
+	}{
+		{"exports.onPub = functions.pubsub.topic('orders').onPublish(handle)", "pubsub", true},
+		{"export const onOrder = onMessagePublished('orders', handle)", "pubsub", true},
+		{"data = base64.b64decode(envelope['message']['data'])", "pubsub", true},
+		{"const payload = Buffer.from(req.body.message.data, 'base64')", "pubsub", true},
+		{"type push struct {\n\tSubscription string `json:\"subscription\"`\n}", "pubsub", true},
+		{"exports.nightly = functions.pubsub.schedule('every 24 hours')", "pubsub", false}, // a cron job, not messaging
+		{"@functions_framework.cloud_event\ndef handle(event):", "cloud-events", true},
+		{"functions.CloudEvent(\"Handle\", handle)", "cloud-events", true},
+		{"message = {'data': 1}", "pubsub", false},
+	}
+	for _, tc := range tests {
+		if got := designInContent([]byte(tc.src))["messaging"][tc.library]; got != tc.want {
+			t.Errorf("designInContent(%q)[messaging][%s] = %v, want %v", tc.src, tc.library, got, tc.want)
+		}
+	}
+}
