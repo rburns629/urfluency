@@ -17,8 +17,11 @@ import (
 
 // attest scores the repository a GitHub Actions job checked out, every
 // author's code, and sends the ratings to urFluency with the job's OIDC token:
-// a private repository's badges, in the CI-attested tier. The code never
-// leaves the runner; only the summary and combined result do, as in an upload.
+// the repository's badges, in the CI-attested tier. The code never leaves the
+// runner; only the summary and combined result do, as in an upload. A link
+// code in URFLUENCY_LINK_CODE connects a repository not yet connected, without
+// the GitHub App; it is read from the environment so it stays off the command
+// line.
 func attest(ctx context.Context, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("attest", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -63,7 +66,11 @@ func attest(ctx context.Context, args []string, stdout io.Writer) error {
 		Repository string `json:"repository"`
 		Badges     string `json:"badges_url"`
 	}
-	status, code, err := postJSON(ctx, base+"/v1/repos/attest", token, p, &out)
+	headers := map[string]string{}
+	if link := os.Getenv("URFLUENCY_LINK_CODE"); link != "" {
+		headers["X-Urfluency-Link-Code"] = link
+	}
+	status, code, err := postJSONWith(ctx, base+"/v1/repos/attest", token, headers, p, &out)
 	if err != nil {
 		return fmt.Errorf("send the ratings: %w", err)
 	}

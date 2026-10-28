@@ -60,7 +60,9 @@ Usage:
   urfluency attest [--since WHEN] In GitHub Actions: rate the checked-out repository,
                                   every author's code, and send the ratings for its
                                   badges with the job's OIDC token (CI-attested).
-                                  The code stays on the runner. --dry-run prints them
+                                  The code stays on the runner. --dry-run prints them.
+                                  URFLUENCY_LINK_CODE connects the repository on its
+                                  first run without the GitHub App
   urfluency doctor                Check dependencies and optional features; installs nothing
   urfluency version               Print the version
 

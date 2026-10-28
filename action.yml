@@ -1,7 +1,9 @@
-# urFluency repository ratings for private repositories (CI-attested tier).
-# Rates the checked-out repository on the runner and sends only the ratings,
-# the same summary an upload sends, with the job's GitHub OIDC token. The code
-# never leaves the runner. Connect the repository on urfluency.com first.
+# urFluency repository ratings (CI-attested tier). Rates the checked-out
+# repository on the runner and sends only the ratings, the same summary an
+# upload sends, with the job's GitHub OIDC token. The code never leaves the
+# runner. Connect the repository on urfluency.com through the GitHub App, or
+# without it: get a link code there, save it as a repository secret, and pass
+# it as link-code; the first run connects the repository.
 #
 #   permissions:
 #     contents: read
@@ -11,6 +13,8 @@
 #       with:
 #         fetch-depth: 0
 #     - uses: rburns629/urfluency@<tag>
+#       with:
+#         link-code: ${{ secrets.URFLUENCY_LINK_CODE }}  # without the GitHub App
 name: urFluency repository ratings
 description: Rate this repository's code in CI and send only the ratings to urFluency for its README badges.
 author: urFluency contributors
@@ -24,6 +28,9 @@ inputs:
   version:
     description: CLI version to run. Defaults to this action's tag; set it when pinning the action by commit.
     default: ""
+  link-code:
+    description: A link code from urfluency.com, to connect the repository without the GitHub App. Pass it from a secret.
+    default: ""
 runs:
   using: composite
   steps:
@@ -33,6 +40,7 @@ runs:
         SINCE: ${{ inputs.since }}
         VERSION: ${{ inputs.version }}
         ACTION_REF: ${{ github.action_ref }}
+        URFLUENCY_LINK_CODE: ${{ inputs.link-code }}
       run: |
         set -euo pipefail
         version="${VERSION:-$ACTION_REF}"

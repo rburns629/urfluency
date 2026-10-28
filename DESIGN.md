@@ -911,6 +911,12 @@ Owners connect repositories through a urFluency GitHub App:
   (audience `https://api.urfluency.com`). Code never leaves the CI runner
   (CI-attested tier). The service accepts it only for a connected repository on
   its default branch.
+- **Without the GitHub App**, any repository can connect through the Action
+  alone: the owner gets a one-time link code on urfluency.com (7 days), saves
+  it as a repository secret, and passes it to the Action. The first run's OIDC
+  token proves the repository; the code proves the account. Later runs must
+  come from the branch it was linked from. No repository list sync or release
+  events; ratings arrive when the workflow runs (CI-attested tier).
 - Badges show only ratings the owner turned on, and only earned ones: Advanced
   (70) and above, and a safety badge only for "No indicators found".
 

@@ -128,6 +128,11 @@ type apiError struct {
 // postJSON sends body as JSON and decodes a JSON response into out when the
 // status is 2xx. Otherwise it returns the status and the API's error code.
 func postJSON(ctx context.Context, endpoint, token string, body, out any) (int, string, error) {
+	return postJSONWith(ctx, endpoint, token, nil, body, out)
+}
+
+// postJSONWith is postJSON with extra request headers.
+func postJSONWith(ctx context.Context, endpoint, token string, headers map[string]string, body, out any) (int, string, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return 0, "", err
@@ -140,6 +145,9 @@ func postJSON(ctx context.Context, endpoint, token string, body, out any) (int, 
 	req.Header.Set("User-Agent", "urfluency/"+Version)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
