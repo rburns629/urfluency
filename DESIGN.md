@@ -854,10 +854,19 @@ and installed dependency folders.
   `owner/repo`, verdict, score, and date for public repositories. Without an
   account, three scans per IP address per 24 hours, with Firebase App Check;
   anonymous results are not stored. The URL is never logged.
-- **Flow:** `POST /v1/scans` validates the URL against allowed hosts, records
-  the scan with a TTL, and starts the job; the browser polls
-  `GET /v1/scans/{id}`. Reports are deleted on delivery or expiry, except the
-  summary kept in a signed-in user's history.
+- **Flow:** `POST /v1/scans` validates the URL against allowed hosts, reads the
+  default branch's commit with Git's smart HTTP protocol (a missing or private
+  repository is answered at once, with no job and no quota charge), records the
+  scan with a TTL, and starts the job; the browser polls `GET /v1/scans/{id}`,
+  which returns the report once.
+- **Cost bounds:** three anonymous scans per client IP and at most 300 new
+  anonymous jobs per day across everyone; past that, anonymous visitors are
+  asked to sign in or use `urfluency check`, which runs locally at no cost to
+  the service and needs no account. A VPN changes the IP but not the global
+  budget. App Check is to follow before the scanner is promoted.
+- **Reuse:** a report for the same repository at the same commit is kept for 24
+  hours and reused, with no new job. The cache holds the repository, commit, and
+  report, never who asked.
 
 ### Isolation
 
