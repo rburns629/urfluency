@@ -111,13 +111,15 @@ func libraryNames(libs []LibraryUse, n int) string {
 	return strings.Join(names, ", ")
 }
 
+// writeDesign prints design areas as counts. These tables are parts of the
+// result, so their ratings are left to the summary, which rates all work.
 func writeDesign(b *strings.Builder, heading string, areas []DesignArea) {
 	if len(areas) == 0 {
 		return
 	}
 	fmt.Fprintf(b, "\n%s\n", heading)
 	for _, d := range areas {
-		fmt.Fprintf(b, "  %-34s %3d %-12s %s, %s · %s\n", d.Title, d.Score, d.Level,
+		fmt.Fprintf(b, "  %-34s %s, %s · %s\n", d.Title,
 			count(d.Repos, "repo"), count(d.Files, "file"), libraryNames(d.Libraries, 5))
 	}
 }

@@ -121,8 +121,10 @@ change, and Conventional Commits. Messages are measured, never stored.
 
 ## Summary
 
-Every report opens with a summary that answers one question: is this person
-proficient? It leads with strengths, then shows how you design systems, how you
+Every report ends with a summary that answers one question: is this person
+proficient? It rates all your work at once, with and without Git (`combined` in
+JSON), while the sections before it keep Git repositories and folders without
+Git apart so you can trace what was verified and what was declared. It leads with strengths, then shows how you design systems, how you
 brief agents, what holds the ratings down, and how far to trust the result.
 
 Every area gets a rating from 0 to 100 and a level: **Beginner** (below 40),

@@ -3,6 +3,10 @@ package report
 import (
 	"strings"
 	"testing"
+
+	"github.com/rburns629/urfluency/analysis"
+
+	_ "github.com/rburns629/urfluency/analyzers/python"
 )
 
 func TestSummarize(t *testing.T) {
@@ -51,7 +55,7 @@ func TestSummarize(t *testing.T) {
 		}
 	}
 	var b strings.Builder
-	writeSummary(&b, s)
+	writeSummary(&b, s, nil)
 	if text := b.String(); strings.Index(text, "Strengths") > strings.Index(text, "What holds the ratings down") {
 		t.Errorf("strengths must print before what holds the ratings down:\n%s", text)
 	}
@@ -65,21 +69,32 @@ func TestExperience(t *testing.T) {
 	}
 }
 
-func TestRatedLanguagesCombineGitAndFolders(t *testing.T) {
-	ts := func(lines, score int) Language {
-		return Language{Language: "typescript", OwnedLines: lines, Proficiency: &Proficiency{Score: score, Range: score,
-			Categories: map[string]CategoryScore{"type-safety": {Score: score}}}}
+func TestCombinedScoresAllWorkAsOne(t *testing.T) {
+	python := func(lines int, fw string) analysis.LanguageResult {
+		return analysis.LanguageResult{Language: "python", OwnedLines: lines, Frameworks: []string{fw},
+			FrameworkUse: map[string]analysis.Usage{fw: {Repos: 2, Files: 10}},
+			Findings:     []analysis.Finding{{Rule: "py.bare-except", Path: "a.py", Line: 1}}}
 	}
-	r := Report{Languages: []Language{ts(30000, 60)}, Unversioned: &Unversioned{Projects: 2, Languages: []Language{ts(10000, 100)}}}
-	langs := ratedLanguages(&r)
-	if len(langs) != 1 {
-		t.Fatalf("got %d entries, want one combined TypeScript", len(langs))
+	git := analysis.Result{Repos: 3, Languages: []analysis.LanguageResult{python(30000, "flask")}}
+	folders := analysis.Result{Repos: 2, Declared: true, Languages: []analysis.LanguageResult{python(10000, "flask")}}
+	c := BuildCombined(git, folders)
+	if c.Repos != 3 || c.Projects != 2 || c.VerifiedShare != 0.75 || len(c.Languages) != 1 {
+		t.Fatalf("combined = %+v, want 3 repos, 2 projects, 75%% verified, one language", c)
 	}
-	l := langs[0]
-	if p := l.lang.Proficiency; p.Score != 70 || p.Level != "Advanced" || p.Range != 60 || p.Categories["type-safety"].Score != 70 || l.verified || l.gitLines != 30000 {
-		t.Errorf("combined = %+v verified=%v gitLines=%d, want 70 Advanced, range of the larger part, declared", p, l.verified, l.gitLines)
+	l := c.Languages[0]
+	if l.OwnedLines != 40000 || l.Proficiency == nil || l.Weaknesses[0].Count != 2 || len(l.Weaknesses[0].Locations) != 0 {
+		t.Errorf("python = %+v, want 40,000 lines scored together, both findings counted, no locations", l)
 	}
-	if got := l.evidence(); got != "30,000 lines with Git, 10,000 without, idiom range 60%" {
+	if f := l.FrameworkRatings; len(f) != 1 || f[0].Repos != 4 || f[0].Files != 20 {
+		t.Errorf("framework ratings = %+v, want flask pooled over 4 repos and 20 files", f)
+	}
+
+	r := Report{Languages: []Language{buildLanguage(git.Languages[0], false)}, Combined: c, Unversioned: &Unversioned{Projects: 2}}
+	langs := ratedLanguages(&r, c)
+	if len(langs) != 1 || langs[0].verified || langs[0].gitLines != 30000 {
+		t.Errorf("rated = %+v, want one python, partly declared, 30,000 lines from Git", langs)
+	}
+	if got := langs[0].evidence(); !strings.HasPrefix(got, "30,000 lines with Git, 10,000 without") {
 		t.Errorf("evidence = %q", got)
 	}
 }

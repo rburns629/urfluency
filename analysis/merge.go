@@ -2,16 +2,19 @@ package analysis
 
 import "sort"
 
-// Merge combines the results of several repositories. Finding paths are prefixed
-// with each repository's label so local locations stay unambiguous.
+// Merge combines the results of several repositories, or of already merged
+// results. Finding paths are prefixed with each part's label so local
+// locations stay unambiguous. The result is declared only if every part is.
 func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{Repos: len(parts), MarkedByTool: map[string]int{}, Declared: len(parts) > 0 && parts[0].Declared, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}}
+	out := Result{MarkedByTool: map[string]int{}, Declared: len(parts) > 0, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
+		out.Repos += p.Repos
+		out.Declared = out.Declared && p.Declared
 		out.OwnedLines += p.OwnedLines
 		out.AILines += p.AILines
 		out.AIFindings += p.AIFindings

@@ -101,9 +101,12 @@ var categoryNames = map[string]string{
 // optional sections are filled in.
 func Summarize(r *Report) {
 	s := &Summary{Strengths: []string{}, Design: []string{}, Communication: []string{}, Growth: []string{}, Ratings: []Rating{}, Caveats: []string{}}
-	langs := ratedLanguages(r)
-	design := combinedDesign(r)
-	tools := combinedTools(r)
+	c := r.Combined
+	if c == nil {
+		c = &Combined{Repos: r.Repos, Languages: r.Languages, Tools: r.Tools, Design: r.Design}
+	}
+	langs := ratedLanguages(r, c)
+	design, tools := c.Design, c.Tools
 
 	// Ratings: languages, frameworks, design areas, tools, ways of working, prompting.
 	weighted, lines := 0.0, 0
@@ -114,10 +117,10 @@ func Summarize(r *Report) {
 		weighted += float64(p.Score * l.lang.OwnedLines)
 		lines += l.lang.OwnedLines
 	}
-	s.Ratings = append(s.Ratings, frameworkRatings(r)...)
+	s.Ratings = append(s.Ratings, frameworkRatings(r, c)...)
 	for _, d := range design {
 		s.Ratings = append(s.Ratings, Rating{Area: "design", Name: d.ID, Score: d.Score, Level: d.Level, Basis: "experience",
-			Confidence: experienceConfidence(d.Repos), Verified: r.Unversioned == nil,
+			Confidence: experienceConfidence(d.Repos), Verified: c.Projects == 0,
 			Evidence: fmt.Sprintf("%s, %s: %s", count(d.Repos, "repo"), count(d.Files, "file"), libraryNames(d.Libraries, 4))})
 	}
 	for _, t := range tools {
@@ -145,7 +148,7 @@ func Summarize(r *Report) {
 	if lines > 0 {
 		score := int(math.Round(weighted / float64(lines)))
 		s.Overall = &Rating{Area: "overall", Name: "code", Score: score, Level: level(score), Basis: "code",
-			Confidence: linesConfidence(lines), Verified: r.Unversioned == nil,
+			Confidence: linesConfidence(lines), Verified: c.Projects == 0,
 			Evidence: fmt.Sprintf("%s across %s, weighted by lines", thousands(lines), count(len(langs), "rated language"))}
 	}
 
@@ -169,19 +172,18 @@ func Summarize(r *Report) {
 		s.Strengths = append(s.Strengths, fmt.Sprintf("Agent work holds up: %d (%s); %s", prompting.Score, prompting.Level, prompting.Evidence))
 	}
 
-	s.Design = designTrends(design, max(r.Repos+projects(r), 1))
+	s.Design = designTrends(design, max(c.Repos+c.Projects, 1))
 	if p := r.Prompting; p != nil && p.Communication != nil {
 		s.Communication = append(s.Communication, p.Communication.Traits...)
 	}
-	s.Growth = growthAreas(r, langs, practices)
-	s.Headline = headline(s.Overall, langs, design, max(r.Repos+projects(r), 1))
+	s.Growth = growthAreas(r, c, langs, practices)
+	s.Headline = headline(s.Overall, langs, design, max(c.Repos+c.Projects, 1))
 	s.Caveats = caveats(r, langs)
 	r.Summary = s
 }
 
-// ratedLanguage is one language's rating across work with and without Git.
-// lang holds the combined figures; verified is false when any of its lines are
-// declared rather than found in Git history.
+// ratedLanguage is one language of the combined result. verified is false when
+// any of its lines are declared rather than found in Git history.
 type ratedLanguage struct {
 	lang     Language
 	verified bool
@@ -198,48 +200,18 @@ func (l ratedLanguage) evidence() string {
 	return fmt.Sprintf("%s, idiom range %d%%", text, l.lang.Proficiency.Range)
 }
 
-func unversionedLanguages(r *Report) []Language {
-	if r.Unversioned == nil {
-		return nil
-	}
-	return r.Unversioned.Languages
-}
-
-func projects(r *Report) int {
-	if r.Unversioned == nil {
-		return 0
-	}
-	return r.Unversioned.Projects
-}
-
-func withUnversioned(ls []Language, verified bool) []ratedLanguage {
-	var out []ratedLanguage
-	for _, l := range ls {
-		out = append(out, ratedLanguage{lang: l, verified: verified})
-	}
-	return out
-}
-
-// ratedLanguages lists the languages with a proficiency score, highest first.
-// A language rated both with and without Git is combined, weighted by lines.
-func ratedLanguages(r *Report) []ratedLanguage {
-	index := map[string]int{}
-	var parts [][]ratedLanguage
-	for _, l := range append(withUnversioned(r.Languages, true), withUnversioned(unversionedLanguages(r), false)...) {
-		if l.lang.Proficiency == nil {
-			continue
-		}
-		i, ok := index[l.lang.Language]
-		if !ok {
-			i = len(parts)
-			index[l.lang.Language] = i
-			parts = append(parts, nil)
-		}
-		parts[i] = append(parts[i], l)
+// ratedLanguages lists the combined languages with a proficiency score,
+// highest first, with the lines of each traced to Git.
+func ratedLanguages(r *Report, c *Combined) []ratedLanguage {
+	gitLines := map[string]int{}
+	for _, l := range r.Languages {
+		gitLines[l.Language] = l.OwnedLines
 	}
 	var out []ratedLanguage
-	for _, group := range parts {
-		out = append(out, combineLanguage(group))
+	for _, l := range c.Languages {
+		if l.Proficiency != nil {
+			out = append(out, ratedLanguage{lang: l, gitLines: gitLines[l.Language], verified: gitLines[l.Language] == l.OwnedLines})
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].lang.Proficiency.Score != out[j].lang.Proficiency.Score {
@@ -250,83 +222,34 @@ func ratedLanguages(r *Report) []ratedLanguage {
 	return out
 }
 
-// combineLanguage weights scores by lines, takes the idiom range of the larger
-// part, and pools idioms and weaknesses.
-func combineLanguage(group []ratedLanguage) ratedLanguage {
-	if len(group) == 1 {
-		l := group[0]
-		if l.verified {
-			l.gitLines = l.lang.OwnedLines
+// frameworkRatings rate each framework once, pooling the languages that use
+// it, such as React in JavaScript and TypeScript.
+func frameworkRatings(r *Report, c *Combined) []Rating {
+	declared := map[string]bool{}
+	if r.Unversioned != nil {
+		for _, l := range r.Unversioned.Languages {
+			for _, f := range l.Frameworks {
+				declared[f] = true
+			}
 		}
-		return l
 	}
-	largest := group[0]
-	c := ratedLanguage{verified: true}
-	c.lang.Language = largest.lang.Language
-	score := 0.0
-	categories := map[string][2]float64{} // weighted score sum, lines
-	idioms := map[string]IdiomResult{}
-	for _, l := range group {
-		if l.lang.OwnedLines > largest.lang.OwnedLines {
-			largest = l
-		}
-		c.lang.OwnedLines += l.lang.OwnedLines
-		if l.verified {
-			c.gitLines += l.lang.OwnedLines
-		} else {
-			c.verified = false
-		}
-		score += float64(l.lang.Proficiency.Score * l.lang.OwnedLines)
-		for name, cs := range l.lang.Proficiency.Categories {
-			sum := categories[name]
-			categories[name] = [2]float64{sum[0] + float64(cs.Score*l.lang.OwnedLines), sum[1] + float64(l.lang.OwnedLines)}
-		}
-		for _, id := range l.lang.Idioms {
-			sum := idioms[id.ID]
-			id.Uses += sum.Uses
-			id.Files += sum.Files
-			idioms[id.ID] = id
-		}
-		c.lang.Weaknesses = append(c.lang.Weaknesses, l.lang.Weaknesses...)
-	}
-	p := &Proficiency{Score: int(math.Round(score / float64(c.lang.OwnedLines))), Range: largest.lang.Proficiency.Range,
-		Confidence: linesConfidence(c.lang.OwnedLines), Model: ProficiencyModel, Categories: map[string]CategoryScore{}}
-	p.Level = level(p.Score)
-	for name, sum := range categories {
-		cs := sum[0] / sum[1]
-		p.Categories[name] = CategoryScore{Score: int(math.Round(cs)), Band: band(cs)}
-	}
-	c.lang.Proficiency = p
-	for _, id := range idioms {
-		c.lang.Idioms = append(c.lang.Idioms, id)
-	}
-	sort.Slice(c.lang.Idioms, func(i, j int) bool { return c.lang.Idioms[i].Uses > c.lang.Idioms[j].Uses })
-	sort.SliceStable(c.lang.Weaknesses, func(i, j int) bool { return c.lang.Weaknesses[i].Count > c.lang.Weaknesses[j].Count })
-	return c
-}
-
-// frameworkRatings rate each framework once, pooling every language and
-// folder that uses it.
-func frameworkRatings(r *Report) []Rating {
 	type pooled struct {
 		repos, files int
 		languages    []string
-		verified     bool
 	}
 	byName := map[string]*pooled{}
 	var names []string
-	for _, l := range append(withUnversioned(r.Languages, true), withUnversioned(unversionedLanguages(r), false)...) {
-		for _, f := range l.lang.FrameworkRatings {
+	for _, l := range c.Languages {
+		for _, f := range l.FrameworkRatings {
 			p := byName[f.Name]
 			if p == nil {
-				p = &pooled{verified: true}
+				p = &pooled{}
 				byName[f.Name] = p
 				names = append(names, f.Name)
 			}
 			p.repos += f.Repos
 			p.files += f.Files
-			p.verified = p.verified && l.verified
-			p.languages = append(p.languages, displayLanguage(l.lang.Language))
+			p.languages = append(p.languages, displayLanguage(l.Language))
 		}
 	}
 	var out []Rating
@@ -334,75 +257,8 @@ func frameworkRatings(r *Report) []Rating {
 		p := byName[name]
 		score := experience(p.repos, p.files)
 		out = append(out, Rating{Area: "framework", Name: name, Score: score, Level: level(score), Basis: "experience",
-			Confidence: experienceConfidence(p.repos), Verified: p.verified,
+			Confidence: experienceConfidence(p.repos), Verified: !declared[name],
 			Evidence: fmt.Sprintf("%s, %s in %s", count(p.repos, "repo"), count(p.files, "file"), strings.Join(dedupe(p.languages), ", "))})
-	}
-	return out
-}
-
-// combinedDesign adds design areas from folders without Git to those with it.
-func combinedDesign(r *Report) []DesignArea {
-	if r.Unversioned == nil {
-		return r.Design
-	}
-	index := map[string]int{}
-	files := map[string]map[string]int{}
-	var out []DesignArea
-	for _, d := range append(append([]DesignArea{}, r.Design...), r.Unversioned.Design...) {
-		i, ok := index[d.ID]
-		if !ok {
-			i = len(out)
-			index[d.ID] = i
-			files[d.ID] = map[string]int{}
-			out = append(out, DesignArea{ID: d.ID, Title: d.Title})
-		}
-		out[i].Repos += d.Repos
-		out[i].Files += d.Files
-		for _, l := range d.Libraries {
-			files[d.ID][l.Name] += l.Files
-		}
-	}
-	for i := range out {
-		for name, n := range files[out[i].ID] {
-			out[i].Libraries = append(out[i].Libraries, LibraryUse{Name: name, Files: n})
-		}
-		libs := out[i].Libraries
-		sort.Slice(libs, func(a, b int) bool {
-			if libs[a].Files != libs[b].Files {
-				return libs[a].Files > libs[b].Files
-			}
-			return libs[a].Name < libs[b].Name
-		})
-		out[i].Score = areaExperience(out[i].Repos, out[i].Files)
-		out[i].Level = level(out[i].Score)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Repos != out[j].Repos {
-			return out[i].Repos > out[j].Repos
-		}
-		return out[i].Files > out[j].Files
-	})
-	return out
-}
-
-// combinedTools adds tools from folders without Git to those with it.
-func combinedTools(r *Report) []Tool {
-	all := append([]Tool{}, r.Tools...)
-	if r.Unversioned != nil {
-		all = append(all, r.Unversioned.Tools...)
-	}
-	byName := map[string]int{}
-	var out []Tool
-	for _, t := range all {
-		i, ok := byName[t.Name]
-		if !ok {
-			byName[t.Name] = len(out)
-			out = append(out, t)
-			continue
-		}
-		out[i].Repos += t.Repos
-		out[i].Files += t.Files
-		out[i].Commits += t.Commits
 	}
 	return out
 }
@@ -630,7 +486,7 @@ func promptingRating(p *Prompting) *Rating {
 // growthAreas name what holds the ratings down, most limiting first: weak
 // categories shared across languages, then habits, then prompting, then
 // exposed secrets.
-func growthAreas(r *Report, langs []ratedLanguage, practices []Rating) []string {
+func growthAreas(r *Report, c *Combined, langs []ratedLanguage, practices []Rating) []string {
 	var out []string
 	type weak struct {
 		category string
@@ -689,9 +545,9 @@ func growthAreas(r *Report, langs []ratedLanguage, practices []Rating) []string 
 		}
 	}
 	secrets := 0
-	for _, l := range append(withUnversioned(r.Languages, true), withUnversioned(unversionedLanguages(r), false)...) {
-		if l.lang.Scanner {
-			for _, w := range l.lang.Weaknesses {
+	for _, l := range c.Languages {
+		if l.Scanner {
+			for _, w := range l.Weaknesses {
 				if w.Category == string(rules.Security) {
 					secrets += w.Count
 				}
@@ -729,11 +585,16 @@ func caveats(r *Report, langs []ratedLanguage) []string {
 	return out
 }
 
-func writeSummary(b *strings.Builder, s *Summary) {
+func writeSummary(b *strings.Builder, s *Summary, c *Combined) {
 	if s == nil {
 		return
 	}
-	fmt.Fprintf(b, "\nSUMMARY\n  %s\n", s.Headline)
+	scope := "all your work"
+	if c != nil && c.Projects > 0 {
+		scope = fmt.Sprintf("all your work: %s and %s without Git, %.0f%% of lines traced to your commits",
+			count(c.Repos, "Git repo"), count(c.Projects, "project"), c.VerifiedShare*100)
+	}
+	fmt.Fprintf(b, "\nSUMMARY (%s)\n  %s\n", scope, s.Headline)
 	section := func(title, mark string, items []string) {
 		if len(items) == 0 {
 			return

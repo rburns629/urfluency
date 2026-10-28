@@ -213,15 +213,23 @@ version.
 
 ### Summary and experience ratings
 
-The report opens with a summary (`summary` in JSON) built only from the rest of
-the report, so it adds no data. It orders evidence the way a reviewer would read
-it: strengths first, then design trends and communication, then what holds the
-ratings down, a ratings table, and caveats.
+The final result is `combined`: all work with and without Git, merged at the
+analysis level and scored as one, so a language is rated on every line of it
+rather than averaged from its parts. It records how much is traced to the user's
+commits (`verified_share`). The Git sections (`languages`, `tools`, `design`) and
+`unversioned` are its traceable parts: they keep locations and show what was
+verified and what was declared. An upload is built from `combined`.
 
-- **Languages** keep their proficiency score. A language rated both in Git
-  repositories and in folders without Git is combined into one rating, weighted
-  by lines, with the evidence showing both parts. The overall rating is the mean
-  of language scores weighted by lines.
+The summary (`summary` in JSON) is built from `combined` and the rest of the
+report, so it adds no data. It orders evidence the way a reviewer would read it:
+strengths first, then design trends and communication, then what holds the
+ratings down, a ratings table, and caveats. The text report prints the headline
+first and the full summary last, where a terminal leaves it; design tables in the
+parts show counts only, so a part never reads as a rating.
+
+- **Languages** keep their proficiency score from `combined`, with the evidence
+  showing lines with and without Git. The overall rating is the mean of language
+  scores weighted by lines.
 - **Frameworks, tools, and design areas** get an *experience* rating:
   `60 × min(1, log2(1 + repos) / log2(1 + R)) + 40 × min(1, log2(1 + files) / log2(1 + F))`,
   with R = 10 and F = 200 for frameworks and tools, and R = 25 and F = 500 for
@@ -725,7 +733,8 @@ the rubric version, and whether that rubric and model pair passed validation. Th
 service keeps model-assessed results separate from measured ones, labels them with
 their provenance, and excludes unvalidated pairs from scores, profiles, and badges.
 
-Counts and volume are combined across every repository scanned in the period. The
+Counts and volume come from the report's `combined` result: every repository
+and folder scanned in the period, with the share traced to Git. The
 payload has no repository names, paths, commit hashes, locations, or secret values,
 and the CLI prints it for confirmation before sending. The server computes bands and
 scores from rule counts and volume, so scoring can improve without a new CLI release,

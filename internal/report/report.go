@@ -31,9 +31,12 @@ type Report struct {
 	Commit  string `json:"commit"`
 	Repos   int    `json:"repositories"`
 	// SkippedSlow counts files skipped because attributing them took too long.
-	SkippedSlow   int            `json:"files_skipped_too_slow,omitempty"`
-	Since         string         `json:"since"`
-	Summary       *Summary       `json:"summary,omitempty"`
+	SkippedSlow int      `json:"files_skipped_too_slow,omitempty"`
+	Since       string   `json:"since"`
+	Summary     *Summary `json:"summary,omitempty"`
+	// Combined is the final result: all work with and without Git, scored as
+	// one. Languages, Tools, Design, and Unversioned are its traceable parts.
+	Combined      *Combined      `json:"combined,omitempty"`
 	Languages     []Language     `json:"languages"`
 	Prompting     *Prompting     `json:"prompting,omitempty"`
 	AI            *AIShare       `json:"ai_written,omitempty"`
@@ -162,6 +165,55 @@ type Unversioned struct {
 	Languages []Language   `json:"languages"`
 	Tools     []Tool       `json:"tools"`
 	Design    []DesignArea `json:"design"`
+}
+
+// Combined is all the user's work, with and without Git, scored as one, so a
+// language is rated on every line of it rather than averaged from its parts.
+type Combined struct {
+	Repos    int `json:"repositories"`
+	Projects int `json:"projects_without_git"`
+	// VerifiedShare is the share of owned code lines traced to the user's
+	// commits; the rest are in folders without Git, yours by declaration.
+	VerifiedShare float64      `json:"verified_share"`
+	Languages     []Language   `json:"languages"`
+	Tools         []Tool       `json:"tools"`
+	Design        []DesignArea `json:"design"`
+}
+
+// BuildCombined merges the Git and folder results and scores them as one.
+// Locations are left out: the parts carry them.
+func BuildCombined(git, folders analysis.Result) *Combined {
+	var parts []analysis.Result
+	var labels []string
+	if git.Repos > 0 {
+		parts, labels = append(parts, git), append(labels, "git")
+	}
+	if folders.Repos > 0 {
+		parts, labels = append(parts, folders), append(labels, "folders")
+	}
+	c := &Combined{Repos: git.Repos, Projects: folders.Repos, Languages: []Language{}, Tools: []Tool{}, Design: []DesignArea{}}
+	if len(parts) == 0 {
+		return c
+	}
+	all := analysis.Merge(labels, parts)
+	c.Tools = BuildTools(all)
+	c.Design = BuildDesign(all, c.Tools)
+	verified, total := 0, 0
+	for _, lr := range all.Languages {
+		c.Languages = append(c.Languages, buildLanguage(lr, false))
+		if !analysis.IsScanner(lr.Language) {
+			total += lr.OwnedLines
+		}
+	}
+	for _, lr := range git.Languages {
+		if !analysis.IsScanner(lr.Language) {
+			verified += lr.OwnedLines
+		}
+	}
+	if total > 0 {
+		c.VerifiedShare = round2(float64(verified) / float64(total))
+	}
+	return c
 }
 
 // BuildUnversioned reports a merged result from folders without Git.
@@ -387,14 +439,20 @@ func WriteText(w io.Writer, r Report) error {
 		}
 		fmt.Fprintf(&b, "\nNo lines of yours in supported languages were found in %s%s.\n", where, when)
 	}
-	writeSummary(&b, r.Summary)
+	if s := r.Summary; s != nil {
+		// The full summary closes the report, where a terminal leaves it.
+		fmt.Fprintf(&b, "\n%s\n(Summary of all your work at the end.)\n", s.Headline)
+	}
+	if r.Unversioned != nil && len(r.Languages) > 0 {
+		b.WriteString("\nGIT REPOSITORIES (every line traced to your commits)\n")
+	}
 	for _, l := range r.Languages {
 		writeLanguage(&b, l)
 	}
 	writeAIEngineering(&b, r)
 	writePractices(&b, r.Practices, r.Repos)
 	writeTools(&b, r.Tools, r.Git)
-	writeDesign(&b, "DESIGN (from the libraries your files import; experience, not quality)", r.Design)
+	writeDesign(&b, "DESIGN (from the libraries your files import)", r.Design)
 	if u := r.Unversioned; u != nil {
 		fmt.Fprintf(&b, "\nPROJECTS WITHOUT GIT: %d (authorship declared, not verified)\n", u.Projects)
 		b.WriteString("Every line in these folders counts as yours; AI share, durability, and test habits need Git history.\n")
@@ -407,6 +465,7 @@ func WriteText(w io.Writer, r Report) error {
 		}
 		writeDesign(&b, "  DESIGN", u.Design)
 	}
+	writeSummary(&b, r.Summary, r.Combined)
 	_, err := io.WriteString(w, b.String())
 	return err
 }

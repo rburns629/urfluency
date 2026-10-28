@@ -244,9 +244,12 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		res = analysis.Merge(labels, parts)
 	}
 	r := report.Build(res, since, *locations)
+	var folderRes analysis.Result
 	if len(folderParts) > 0 {
-		r.Unversioned = report.BuildUnversioned(analysis.Merge(folderLabels, folderParts), *locations)
+		folderRes = analysis.Merge(folderLabels, folderParts)
+		r.Unversioned = report.BuildUnversioned(folderRes, *locations)
 	}
+	r.Combined = report.BuildCombined(res, folderRes)
 	if *withSessions {
 		r.Prompting = report.BuildPrompting(sessions.Grade(graded))
 	}
