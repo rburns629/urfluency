@@ -20,6 +20,11 @@ type CloneLimits struct {
 	// Since, if set, keeps the history back to that time, for scoring the
 	// repository's practices; otherwise only the latest commit is fetched.
 	Since time.Time
+	// Authorization, if set, is an HTTP Authorization header value for a
+	// private repository, such as a GitHub App installation token. Git gets it
+	// through its environment, never its arguments, which other processes can
+	// read, and it is not saved in the clone's configuration.
+	Authorization string
 }
 
 // DefaultCloneLimits suit public repositories people run tools from.
@@ -96,10 +101,10 @@ func Clone(ctx context.Context, repoURL, dir string, limits CloneLimits) error {
 	if !limits.Since.IsZero() {
 		depth = "--shallow-since=" + limits.Since.UTC().Format(time.RFC3339)
 	}
-	err := clone(ctx, repoURL, dir, depth, limits.Timeout)
+	err := clone(ctx, repoURL, dir, depth, limits)
 	if errors.Is(err, errNothingSince) {
 		// Nothing was committed since then: the latest commit still has the code.
-		err = clone(ctx, repoURL, dir, "--depth=1", limits.Timeout)
+		err = clone(ctx, repoURL, dir, "--depth=1", limits)
 	}
 	if err != nil {
 		return err
@@ -176,10 +181,14 @@ func gitEnv() []string {
 // errNothingSince is Git refusing --shallow-since when no commit is that recent.
 var errNothingSince = errors.New("no commits in the history window")
 
-func clone(ctx context.Context, repoURL, dir, depth string, timeout time.Duration) error {
+func clone(ctx context.Context, repoURL, dir, depth string, limits CloneLimits) error {
+	timeout := limits.Timeout
 	args := append(configArgs(), "clone", depth, "--no-checkout", "--single-branch", "--no-tags", "--no-recurse-submodules", "--quiet", "--", repoURL, dir)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = gitEnv()
+	if limits.Authorization != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0=Authorization: "+limits.Authorization)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("clone took longer than %s", timeout)

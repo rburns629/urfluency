@@ -3,6 +3,7 @@ package safety
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/cgi"
 	"net/http/httptest"
 	"os"
@@ -105,5 +106,59 @@ func TestCloneRefusesPlainHTTPInProduction(t *testing.T) {
 	defer func() { testGitConfig = saved }()
 	if err := Clone(context.Background(), url, filepath.Join(t.TempDir(), "clone"), DefaultCloneLimits); err == nil {
 		t.Fatal("cloned over plain HTTP with the production configuration")
+	}
+}
+
+func TestCloneWithAuthorization(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	backend := filepath.Join(strings.TrimSpace(gitOutput(t, "--exec-path")), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Skip("git-http-backend not available")
+	}
+	root := t.TempDir()
+	work := filepath.Join(root, "work")
+	os.MkdirAll(work, 0o755)
+	run := func(dir string, args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run(work, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(work, "a.txt"), []byte("private"), 0o644)
+	run(work, "add", "-A")
+	run(work, "commit", "-q", "-m", "a")
+	run(root, "clone", "-q", "--bare", work, filepath.Join(root, "repo.git"))
+	// A private repository: only requests with the token are served.
+	const header = "Basic eC1hY2Nlc3MtdG9rZW46c2VjcmV0"
+	git := &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != header {
+			w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		git.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	if err := Clone(context.Background(), srv.URL+"/repo.git", filepath.Join(t.TempDir(), "c"), DefaultCloneLimits); err == nil {
+		t.Fatal("cloned a private repository without the token")
+	}
+	dest := filepath.Join(t.TempDir(), "c")
+	limits := DefaultCloneLimits
+	limits.Authorization = header
+	if err := Clone(context.Background(), srv.URL+"/repo.git", dest, limits); err != nil {
+		t.Fatalf("clone with the token: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "a.txt")); string(b) != "private" {
+		t.Errorf("checkout = %q", b)
+	}
+	if cfg, _ := os.ReadFile(filepath.Join(dest, ".git", "config")); strings.Contains(string(cfg), "eC1hY2Nl") || strings.Contains(string(cfg), "extraHeader") {
+		t.Errorf("the token was saved in the clone's configuration:\n%s", cfg)
 	}
 }
