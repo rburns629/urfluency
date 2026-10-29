@@ -55,12 +55,16 @@ type Tree struct {
 }
 
 // Parsing reads untrusted files, so each parse is bounded: a file that takes
-// longer than parseBudget, or nests deeper than maxDepth, is refused. Real
-// code parses in milliseconds and nests a few dozen levels; a crafted file
-// could otherwise stall a scan or exhaust the stack of the recursive walks
-// that analyzers run over the tree. ParseBudget is a variable only so fuzz
-// tests can lower it; nothing else should change it.
-var ParseBudget = 5 * time.Second
+// longer than ParseBudget, or nests deeper than maxDepth, is refused. A crafted
+// file could otherwise stall a scan or exhaust the stack of the recursive
+// walks that analyzers run over the tree; a 109-byte Swift input found by
+// fuzzing keeps that grammar busy indefinitely. Measured on 15,096 real files
+// (2026-10-29, Apple M-series): median 0.3 ms, 99.9th percentile 260 ms, and
+// the slowest, a 1.4 MB minified bundle, 0.66 s. Two seconds leaves room for a
+// slower cloud CPU, and a file cut off is at worst a large minified bundle.
+// ParseBudget is a variable only so fuzz tests can lower it; nothing else
+// should change it.
+var ParseBudget = 2 * time.Second
 
 const maxDepth = 2000
 
