@@ -5,6 +5,7 @@ package parsing
 import (
 	"errors"
 	"strings"
+	"time"
 
 	dart "github.com/UserNobody14/tree-sitter-dart/bindings/go"
 	powershell "github.com/airbus-cert/tree-sitter-powershell/bindings/go"
@@ -53,6 +54,18 @@ type Tree struct {
 	Source []byte
 }
 
+// Parsing reads untrusted files, so each parse is bounded: a file that takes
+// longer than parseBudget, or nests deeper than maxDepth, is refused. Real
+// code parses in milliseconds and nests a few dozen levels; a crafted file
+// could otherwise stall a scan or exhaust the stack of the recursive walks
+// that analyzers run over the tree.
+var parseBudget = 5 * time.Second
+
+const maxDepth = 2000
+
+// ErrTooComplex marks a file refused for taking too long or nesting too deeply.
+var ErrTooComplex = errors.New("file is too complex to analyze")
+
 // Parse parses src with the given grammar. Files with syntax errors still parse;
 // error nodes are skipped by Walk.
 func Parse(g Grammar, src []byte) (*Tree, error) {
@@ -61,11 +74,43 @@ func Parse(g Grammar, src []byte) (*Tree, error) {
 	if err := p.SetLanguage(g.lang); err != nil {
 		return nil, err
 	}
-	t := p.Parse(src, nil)
+	deadline := time.Now().Add(parseBudget)
+	t := p.ParseWithOptions(func(i int, _ ts.Point) []byte {
+		if i < len(src) {
+			return src[i:]
+		}
+		return []byte{}
+	}, nil, &ts.ParseOptions{ProgressCallback: func(ts.ParseState) bool { return time.Now().After(deadline) }})
 	if t == nil {
-		return nil, errors.New("parse failed")
+		return nil, ErrTooComplex // cancelled at the deadline
+	}
+	if tooDeep(t) {
+		t.Close()
+		return nil, ErrTooComplex
 	}
 	return &Tree{tree: t, Source: src}, nil
+}
+
+// tooDeep reports whether any node is nested more than maxDepth levels, walking
+// with a cursor so the check itself does not recurse.
+func tooDeep(t *ts.Tree) bool {
+	c := t.Walk()
+	defer c.Close()
+	depth := 0
+	for {
+		if c.GotoFirstChild() {
+			if depth++; depth > maxDepth {
+				return true
+			}
+			continue
+		}
+		for !c.GotoNextSibling() {
+			if !c.GotoParent() {
+				return false
+			}
+			depth--
+		}
+	}
 }
 
 // Root returns the root node.
