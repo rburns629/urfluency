@@ -37,8 +37,9 @@ func frameworksOf(t *parsing.Tree, path string) map[string]bool {
 	add := func(module string) {
 		module = strings.Trim(module, "'\"`")
 		switch {
-		case module == "react" || module == "react-dom" || strings.HasPrefix(module, "react-dom/") ||
-			module == "next" || strings.HasPrefix(module, "next/") || module == "preact":
+		case module == "next" || strings.HasPrefix(module, "next/"):
+			found["react"], found["nextjs"] = true, true // Next.js is React, so React's rules apply
+		case module == "react" || module == "react-dom" || strings.HasPrefix(module, "react-dom/") || module == "preact":
 			found["react"] = true
 		case module == "react-native" || strings.HasPrefix(module, "react-native-") || strings.HasPrefix(module, "@react-native") ||
 			module == "expo" || strings.HasPrefix(module, "expo-"):
@@ -49,6 +50,8 @@ func frameworksOf(t *parsing.Tree, path string) map[string]bool {
 			found["fastify"] = true
 		case module == "express":
 			found["express"] = true
+		case module != "" && libraries[packageName(module)] != "":
+			found[libraries[packageName(module)]] = true
 		case module == "child_process" || module == "node:child_process":
 			found["child_process"] = true
 		}
@@ -72,6 +75,30 @@ func frameworksOf(t *parsing.Tree, path string) map[string]bool {
 		found["react"] = true
 	}
 	return found
+}
+
+// libraries maps npm packages to the frameworks and libraries they belong to.
+// They only show experience; no rules depend on them.
+var libraries = map[string]string{
+	"vue": "vue", "nuxt": "nuxt", "svelte": "svelte", "@sveltejs/kit": "sveltekit",
+	"@nestjs/core": "nestjs", "@nestjs/common": "nestjs", "koa": "koa", "@hapi/hapi": "hapi", "electron": "electron",
+	"@prisma/client": "prisma", "mongoose": "mongoose", "sequelize": "sequelize", "typeorm": "typeorm", "drizzle-orm": "drizzle",
+	"socket.io": "socket.io", "socket.io-client": "socket.io", "graphql": "graphql", "@apollo/client": "graphql", "@apollo/server": "graphql",
+	"redux": "redux", "@reduxjs/toolkit": "redux", "@tanstack/react-query": "tanstack-query", "rxjs": "rxjs", "three": "three.js",
+	"firebase": "firebase", "firebase-admin": "firebase", "firebase-functions": "firebase", "zod": "zod",
+}
+
+// packageName returns the npm package a module path names, such as
+// "@nestjs/core" for "@nestjs/core/testing", or "" for a relative or alias path.
+func packageName(module string) string {
+	if strings.HasPrefix(module, ".") || strings.HasPrefix(module, "/") || strings.HasPrefix(module, "@/") || strings.HasPrefix(module, "~") {
+		return ""
+	}
+	parts := strings.SplitN(module, "/", 3)
+	if strings.HasPrefix(module, "@") && len(parts) > 1 {
+		return parts[0] + "/" + parts[1]
+	}
+	return parts[0]
 }
 
 var (

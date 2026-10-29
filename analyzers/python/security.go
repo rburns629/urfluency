@@ -11,7 +11,12 @@ import (
 )
 
 // frameworkModules maps top-level import names to framework packs.
-var frameworkModules = map[string]string{"django": "django", "fastapi": "fastapi", "flask": "flask"}
+// Only django, fastapi, and flask have rules; the rest show experience.
+var frameworkModules = map[string]string{
+	"django": "django", "fastapi": "fastapi", "flask": "flask", "aiohttp": "aiohttp", "streamlit": "streamlit",
+	"celery": "celery", "sqlalchemy": "sqlalchemy", "pydantic": "pydantic", "pandas": "pandas", "numpy": "numpy",
+	"torch": "pytorch", "tensorflow": "tensorflow", "sklearn": "scikit-learn", "boto3": "boto3", "pytest": "pytest",
+}
 
 // Frameworks implements analysis.FrameworkDetector.
 func (Analyzer) Frameworks(f analysis.File) []string {

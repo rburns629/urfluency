@@ -12,7 +12,7 @@ import (
 // to. Without Git history, only Files and Repos are known.
 type Tool struct {
 	Name    string `json:"name"`
-	Kind    string `json:"kind"` // infrastructure, ci, build, packages, quality
+	Kind    string `json:"kind"` // infrastructure, ci, build, packages, quality, testing, hosting
 	Repos   int    `json:"repositories"`
 	Files   int    `json:"files"`
 	Commits int    `json:"commits,omitempty"`
@@ -83,7 +83,7 @@ func count(n int, noun string) string {
 }
 
 func writeToolList(b *strings.Builder, tools []Tool) {
-	for _, kind := range []string{"infrastructure", "ci", "build", "packages", "quality"} {
+	for _, kind := range []string{"infrastructure", "ci", "build", "packages", "quality", "testing", "hosting"} {
 		var parts []string
 		for _, t := range tools {
 			if t.Kind != kind {

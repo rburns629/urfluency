@@ -34,9 +34,16 @@ var tools = []struct {
 	{"helm", "infrastructure", func(p, base string) bool { return base == "Chart.yaml" }},
 	{"kustomize", "infrastructure", func(p, base string) bool { return base == "kustomization.yaml" || base == "kustomization.yml" }},
 	{"serverless", "infrastructure", func(p, base string) bool { return base == "serverless.yml" || base == "serverless.yaml" }},
+	{"pulumi", "infrastructure", func(p, base string) bool { return base == "Pulumi.yaml" || base == "Pulumi.yml" }},
+	{"ansible", "infrastructure", func(p, base string) bool { return base == "ansible.cfg" }},
+	{"nginx", "infrastructure", func(p, base string) bool { return base == "nginx.conf" || strings.HasSuffix(base, ".nginx.conf") }},
 	{"github-actions", "ci", func(p, base string) bool {
 		return strings.HasPrefix(p, ".github/workflows/") && hasExt(base, ".yml", ".yaml")
 	}},
+	{"dependabot", "ci", func(p, base string) bool { return p == ".github/dependabot.yml" || p == ".github/dependabot.yaml" }},
+	{"renovate", "ci", func(p, base string) bool { return base == "renovate.json" || base == "renovate.json5" }},
+	{"circleci", "ci", func(p, base string) bool { return strings.HasSuffix(p, ".circleci/config.yml") }},
+	{"bitbucket-pipelines", "ci", func(p, base string) bool { return base == "bitbucket-pipelines.yml" }},
 	{"gitlab-ci", "ci", func(p, base string) bool { return base == ".gitlab-ci.yml" }},
 	{"jenkins", "ci", func(p, base string) bool { return base == "Jenkinsfile" }},
 	{"cloud-build", "ci", func(p, base string) bool { return base == "cloudbuild.yaml" || base == "cloudbuild.yml" }},
@@ -46,6 +53,15 @@ var tools = []struct {
 	{"bazel", "build", func(p, base string) bool {
 		return base == "BUILD.bazel" || base == "WORKSPACE" || base == "MODULE.bazel"
 	}},
+	{"vite", "build", func(p, base string) bool { return strings.HasPrefix(base, "vite.config.") }},
+	{"webpack", "build", func(p, base string) bool { return strings.HasPrefix(base, "webpack.config.") }},
+	{"rollup", "build", func(p, base string) bool { return strings.HasPrefix(base, "rollup.config.") }},
+	{"turborepo", "build", func(p, base string) bool { return base == "turbo.json" }},
+	{"nx", "build", func(p, base string) bool { return base == "nx.json" }},
+	{"babel", "build", func(p, base string) bool {
+		return strings.HasPrefix(base, "babel.config.") || strings.HasPrefix(base, ".babelrc")
+	}},
+	{"tailwind", "build", func(p, base string) bool { return strings.HasPrefix(base, "tailwind.config.") }},
 	{"gradle", "build", func(p, base string) bool { return strings.HasPrefix(base, "build.gradle") }},
 	{"maven", "build", func(p, base string) bool { return base == "pom.xml" }},
 	{"npm", "packages", func(p, base string) bool { return base == "package.json" }},
@@ -68,6 +84,23 @@ var tools = []struct {
 		return strings.HasPrefix(base, ".prettierrc") || strings.HasPrefix(base, "prettier.config.")
 	}},
 	{"golangci-lint", "quality", func(p, base string) bool { return strings.HasPrefix(base, ".golangci.") }},
+	{"biome", "quality", func(p, base string) bool { return base == "biome.json" || base == "biome.jsonc" }},
+	{"ruff", "quality", func(p, base string) bool { return base == "ruff.toml" || base == ".ruff.toml" }},
+	{"stylelint", "quality", func(p, base string) bool {
+		return strings.HasPrefix(base, ".stylelintrc") || strings.HasPrefix(base, "stylelint.config.")
+	}},
+	{"husky", "quality", func(p, base string) bool { return strings.HasPrefix(p, ".husky/") || strings.Contains(p, "/.husky/") }},
+	{"jest", "testing", func(p, base string) bool { return strings.HasPrefix(base, "jest.config.") }},
+	{"vitest", "testing", func(p, base string) bool { return strings.HasPrefix(base, "vitest.config.") }},
+	{"playwright", "testing", func(p, base string) bool { return strings.HasPrefix(base, "playwright.config.") }},
+	{"cypress", "testing", func(p, base string) bool { return strings.HasPrefix(base, "cypress.config.") || base == "cypress.json" }},
+	{"tox", "testing", func(p, base string) bool { return base == "tox.ini" }},
+	{"firebase-hosting", "hosting", func(p, base string) bool { return base == "firebase.json" }},
+	{"app-hosting", "hosting", func(p, base string) bool { return base == "apphosting.yaml" }},
+	{"vercel", "hosting", func(p, base string) bool { return base == "vercel.json" }},
+	{"netlify", "hosting", func(p, base string) bool { return base == "netlify.toml" }},
+	{"fly-io", "hosting", func(p, base string) bool { return base == "fly.toml" }},
+	{"heroku", "hosting", func(p, base string) bool { return base == "Procfile" }},
 }
 
 // ToolKind returns the group a tool belongs to, such as "infrastructure".

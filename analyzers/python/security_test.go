@@ -124,9 +124,10 @@ x = CharField(null=True)
 }
 
 func TestFrameworkDetection(t *testing.T) {
-	got := Analyzer{}.Frameworks(analysis.File{Path: "a.py", Content: []byte("import django.db\nfrom fastapi import FastAPI\nimport os\n")})
+	src := "import django.db\nfrom fastapi import FastAPI\nimport os\nimport torch.nn as nn\nfrom sklearn.linear_model import Ridge\nfrom .pandas import x\n"
+	got := Analyzer{}.Frameworks(analysis.File{Path: "a.py", Content: []byte(src)})
 	sort.Strings(got)
-	if want := []string{"django", "fastapi"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"django", "fastapi", "pytorch", "scikit-learn"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }

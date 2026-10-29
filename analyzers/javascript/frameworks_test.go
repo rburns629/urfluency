@@ -18,3 +18,14 @@ func TestFrameworks(t *testing.T) {
 		t.Errorf("a React web file was detected as React Native: %v", got)
 	}
 }
+
+func TestFrameworkLibraries(t *testing.T) {
+	src := "import Link from 'next/link';\nimport { Module } from '@nestjs/core/injector';\nconst mongoose = require('mongoose');\n" +
+		"import x from './vue';\nimport y from '@/lib/prisma';\n"
+	got := TypeScript{}.Frameworks(analysis.File{Path: "a.ts", Content: []byte(src)})
+	slices.Sort(got)
+	want := []string{"mongoose", "nestjs", "nextjs", "react"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Frameworks = %v, want %v (local imports are not packages)", got, want)
+	}
+}
