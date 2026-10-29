@@ -40,76 +40,6 @@ import (
 // Version is set at build time with -ldflags "-X .../internal/cli.Version=...".
 var Version = "dev"
 
-const usage = `urfluency analyzes your own commits and reports strengths and areas to improve.
-
-Usage:
-  urfluency init [path]           Find your commit addresses in the repositories
-                                  below path, confirm any it is unsure of, and
-                                  save them for later scans (optional)
-  urfluency scan [flags] [path]   Analyze the repository at path, or every project
-                                  below it, with or without Git (default ".")
-  urfluency validate [path]       For maintainers: show whether prompt signals
-                                  predict what happened next in agent sessions
-  urfluency check URL|PATH        Check a repository for signs of malicious behavior
-                                  before running it; clones a URL with hooks,
-                                  submodules, and LFS off, and runs nothing
-  urfluency login                 Link this CLI to your urfluency.com account
-                                  (optional; only needed to upload)
-  urfluency upload [flags] [path] Scan again, show what would be sent, and upload
-                                  the ratings after you confirm. It does not reuse an
-                                  earlier scan: pass the same path and flags
-  urfluency logout                Delete the upload token on this machine
-  urfluency dismiss RULE FILE:LINE [--reason TEXT]
-                                  Leave a finding that is not a real problem, such
-                                  as a placeholder flagged as a secret, out of later
-                                  scans and uploads. RULE and FILE:LINE are as
-                                  scan --locations shows them. --list shows them;
-                                  --undo counts one again
-  urfluency attest [--since WHEN] In GitHub Actions: rate the checked-out repository,
-                                  every author's code, and send the ratings for its
-                                  badges with the job's OIDC token (CI-attested).
-                                  The code stays on the runner. --dry-run prints them.
-                                  URFLUENCY_LINK_CODE connects the repository on its
-                                  first run without the GitHub App
-  urfluency doctor                Check dependencies and optional features; installs nothing
-  urfluency version               Print the version
-
-Init flags:
-  --author EMAIL   Also save this address as yours; repeat for several
-  --yes            Do not ask about possible addresses; save only those found
-  --include-ext EXT
-                   Save extra file extensions for every scan to read
-
-Scan flags:
-  --author EMAIL   Also count this address as yours; repeat for several. Your
-                   addresses are found automatically from your Git name, email,
-                   and account name, so this is only for ones it lists as possible
-  --since WHEN     Only lines authored since WHEN: a duration like 90d, a date
-                   like 2026-01-31, or all (default 365d)
-  --json           Print the report as JSON
-  --locations      Include file:line for each finding (local only, never uploaded)
-  --sessions       Also grade your prompts in local Claude Code and Codex sessions
-                   for these repositories, and report how much code agents wrote.
-                   Prompt text is read in memory only; nothing is stored.
-  --include-ext EXT
-                   Also read files with these extensions, such as .tf,.yml, and
-                   check them for secrets. Only supported languages are read
-                   otherwise (Go, Python, JavaScript, TypeScript, Rust, C,
-                   C++, C#, Java, Kotlin, Swift, Dart)
-  --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
-                   for several (for example --exclude 'Archive*')
-  --no-git         Ignore Git and read the files as they are now, counting every
-                   line as yours. For projects you don't track in Git or share
-                   with others. Results are marked declared, not verified, and
-                   --since, --author, and history measures do not apply
-
-Upload flags: the scan flags except --json and --locations, and
-  --dry-run        Print the exact payload instead of sending it
-  --yes            Send without asking (required when not in a terminal)
-Uploads contain ratings, counts, and the summary only: never code, prompt text,
-repository names, paths, commit hashes, or email addresses.
-`
-
 // errUsage marks errors caused by invalid arguments.
 var errUsage = errors.New("usage")
 
@@ -120,6 +50,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var err error
+	if args[0] != "help" && len(args) > 1 && wantsHelp(args[1:]) {
+		args = []string{"help", args[0]}
+	}
 	switch args[0] {
 	case "init":
 		err = initSettings(ctx, args[1:], stdout, stderr)
@@ -144,18 +77,24 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	case "version":
 		_, err = fmt.Fprintln(stdout, "urfluency", Version)
 	case "help", "-h", "--help":
-		_, err = fmt.Fprint(stdout, usage)
+		err = help(args[1:], stdout)
 	default:
 		err = fmt.Errorf("%w: unknown command %q", errUsage, args[0])
 	}
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintln(stderr, "urfluency:", err)
 	if errors.Is(err, errUsage) {
-		fmt.Fprint(stderr, "\n", usage)
+		fmt.Fprintln(stderr, "urfluency:", strings.TrimPrefix(err.Error(), errUsage.Error()+": "))
+		// A short pointer keeps the error on screen.
+		if _, ok := commandHelp[args[0]]; ok && args[0] != "help" {
+			fmt.Fprintf(stderr, "Run \"urfluency help %s\" for usage.\n", args[0])
+		} else {
+			fmt.Fprintln(stderr, `Run "urfluency help" for the commands.`)
+		}
 		return 2
 	}
+	fmt.Fprintln(stderr, "urfluency:", err)
 	return 1
 }
 
@@ -182,6 +121,20 @@ func addScanFlags(fs *flag.FlagSet) *scanFlags {
 	return f
 }
 
+// check rejects flags that do not combine. Call it after parsing.
+func (f *scanFlags) check(fs *flag.FlagSet) error {
+	if !*f.noGit {
+		return nil
+	}
+	var err error
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "since" || fl.Name == "author" {
+			err = fmt.Errorf("%w: --%s cannot be used with --no-git, which counts every line in the files as they are now", errUsage, fl.Name)
+		}
+	})
+	return err
+}
+
 // onePath returns the command's optional path argument, "." by default.
 func onePath(fs *flag.FlagSet, command string) (string, error) {
 	switch fs.NArg() {
@@ -201,6 +154,9 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	locations := fs.Bool("locations", false, "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
+	}
+	if err := sf.check(fs); err != nil {
+		return err
 	}
 	path, err := onePath(fs, "scan")
 	if err != nil {

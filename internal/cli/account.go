@@ -325,6 +325,9 @@ func uploadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
+	if err := sf.check(fs); err != nil {
+		return err
+	}
 	path, err := onePath(fs, "upload")
 	if err != nil {
 		return err

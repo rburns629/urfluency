@@ -361,3 +361,32 @@ func TestScanNoGit(t *testing.T) {
 		t.Errorf("--no-git scan = %s", out.String())
 	}
 }
+
+func TestHelp(t *testing.T) {
+	for _, args := range [][]string{{"scan", "--help"}, {"scan", "-h", "."}, {"help", "scan"}} {
+		var out, errOut bytes.Buffer
+		if code := Run(context.Background(), args, &out, &errOut); code != 0 || !strings.HasPrefix(out.String(), "Usage: urfluency scan") || errOut.Len() > 0 {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, out.String(), errOut.String())
+		}
+	}
+	for cmd := range commandHelp {
+		if !strings.Contains(usage, "  "+cmd+" ") && cmd != "validate" {
+			t.Errorf("%s is missing from the command list", cmd)
+		}
+	}
+	// A usage error points to the help instead of printing all of it.
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", "--bogus"}, &out, &errOut); code != 2 || strings.Count(errOut.String(), "\n") != 2 ||
+		!strings.Contains(errOut.String(), `urfluency help scan`) {
+		t.Errorf("usage error: exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+func TestNoGitRejectsHistoryFlags(t *testing.T) {
+	for _, flag := range []string{"--since=all", "--author=me@example.com"} {
+		var out, errOut bytes.Buffer
+		if code := Run(context.Background(), []string{"scan", "--no-git", flag, t.TempDir()}, &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "cannot be used with --no-git") {
+			t.Errorf("%s: exit %d, stderr %q", flag, code, errOut.String())
+		}
+	}
+}
