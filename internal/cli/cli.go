@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -97,6 +98,10 @@ Scan flags:
                    C++, C#, Java, Kotlin, Swift, Dart)
   --exclude GLOB   Skip folders whose name or relative path matches GLOB; repeat
                    for several (for example --exclude 'Archive*')
+  --no-git         Ignore Git and read the files as they are now, counting every
+                   line as yours. For projects you don't track in Git or share
+                   with others. Results are marked declared, not verified, and
+                   --since, --author, and history measures do not apply
 
 Upload flags: the scan flags except --json and --locations, and
   --dry-run        Print the exact payload instead of sending it
@@ -163,7 +168,7 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 type scanFlags struct {
 	authors, excludes, include stringList
 	since                      *string
-	sessions                   *bool
+	sessions, noGit            *bool
 }
 
 func addScanFlags(fs *flag.FlagSet) *scanFlags {
@@ -171,6 +176,7 @@ func addScanFlags(fs *flag.FlagSet) *scanFlags {
 	fs.Var(&f.authors, "author", "")
 	f.since = fs.String("since", "365d", "")
 	f.sessions = fs.Bool("sessions", false, "")
+	f.noGit = fs.Bool("no-git", false, "")
 	fs.Var(&f.excludes, "exclude", "")
 	fs.Var(&f.include, "include-ext", "")
 	return f
@@ -249,12 +255,17 @@ func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations 
 		}
 	}
 	prog.phase("Finding projects under " + tildePath(abs))
-	if top := (gitdata.Repo{Dir: abs}).TopLevel(ctx); top != "" && !isRepo(abs) {
+	if top := (gitdata.Repo{Dir: abs}).TopLevel(ctx); top != "" && !isRepo(abs) && !*sf.noGit {
 		abs = top // a folder inside a repository is scanned as that repository
 	}
 	repos, folders, err := findProjects(abs, sf.excludes)
 	if err != nil {
 		return report.Report{}, err
+	}
+	if *sf.noGit {
+		// Repositories are read as folders: every line counts as the user's.
+		folders, repos = append(repos, folders...), nil
+		slices.Sort(folders)
 	}
 	if len(repos) == 0 && len(folders) == 0 {
 		return report.Report{}, fmt.Errorf("no projects found at %s", abs)

@@ -80,6 +80,12 @@ attribute lines, every line counts as yours, so these results appear in their ow
 attributed results, and without the measures that need history (AI share,
 durability, tests with changes).
 
+To scan everything that way, pass `--no-git`: repositories are read as plain
+folders, as their files are now, and every line counts as yours, including code
+someone else committed. It suits projects you don't track in Git or keep private.
+The results, and an upload made with it, are marked declared rather than verified;
+`--since` and `--author` do not apply.
+
 Every scan includes an **AI engineering** section: does your agent-assisted work
 hold up as well as your own? Using agents is never counted against you, and the
 share of AI-assisted code is shown but never scored. The section compares findings

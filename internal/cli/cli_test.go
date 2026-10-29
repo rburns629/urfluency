@@ -339,3 +339,25 @@ func TestDoctorWithoutGit(t *testing.T) {
 		t.Errorf("output:\n%s", out.String())
 	}
 }
+
+func TestScanNoGit(t *testing.T) {
+	r := testutil.NewRepo(t)
+	panics := "package a\n\nfunc f() { panic(1) }\n"
+	// Committed by someone else, plus a file never committed: both are read.
+	r.Commit("other@example.com", "", map[string]string{"a.go": panics})
+	if err := os.WriteFile(filepath.Join(r.Dir, "b.go"), []byte(panics), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := Run(context.Background(), []string{"scan", "--no-git", "--json", r.Dir}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	var rep report.Report
+	if err := json.Unmarshal(out.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	u := rep.Unversioned
+	if rep.Repos != 0 || len(rep.Languages) != 0 || u == nil || u.Projects != 1 || len(u.Languages) == 0 || u.Languages[0].OwnedLines != 6 {
+		t.Errorf("--no-git scan = %s", out.String())
+	}
+}
