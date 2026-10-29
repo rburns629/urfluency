@@ -31,9 +31,11 @@ import (
 	_ "github.com/rburns629/urfluency/analyzers/java"
 	_ "github.com/rburns629/urfluency/analyzers/javascript"
 	_ "github.com/rburns629/urfluency/analyzers/kotlin"
+	_ "github.com/rburns629/urfluency/analyzers/powershell"
 	_ "github.com/rburns629/urfluency/analyzers/python"
 	_ "github.com/rburns629/urfluency/analyzers/rust"
 	_ "github.com/rburns629/urfluency/analyzers/secrets"
+	_ "github.com/rburns629/urfluency/analyzers/shell"
 	_ "github.com/rburns629/urfluency/analyzers/swift"
 )
 

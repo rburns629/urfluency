@@ -1,5 +1,7 @@
 github.com/UserNobody14/tree-sitter-dart v0.0.0-20261018035034-0038280b774b h1:qHPXMi1Xccejg1S0T9YxFgKw8IYEmPSnU11ZMaWlFL8=
 github.com/UserNobody14/tree-sitter-dart v0.0.0-20261018035034-0038280b774b/go.mod h1:6zSIbyfHyxL/+XWRHElGLw+EUPYbDOyhDqIiAX6svrE=
+github.com/airbus-cert/tree-sitter-powershell v0.26.5 h1:nUrz3T20ksxo3MbAIxEPjHiEvlF8kmXwWJh0NpUa9oY=
+github.com/airbus-cert/tree-sitter-powershell v0.26.5/go.mod h1:ihQKWACaNTUeWCwwoobAeTfW0yzJr+ap/KT03U2TcYk=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
@@ -14,6 +16,8 @@ github.com/tree-sitter-grammars/tree-sitter-kotlin v1.1.0 h1:SWIUDASa+WPhDDem1U5
 github.com/tree-sitter-grammars/tree-sitter-kotlin v1.1.0/go.mod h1:eH+flFf3QOa9c9BY9g3Bz02F7zTq30kGIG3cgB0lSlI=
 github.com/tree-sitter/go-tree-sitter v0.25.0 h1:sx6kcg8raRFCvc9BnXglke6axya12krCJF5xJ2sftRU=
 github.com/tree-sitter/go-tree-sitter v0.25.0/go.mod h1:r77ig7BikoZhHrrsjAnv8RqGti5rtSyvDHPzgTPsUuU=
+github.com/tree-sitter/tree-sitter-bash v0.25.1 h1:ZD3MK4oDB5lAsFztqbdcyYEd24pxDtx3g9UOWA062rE=
+github.com/tree-sitter/tree-sitter-bash v0.25.1/go.mod h1:AksQ6zE+sP9hnp7mKTMT7Q+CwpthV7VGQLXvweVXz9U=
 github.com/tree-sitter/tree-sitter-c v0.24.2 h1:nW+M6BnPUa/fBwks8nqf1NiVvu7nltaC+5bR/lTtJCs=
 github.com/tree-sitter/tree-sitter-c v0.24.2/go.mod h1:/SpJlv2BuiCgFA5xvtgukFGi51WxctByPUGDxPl60fc=
 github.com/tree-sitter/tree-sitter-c-sharp v0.23.5 h1:EeUc2WJE5G1pD6YEqera2yVHYeroeR+/MakKX2a+0xQ=

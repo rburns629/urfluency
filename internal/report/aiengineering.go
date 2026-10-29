@@ -167,6 +167,8 @@ func languageName(id string) string {
 		return "Swift"
 	case "dart":
 		return "Dart"
+	case "powershell":
+		return "PowerShell"
 	}
 	return id
 }

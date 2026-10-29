@@ -142,7 +142,7 @@ Uploads start private. `urfluency logout` deletes the token on this machine.
 
 ## What is read
 
-Only files in the supported languages (Go, Python, JavaScript, TypeScript, Rust, C, C++, C#, Java, Kotlin, Swift, Dart) are
+Only files in the supported languages (Go, Python, JavaScript, TypeScript, Rust, C, C++, C#, Java, Kotlin, Swift, Dart, Shell, PowerShell) are
 read and checked, plus the CI, build, and agent instruction files that the
 practices measures need. Other extensions are ignored unless you include them,
 for example `--include-ext .tf,.yml` to also check Terraform and YAML for secrets;
@@ -205,7 +205,7 @@ outcomes before scores are published anywhere.
 
 | Area | Coverage |
 | --- | --- |
-| Languages | Go, Python, JavaScript, TypeScript, Rust, C, C++, C#, Java, Kotlin, Swift, Dart |
+| Languages | Go, Python, JavaScript, TypeScript, Rust, C, C++, C#, Java, Kotlin, Swift, Dart, Shell (`.sh`, `.bash`), PowerShell (`.ps1`, `.psm1`) |
 | Frameworks | Detected from each file's imports: React, React Native (and Expo), Angular, Express, Fastify, FastAPI, Django, Flask; Go web frameworks (Fiber, Gin, Echo, Chi, Gorilla, gRPC, fasthttp); and the main frameworks of each newer language, such as .NET (ASP.NET Core, Entity Framework, Blazor, MAUI), Spring, Android and Jetpack Compose, Ktor, SwiftUI, Vapor, Flutter, Tokio, and Qt |
 | Security | Credentials committed in source and config files (private keys, cloud keys, API tokens, passwords in URLs or code), SQL and shell injection, `eval`, unsafe deserialization, disabled TLS verification, and framework misconfiguration |
 | AI engineering | Quality of AI-assisted code against your own baseline per language, durability, and with `--sessions` verification, corrections, and review activity |

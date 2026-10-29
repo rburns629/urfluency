@@ -644,6 +644,8 @@ func displayLanguage(id string) string {
 		return "C++"
 	case "c":
 		return "C"
+	case "powershell":
+		return "PowerShell"
 	}
 	return sentenceCase(id)
 }

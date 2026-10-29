@@ -4,8 +4,10 @@ go 1.26.10
 
 require (
 	github.com/UserNobody14/tree-sitter-dart v0.0.0-20261018035034-0038280b774b
+	github.com/airbus-cert/tree-sitter-powershell v0.26.5
 	github.com/tree-sitter-grammars/tree-sitter-kotlin v1.1.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
+	github.com/tree-sitter/tree-sitter-bash v0.25.1
 	github.com/tree-sitter/tree-sitter-c v0.24.2
 	github.com/tree-sitter/tree-sitter-c-sharp v0.23.5
 	github.com/tree-sitter/tree-sitter-cpp v0.23.4

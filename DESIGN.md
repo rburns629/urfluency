@@ -1026,5 +1026,5 @@ repository owner has published.
   or microVMs).
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
-- Languages after the current twelve, and F# and Visual Basic for .NET.
+- Languages after the current fourteen, shell scripts without a `.sh` or `.bash` extension (found by their `#!` line), and F# and Visual Basic for .NET.
 

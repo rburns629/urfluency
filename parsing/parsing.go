@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	dart "github.com/UserNobody14/tree-sitter-dart/bindings/go"
+	powershell "github.com/airbus-cert/tree-sitter-powershell/bindings/go"
 	kotlin "github.com/tree-sitter-grammars/tree-sitter-kotlin/bindings/go"
 	ts "github.com/tree-sitter/go-tree-sitter"
+	bash "github.com/tree-sitter/tree-sitter-bash/bindings/go"
 	csharp "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
 	c "github.com/tree-sitter/tree-sitter-c/bindings/go"
 	cpp "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
@@ -41,6 +43,8 @@ var (
 	Kotlin     = Grammar{ts.NewLanguage(kotlin.Language())}
 	Swift      = Grammar{ts.NewLanguage(swift.Language())}
 	Dart       = Grammar{ts.NewLanguage(dart.Language())}
+	Bash       = Grammar{ts.NewLanguage(bash.Language())}
+	PowerShell = Grammar{ts.NewLanguage(powershell.Language())}
 )
 
 // Tree is a parsed file. Call Close when done; nodes are invalid afterwards.

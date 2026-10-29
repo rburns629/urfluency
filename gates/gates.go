@@ -58,11 +58,11 @@ var patterns = []struct {
 	gate string
 	re   *regexp.Regexp
 }{
-	{Format, regexp.MustCompile(`\b(gofmt|goimports|prettier|black|ruff format|cargo fmt|rustfmt|clang-format|dotnet format|google-java-format|spotless(Apply|Check)|ktfmt|swiftformat|swift-format|dart format|flutter format)\b`)},
-	{Lint, regexp.MustCompile(`\b(golangci-lint|staticcheck|go vet|eslint|ruff check|flake8|pylint|clippy|clang-tidy|cppcheck|checkstyle|spotbugs|pmd|ktlint|detekt|swiftlint|dart analyze|flutter analyze|(npm|pnpm|yarn|bun)( run)? lint|make lint)\b`)},
+	{Format, regexp.MustCompile(`\b(gofmt|goimports|prettier|black|ruff format|cargo fmt|rustfmt|clang-format|dotnet format|google-java-format|spotless(Apply|Check)|ktfmt|swiftformat|swift-format|dart format|flutter format|shfmt)\b`)},
+	{Lint, regexp.MustCompile(`\b(golangci-lint|staticcheck|go vet|eslint|ruff check|flake8|pylint|clippy|clang-tidy|cppcheck|checkstyle|spotbugs|pmd|ktlint|detekt|swiftlint|dart analyze|flutter analyze|shellcheck|Invoke-ScriptAnalyzer|(npm|pnpm|yarn|bun)( run)? lint|make lint)\b`)},
 	{Types, regexp.MustCompile(`\b(tsc|mypy|pyright|cargo check|(npm|pnpm|yarn|bun)( run)? (typecheck|type-check))\b`)},
 	{Build, regexp.MustCompile(`\b(go build|cargo build|cmake --build|msbuild|mvn (package|compile|verify|install)|(gradle|gradlew) (build|assemble)|dotnet build|swift build|xcodebuild( build)?|flutter build|(npm|pnpm|yarn|bun)( run)? build|make build)\b`)},
-	{Tests, regexp.MustCompile(`\b(go test|pytest|python -m unittest|vitest|jest|cargo (test|nextest)|ctest|mvn (test|verify)|(gradle|gradlew) (test|check)|dotnet test|swift test|xcodebuild test|flutter test|dart test|(npm|pnpm|yarn|bun)( run)? test|make test)\b`)},
+	{Tests, regexp.MustCompile(`\b(go test|pytest|python -m unittest|vitest|jest|cargo (test|nextest)|ctest|mvn (test|verify)|(gradle|gradlew) (test|check)|dotnet test|swift test|xcodebuild test|flutter test|dart test|bats|Invoke-Pester|(npm|pnpm|yarn|bun)( run)? test|make test)\b`)},
 	{Security, regexp.MustCompile(`\b(govulncheck|npm audit|pnpm audit|yarn audit|pip-audit|cargo (audit|deny)|dependency-check|dotnet list package --vulnerable|codeql|semgrep|gitleaks|trivy|snyk|osv-scanner)\b`)},
 }
 

@@ -1,0 +1,50 @@
+package rules
+
+// Shell rules follow ShellCheck's checks for Bash and POSIX sh scripts.
+func init() {
+	sh := []string{"shell"}
+	Register(
+		Rule{ID: "shell.unquoted-expansion", Category: LanguageProficiency, Languages: sh,
+			Title: "Unquoted variable or command substitution in a command",
+			Why:   "An unquoted $var or $(cmd) is split on spaces and expanded as a glob, so a file name with a space or a * becomes several arguments (ShellCheck SC2086).",
+			Focus: "Quote expansions: \"$var\", \"$(cmd)\", and \"${array[@]}\". Leave them unquoted only when splitting is intended, and say so in a comment."},
+		Rule{ID: "shell.missing-errexit", Category: LanguageProficiency, Languages: sh,
+			Title: "Script continues after a failed command",
+			Why:   "Without set -e, a script runs on after a command fails, so a failed cd or download leads later commands to act on the wrong files.",
+			Focus: "Start scripts with set -euo pipefail, or check each command that can fail with || exit."},
+		Rule{ID: "shell.eval", Category: Security, Languages: sh,
+			Title: "eval on expanded input",
+			Why:   "eval runs its arguments as code after expansion, so any variable that holds user input or file contents can inject commands.",
+			Focus: "Use arrays to build commands, \"${!name}\" for indirect variables, or a case statement to choose among fixed commands."},
+		Rule{ID: "shell.pipe-to-shell", Category: Security, Languages: sh,
+			Title: "Downloaded script piped straight into a shell",
+			Why:   "curl ... | sh runs whatever the server returns, unreviewed, and runs a partial script if the download is cut off.",
+			Focus: "Download to a file, verify its checksum or signature, then run it."},
+		Rule{ID: "shell.rm-unguarded-path", Category: Security, Languages: sh,
+			Title: "Recursive rm of a variable's directory contents",
+			Why:   "If the variable is empty or unset, rm -rf \"$DIR/\" or rm -rf \"$DIR\"/* deletes from the root of the file system (ShellCheck SC2115).",
+			Focus: "Guard the variable with \"${DIR:?}\", which stops the script when it is empty, or check it before deleting."},
+		Rule{ID: "shell.cd-unchecked", Category: LanguageProficiency, Languages: sh,
+			Title: "cd without handling failure",
+			Why:   "If cd fails, the commands after it run in the wrong directory, which is dangerous before rm, mv, or writes (ShellCheck SC2164).",
+			Focus: "Write cd dir || exit, or enable set -e for the script."},
+		Rule{ID: "shell.ls-in-loop", Category: LanguageProficiency, Languages: sh,
+			Title: "Loop over the output of ls",
+			Why:   "Iterating over $(ls) splits file names on spaces and mangles names with newlines or globs (ShellCheck SC2045).",
+			Focus: "Loop over a glob instead: for f in ./*.txt; do ... done."},
+		Rule{ID: "shell.backtick-substitution", Category: CleanCode, Languages: sh,
+			Title: "Backtick command substitution",
+			Why:   "Backticks need escaping to nest and are easy to misread; $(...) is the modern, nestable form (ShellCheck SC2006).",
+			Focus: "Use $(command) instead of `command`."},
+
+		idiom("shell.idiom.strict-mode", "Strict mode", "Stops on errors, unset variables, and failures inside pipelines with set -euo pipefail.", "shell"),
+		idiom("shell.idiom.local-variables", "Local variables", "Keeps function variables local, so functions do not overwrite the caller's state.", "shell"),
+		idiom("shell.idiom.double-brackets", "[[ ]] tests", "Uses Bash's [[ ]], which does not split words and supports patterns and && inside the test.", "shell"),
+		idiom("shell.idiom.parameter-defaults", "Parameter expansion defaults and guards", "Handles unset values with ${var:-default} and stops on missing ones with ${var:?message}.", "shell"),
+		idiom("shell.idiom.trap-cleanup", "trap for cleanup", "Cleans up temporary files and state on exit or interrupt with trap.", "shell"),
+		idiom("shell.idiom.arrays", "Quoted array expansion", "Passes lists safely with \"${array[@]}\", keeping each element one argument.", "shell"),
+		idiom("shell.idiom.getopts", "getopts option parsing", "Parses command-line flags with getopts instead of hand-rolled loops.", "shell"),
+		idiom("shell.idiom.read-raw", "read -r", "Reads input lines without treating backslashes as escapes.", "shell"),
+		idiom("shell.idiom.main-function", "main function", "Structures the script as functions with a main \"$@\" entry point.", "shell"),
+	)
+}

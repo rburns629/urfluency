@@ -12,7 +12,7 @@ var testDirs = map[string]bool{"tests": true, "test": true, "__tests__": true, "
 // FooTest.java, FooTests.cs, foo_test.dart, foo_test.cc, and so on.
 var testSuffixes = []string{
 	"Test.java", "Tests.java", "IT.java", "Test.kt", "Tests.kt", "Test.cs", "Tests.cs", "Tests.swift", "Test.swift",
-	"_test.dart", "_test.rs", "_test.c", "_test.cc", "_test.cpp", "_unittest.cc", "_unittest.cpp",
+	"_test.dart", "_test.rs", "_test.c", "_test.cc", "_test.cpp", "_unittest.cc", "_unittest.cpp", "_test.sh", ".Tests.ps1",
 }
 
 // IsTestPath reports whether a repository path is a test file by the common
