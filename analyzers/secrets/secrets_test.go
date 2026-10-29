@@ -61,6 +61,9 @@ func TestGenericSecrets(t *testing.T) {
 		`secret = "aaaaaaaaaaaa"`,
 		`password = os.environ["DB_PASSWORD"]`,
 		`DATABASE_URL=postgres://app:{DB_PASSWORD}@db.internal/app`,
+		// Lowercase words are identifiers or placeholders, not keys.
+		`new Anthropic({ apiKey: "bedrock-signed", baseURL: endpoint })`,
+		`secret = "session_cookie.v2"`,
 	}
 	content := strings.Join(lines, "\n")
 	want := []string{"sec.credentials-in-url:1", "sec.hardcoded-password:2"}
