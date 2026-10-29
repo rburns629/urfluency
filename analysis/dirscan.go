@@ -19,7 +19,7 @@ const declared = "declared"
 var projectManifests = map[string]bool{
 	"package.json": true, "go.mod": true, "pyproject.toml": true, "requirements.txt": true,
 	"setup.py": true, "Pipfile": true, "Cargo.toml": true, "pom.xml": true, "build.gradle": true,
-	"composer.json": true, "Gemfile": true,
+	"composer.json": true, "Gemfile": true, "pubspec.yaml": true,
 }
 
 // ProjectFiles reports whether a folder holds a project manifest such as
@@ -61,7 +61,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			ignored = ig
 		}
 	}
-	var paths []string
+	var paths, manifests []string
 	toolFiles := map[string]ToolUse{}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -82,6 +82,9 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			u.Repos, u.Files = 1, u.Files+1
 			toolFiles[name] = u
 		}
+		if d.Type().IsRegular() && isScaffoldManifest(d.Name()) {
+			manifests = append(manifests, rel)
+		}
 		if !d.Type().IsRegular() || ignored[rel] || IsProtected(rel) || inSkippedDir(rel) ||
 			!(opts.wanted(rel) || readEvenWithoutAnalyzer(rel)) {
 			return nil
@@ -95,6 +98,17 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	generated := scaffolding(append(manifests, paths...), func(rel string) []byte {
+		b, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		return b
+	})
+	kept := paths[:0]
+	for _, p := range paths {
+		if !generated[p] {
+			kept = append(kept, p)
+		}
+	}
+	paths = kept
 	if repo.GitDir != "" {
 		if paths, err = dropVendored(ctx, repo, paths); err != nil {
 			return Result{}, err

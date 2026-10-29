@@ -335,6 +335,7 @@ func uploadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			return err
 		}
 	}
+	fmt.Fprintln(stderr, "Scanning again: upload builds its own report and does not reuse an earlier scan.")
 	r, err := buildReport(ctx, sf, path, false, stderr)
 	if err != nil {
 		return err

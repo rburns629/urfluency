@@ -12,7 +12,7 @@ import (
 
 // ProficiencyModel versions the scoring below. Its constants are reasoned
 // starting points, not yet calibrated against outcomes (see DESIGN.md).
-const ProficiencyModel = "0.2-uncalibrated"
+const ProficiencyModel = "0.3-uncalibrated"
 
 // Proficiency rates one language from the user's own code: how much of the
 // language's idiom range they use, and how cleanly they write it.
@@ -97,15 +97,19 @@ func proficiency(lr analysis.LanguageResult, counts map[rules.Category]int) (*Pr
 	score := rangeWeight*rng + (1-rangeWeight)*sum/float64(len(applicable))
 	score = min(score, weakest+weakestLead)
 	p.Score, p.Range = int(math.Round(score)), int(math.Round(rng))
-	p.Level = level(p.Score)
 	switch {
 	case lr.OwnedLines >= 10000:
 		p.Confidence = "high"
-	case lr.OwnedLines >= 2000:
+	case lr.OwnedLines >= minJustifiedLines:
 		p.Confidence = "medium"
 	default:
+		// Too little code to justify more than Beginner, however clean: a
+		// small sample, often templates or tutorials, reads cleaner than a
+		// body of work.
 		p.Confidence = "low"
+		p.Score = min(p.Score, beginnerMax)
 	}
+	p.Level = level(p.Score)
 	return p, idioms
 }
 
@@ -123,6 +127,13 @@ func band(score float64) string {
 
 // level classifies a 0–100 rating. The same levels apply to every rating, so a
 // language, a framework, and a habit read the same way.
+// minJustifiedLines is how much owned code a language needs for a level
+// above Beginner; below it, the score is capped at beginnerMax.
+const (
+	minJustifiedLines = 2000
+	beginnerMax       = 39
+)
+
 func level(score int) string {
 	switch {
 	case score >= 85:

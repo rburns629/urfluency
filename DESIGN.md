@@ -201,10 +201,18 @@ category plus 30, so a strong category cannot hide a weak one (the reasoning of
 clean-agent-code's AUDIT.md). Levels, shared by every rating in the report:
 **Expert** 85+, **Advanced** 70+, **Intermediate** 40+, **Beginner** below.
 Confidence comes from volume: high from 10,000 owned lines, medium from 2,000, low
-below.
+below. Below 2,000 owned lines a language is capped at Beginner (score 39),
+however clean: a small sample, often templates or tutorials, reads cleaner than
+a body of work (decided 2026-10-28).
 
-The model is versioned (`proficiency.model`, now `0.2-uncalibrated`; 0.2 moved to
-the four levels above). Its weights
+Generated project scaffolding is left out like vendored code, since Git credits it
+to whoever committed it: in a Flutter app, the android, ios, linux, macos,
+windows, and web host projects (kept for plugin packages, whose native code is
+their own) and the unchanged starter `lib/main.dart` and `test/widget_test.dart`;
+in a Capacitor project, android and ios; and generated plugin registrants.
+
+The model is versioned (`proficiency.model`, now `0.3-uncalibrated`; 0.2 moved to
+the four levels above, 0.3 added the Beginner cap). Its weights
 and `k` values are reasoned starting points. Before scores are uploaded or shown
 publicly they are calibrated against outcomes: per language, scores should
 predict durability (how often the user's lines later need fixes), and once uploads

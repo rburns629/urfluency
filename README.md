@@ -127,7 +127,8 @@ urfluency login                      # approve the code at urfluency.com/connect
 urfluency upload --since all ~/Projects
 ```
 
-`upload` scans like `scan`, says what it will send, and asks first;
+`upload` runs its own scan; it does not reuse an earlier `urfluency scan`, so
+pass it the same path and flags. It says what it will send and asks first;
 `--dry-run` prints the exact payload instead. It sends the report's summary and
 ratings only: never code, prompt text, repository names, paths, commit hashes,
 or email addresses, and it refuses a payload that looks like it contains them.

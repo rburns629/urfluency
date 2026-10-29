@@ -177,6 +177,17 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			candidates = append(candidates, p)
 		}
 	}
+	generated := scaffolding(paths, func(p string) []byte {
+		b, _ := repo.Show(ctx, head, p)
+		return b
+	})
+	kept := candidates[:0]
+	for _, p := range candidates {
+		if !generated[p] {
+			kept = append(kept, p)
+		}
+	}
+	candidates = kept
 	if candidates, err = dropVendored(ctx, repo, candidates); err != nil {
 		return Result{}, err
 	}

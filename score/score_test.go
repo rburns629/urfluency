@@ -79,3 +79,26 @@ func TestRepoWithoutCommits(t *testing.T) {
 		t.Errorf("err = %v, want ErrNoHistory", err)
 	}
 }
+
+// A Flutter app's generated host projects and starter files are not rated.
+func TestRepoSkipsFlutterScaffolding(t *testing.T) {
+	r := testutil.NewRepo(t)
+	cpp := strings.Repeat("int add(int a, int b) { return a + b; }\n", 400)
+	r.Commit("ana@example.com", "2026-09-01T00:00:00Z", map[string]string{
+		"pubspec.yaml":                "name: app\ndependencies:\n  flutter:\n    sdk: flutter\n",
+		"windows/runner/main.cpp":     cpp,
+		"linux/runner/application.cc": cpp,
+		"lib/main.dart":               "// You have pushed the button this many times\n" + strings.Repeat("final a = 1;\n", 400),
+		"go.mod":                      "module example.com/x\n\ngo 1.26\n",
+		"a/a.go":                      goFile("a", 40),
+	})
+	p, err := score.Repo(context.Background(), r.Dir, time.Date(2025, 10, 1, 0, 0, 0, 0, time.UTC), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lang := range []string{`"language":"cpp"`, `"language":"dart"`} {
+		if strings.Contains(string(p.Combined), lang) {
+			t.Errorf("scaffolding was rated: %s in %s", lang, p.Combined)
+		}
+	}
+}

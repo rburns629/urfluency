@@ -54,8 +54,9 @@ Usage:
                                   submodules, and LFS off, and runs nothing
   urfluency login                 Link this CLI to your urfluency.com account
                                   (optional; only needed to upload)
-  urfluency upload [flags] [path] Scan like scan, show what would be sent, and
-                                  upload the ratings after you confirm
+  urfluency upload [flags] [path] Scan again, show what would be sent, and upload
+                                  the ratings after you confirm. It does not reuse an
+                                  earlier scan: pass the same path and flags
   urfluency logout                Delete the upload token on this machine
   urfluency attest [--since WHEN] In GitHub Actions: rate the checked-out repository,
                                   every author's code, and send the ratings for its
@@ -200,7 +201,27 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(r)
 	}
-	return report.WriteText(stdout, r)
+	if err := report.WriteText(stdout, r); err != nil {
+		return err
+	}
+	// A scan is not kept; say so where people look for how to share it.
+	_, err = fmt.Fprintf(stderr, "\nNothing was sent or saved. To share these results, run:\n  urfluency upload %s\nIt scans again, then shows what it would send and asks first.\n", shellArgs(args))
+	return err
+}
+
+// shellArgs joins arguments for a command to copy, quoting any that need it.
+func shellArgs(args []string) string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--json" || a == "--locations" {
+			continue // scan-only output flags
+		}
+		if a == "" || strings.ContainsAny(a, " \t'\"$`\\*?[]{}()<>|&;#~") {
+			a = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+		out = append(out, a)
+	}
+	return strings.Join(out, " ")
 }
 
 // buildReport scans the projects at path and builds the full report.

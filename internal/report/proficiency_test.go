@@ -35,6 +35,9 @@ func TestProficiency(t *testing.T) {
 		// at 42.5 however strong the rest is.
 		{"one weak category", 10000, goIdioms(), map[rules.Category]int{rules.TypeSafety: 700}, 43, "Intermediate", "high"},
 		{"one-off idioms do not count", 3000, map[string]analysis.IdiomUse{"go.idiom.generics": {Uses: 2, Files: 1}}, nil, 65, "Intermediate", "medium"},
+		// Under 2,000 lines, even perfect code is capped at Beginner.
+		{"too little code for more than Beginner", 1999, goIdioms(), nil, 39, "Beginner", "low"},
+		{"enough code", 2000, goIdioms(), nil, 100, "Expert", "medium"},
 	}
 	for _, tc := range tests {
 		lr := analysis.LanguageResult{Language: "go", OwnedLines: tc.lines, Idioms: tc.idioms}
