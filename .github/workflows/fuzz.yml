@@ -1,9 +1,12 @@
 name: Fuzz
 
 # The hosted scanner parses attackers' repositories with tree-sitter, which is
-# C. Nightly, every grammar and analyzer is fuzzed with AddressSanitizer, which
-# fails on memory errors in the C parsers that would otherwise pass silently.
-# A failing input is kept as an artifact; add it to the fuzz corpus as a test.
+# C. Nightly, every grammar and analyzer is fuzzed, and then every input the
+# fuzzer kept is replayed with AddressSanitizer, which fails on memory errors
+# in the C parsers that would otherwise pass silently. The two are separate
+# because Go's fuzzing coverage trips AddressSanitizer itself and kills the
+# fuzz workers (golang.org/issue/72766). Failing inputs are kept as an
+# artifact; add them under analyzers/fuzz/testdata as regression tests.
 
 on:
   schedule:
@@ -30,12 +33,20 @@ jobs:
           go-version-file: go.mod
       - name: Parser and analyzer tests with AddressSanitizer
         run: go test -asan -count=1 ./parsing ./analyzers/...
-      - name: Fuzz every analyzer with AddressSanitizer
-        run: go test -asan -run='^$' -fuzz=FuzzAnalyzers -fuzztime=30m ./analyzers/fuzz
-      - name: Keep the failing input
+      - name: Fuzz every analyzer
+        run: go test -run='^$' -fuzz=FuzzAnalyzers -fuzztime=30m ./analyzers/fuzz
+      - name: Replay the fuzz corpus with AddressSanitizer
+        if: success() || failure()
+        run: |
+          corpus="$(go env GOCACHE)/fuzz/github.com/rburns629/urfluency/analyzers/fuzz/FuzzAnalyzers"
+          mkdir -p analyzers/fuzz/testdata/fuzz/FuzzAnalyzers
+          if [ -d "$corpus" ]; then cp "$corpus"/* analyzers/fuzz/testdata/fuzz/FuzzAnalyzers/; fi
+          echo "replaying $(ls analyzers/fuzz/testdata/fuzz/FuzzAnalyzers | wc -l) inputs"
+          go test -asan -count=1 -run=FuzzAnalyzers ./analyzers/fuzz
+      - name: Keep the fuzz inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: fuzz-failure
+          name: fuzz-inputs
           path: analyzers/fuzz/testdata/fuzz
           if-no-files-found: ignore

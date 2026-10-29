@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("const f = async ({a, ...b''}`; /}) => `t ${a ? `n ${b}` : ''}`; /* c */ <div ke : ''}`;")
