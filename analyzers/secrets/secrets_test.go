@@ -163,3 +163,15 @@ func TestFirebaseWebConfigIsNotASecret(t *testing.T) {
 		}
 	}
 }
+
+// AWS documents sample credentials; they are not secrets.
+func TestAWSDocumentedExamplesAreNotSecrets(t *testing.T) {
+	lines := []string{
+		fake("AWS_ACCESS_KEY_ID=", "AK", "IA", "IOSFODNN7", "EXAMPLE"),
+		fake("aws_secret_access_key = ", "wJalrXUtnFEMI/K7MDENG/bPxRfiCY", "EXAMPLE", "KEY"),
+		fake("const secret = '", "wJalrXUtnFEMI/K7MDENG+bPxRfiCY", "EXAMPLE", "KEY';"),
+	}
+	if got := scan(t, "src/sign.ts", strings.Join(lines, "\n")); len(got) != 0 {
+		t.Errorf("AWS's documented examples were flagged: %v", got)
+	}
+}

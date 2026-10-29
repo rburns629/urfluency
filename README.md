@@ -214,6 +214,19 @@ and variables, and directories such as `secrets/` or `.ssh/`. Secret findings sh
 the rule and line only. Credential values are never printed, stored, or uploaded,
 and nothing about a scanned repository is kept: only scores.
 
+A finding that is not a real problem, such as a placeholder flagged as a secret,
+can be left out of later scans and uploads:
+
+```
+urfluency scan --locations ~/Projects            # shows each finding's rule and file:line
+urfluency dismiss sec.hardcoded-password src/model.ts:336 --reason "SDK placeholder"
+urfluency dismiss --list                         # or --undo RULE FILE:LINE
+```
+
+Only the rule and a hash of the line are saved, on this machine. A dismissal
+follows the line if the file moves and lapses if the line changes. Reports and
+uploads say how many findings you dismissed, never which.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

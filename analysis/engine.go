@@ -61,6 +61,9 @@ type Options struct {
 	// SkipDir, if set, names absolute directories a folder scan without Git
 	// leaves out, such as nested repositories scanned on their own.
 	SkipDir func(dir string) bool
+	// Dismissed holds DismissalKeys of findings the user dismissed; they are
+	// left out of every count and score, and counted in Result.Dismissed.
+	Dismissed map[string]bool
 }
 
 // wanted reports whether a file is read as code: a supported language, or an
@@ -127,6 +130,8 @@ type Result struct {
 	// SkippedSlow counts files skipped because attributing them took longer
 	// than BlameTimeout.
 	SkippedSlow int
+	// Dismissed counts findings left out because the user dismissed them.
+	Dismissed int
 	// Declared is true for folders without Git history, where every line counts
 	// as the user's because nothing records who wrote it.
 	Declared bool
@@ -323,7 +328,8 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 			continue
 		}
 		opts.progress("analyzing "+a.Language(), 0, 0)
-		lr, err := run(ctx, a.Language(), group, a.Analyze)
+		lr, dismissed, err := run(ctx, a.Language(), group, a.Analyze, opts.Dismissed)
+		result.Dismissed += dismissed
 		if err != nil {
 			return err
 		}
@@ -342,7 +348,8 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 		if len(group) == 0 {
 			continue
 		}
-		lr, err := run(ctx, s.Name(), group, s.Analyze)
+		lr, dismissed, err := run(ctx, s.Name(), group, s.Analyze, opts.Dismissed)
+		result.Dismissed += dismissed
 		if err != nil {
 			return err
 		}
@@ -363,9 +370,10 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 	return nil
 }
 
-// run analyzes a group of files and keeps findings on owned lines.
+// run analyzes a group of files and keeps findings on owned lines, except ones
+// the user dismissed, which it counts.
 func run(ctx context.Context, name string, group []ownedFile,
-	analyze func(context.Context, []File) ([]Finding, error)) (LanguageResult, error) {
+	analyze func(context.Context, []File) ([]Finding, error), dismissed map[string]bool) (LanguageResult, int, error) {
 	lr := LanguageResult{Language: name, Files: len(group), AssistedByRule: map[string]int{}, Idioms: map[string]IdiomUse{}}
 	owned := map[string]map[int]string{}
 	assisted := map[string]map[int]bool{}
@@ -382,11 +390,27 @@ func run(ctx context.Context, name string, group []ownedFile,
 	}
 	findings, err := analyze(ctx, inputs)
 	if err != nil {
-		return lr, fmt.Errorf("%s analyzer: %w", name, err)
+		return lr, 0, fmt.Errorf("%s analyzer: %w", name, err)
 	}
+	content := map[string][]byte{}
+	for _, f := range group {
+		content[f.file.Path] = f.file.Content
+	}
+	lineOf := func(path string, n int) []byte {
+		lines := bytes.Split(content[path], []byte("\n"))
+		if n < 1 || n > len(lines) {
+			return nil
+		}
+		return lines[n-1]
+	}
+	skipped := 0
 	idiomFiles := map[string]map[string]bool{}
 	for _, fd := range findings {
 		if owned[fd.Path][fd.Line] == "" {
+			continue
+		}
+		if !fd.Positive && len(dismissed) > 0 && dismissed[DismissalKey(fd.Rule, lineOf(fd.Path, fd.Line))] {
+			skipped++
 			continue
 		}
 		if fd.Positive {
@@ -414,7 +438,7 @@ func run(ctx context.Context, name string, group []ownedFile,
 		}
 		return lr.Findings[i].Line < lr.Findings[j].Line
 	})
-	return lr, nil
+	return lr, skipped, nil
 }
 
 // frameworks lists the frameworks the files use, and how many files use each.

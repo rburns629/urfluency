@@ -579,6 +579,9 @@ func caveats(r *Report, langs []ratedLanguage) []string {
 	if u := r.Unversioned; u != nil {
 		out = append(out, fmt.Sprintf("%s without Git count as yours by declaration.", count(u.Projects, "project")))
 	}
+	if r.Dismissed > 0 {
+		out = append(out, fmt.Sprintf("%s you dismissed as not real problems are not counted.", count(r.Dismissed, "finding")))
+	}
 	if p := r.Prompting; p != nil && p.Communication != nil {
 		out = append(out, "Communication traits come from the wording of your prompts and are not scored.")
 	}

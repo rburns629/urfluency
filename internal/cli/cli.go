@@ -58,6 +58,12 @@ Usage:
                                   the ratings after you confirm. It does not reuse an
                                   earlier scan: pass the same path and flags
   urfluency logout                Delete the upload token on this machine
+  urfluency dismiss RULE FILE:LINE [--reason TEXT]
+                                  Leave a finding that is not a real problem, such
+                                  as a placeholder flagged as a secret, out of later
+                                  scans and uploads. RULE and FILE:LINE are as
+                                  scan --locations shows them. --list shows them;
+                                  --undo counts one again
   urfluency attest [--since WHEN] In GitHub Actions: rate the checked-out repository,
                                   every author's code, and send the ratings for its
                                   badges with the job's OIDC token (CI-attested).
@@ -124,6 +130,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = logout(args[1:], stdout)
 	case "attest":
 		err = attest(ctx, args[1:], stdout)
+	case "dismiss":
+		err = dismiss(args[1:], stdout)
 	case "validate":
 		err = validate(ctx, args[1:], stdout)
 	case "doctor":
@@ -293,7 +301,7 @@ func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations 
 			shown += " (no Git)"
 		}
 		prog.repo(i+1, total, shown)
-		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update, Extensions: exts,
+		opts := analysis.Options{Emails: authors, Since: since, AgentLines: agentLines[dir], Progress: prog.update, Extensions: exts, Dismissed: saved.dismissedKeys(),
 			SkipDir: func(d string) bool { return isRepo(d) || excluded(abs, d, sf.excludes) }}
 		var part analysis.Result
 		if git {
@@ -332,6 +340,7 @@ func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations 
 	if len(folderParts) > 0 {
 		folderRes = analysis.Merge(folderLabels, folderParts)
 		r.Unversioned = report.BuildUnversioned(folderRes, withLocations)
+		r.Dismissed += folderRes.Dismissed
 	}
 	r.Combined = report.BuildCombined(res, folderRes)
 	if *sf.sessions {

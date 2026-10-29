@@ -31,9 +31,11 @@ type Report struct {
 	Commit  string `json:"commit"`
 	Repos   int    `json:"repositories"`
 	// SkippedSlow counts files skipped because attributing them took too long.
-	SkippedSlow int      `json:"files_skipped_too_slow,omitempty"`
-	Since       string   `json:"since"`
-	Summary     *Summary `json:"summary,omitempty"`
+	SkippedSlow int `json:"files_skipped_too_slow,omitempty"`
+	// Dismissed counts findings the user dismissed with urfluency dismiss.
+	Dismissed int      `json:"findings_dismissed,omitempty"`
+	Since     string   `json:"since"`
+	Summary   *Summary `json:"summary,omitempty"`
 	// Combined is the final result: all work with and without Git, scored as
 	// one. Languages, Tools, Design, and Unversioned are its traceable parts.
 	Combined      *Combined      `json:"combined,omitempty"`
@@ -228,7 +230,7 @@ func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 
 // Build creates a report from a scan result.
 func Build(res analysis.Result, since time.Time, withLocations bool) Report {
-	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow,
+	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow, Dismissed: res.Dismissed,
 		Languages: []Language{}, Tools: BuildTools(res), Git: BuildGit(res)}
 	r.Design = BuildDesign(res, r.Tools)
 	if !since.IsZero() {

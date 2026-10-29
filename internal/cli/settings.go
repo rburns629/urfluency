@@ -18,6 +18,8 @@ type settings struct {
 	NotMine []string `json:"not_mine"`
 	// Extensions are extra file extensions to read, beyond supported languages.
 	Extensions []string `json:"extensions"`
+	// Dismissed are findings the user said are not real problems.
+	Dismissed []dismissal `json:"dismissed,omitempty"`
 }
 
 // settingsPath is <user config dir>/urfluency/settings.json, or the same file in

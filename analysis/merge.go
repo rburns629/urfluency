@@ -21,6 +21,7 @@ func Merge(labels []string, parts []Result) Result {
 		out.Findings += p.Findings
 		out.MarkedLines += p.MarkedLines
 		out.SkippedSlow += p.SkippedSlow
+		out.Dismissed += p.Dismissed
 		out.Git.Commits += p.Git.Commits
 		out.Git.ShortSubject += p.Git.ShortSubject
 		out.Git.Descriptive += p.Git.Descriptive

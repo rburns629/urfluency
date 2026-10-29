@@ -121,7 +121,9 @@ func firebaseWebKey(line string, lines [][]byte, i int) bool {
 // token formats are reported everywhere.
 func match(line string, generic bool) string {
 	for _, p := range patterns {
-		if p.re.MatchString(line) {
+		// AWS documents sample credentials such as AKIAIOSFODNN7EXAMPLE and
+		// ...EXAMPLEKEY; they are not secrets.
+		if m := p.re.FindString(line); m != "" && !strings.Contains(m, "EXAMPLE") {
 			return p.rule
 		}
 	}
