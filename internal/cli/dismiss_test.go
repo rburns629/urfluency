@@ -57,7 +57,8 @@ func TestDismiss(t *testing.T) {
 	}
 	var out, errOut bytes.Buffer
 	at := filepath.Join(r.Dir, "a.go") + ":3"
-	if code := Run(context.Background(), []string{"dismiss", "--reason", "SDK placeholder", "sec.hardcoded-password", at}, &out, &errOut); code != 0 {
+	// The reason may follow the arguments, as the README shows it.
+	if code := Run(context.Background(), []string{"dismiss", "sec.hardcoded-password", at, "--reason", "SDK placeholder"}, &out, &errOut); code != 0 {
 		t.Fatalf("dismiss exit %d: %s", code, errOut.String())
 	}
 	n, dismissed, caveats := secretFindings(t, r.Dir)
@@ -75,7 +76,7 @@ func TestDismiss(t *testing.T) {
 		t.Errorf("after the line changed: %d findings, want 1", n)
 	}
 	r.Commit("me@example.com", "", map[string]string{"a.go": src("Zq8vLm2pR7xTb4")})
-	if code := Run(context.Background(), []string{"dismiss", "--undo", "sec.hardcoded-password", at}, &out, &errOut); code != 0 {
+	if code := Run(context.Background(), []string{"dismiss", "sec.hardcoded-password", "--undo", at}, &out, &errOut); code != 0 {
 		t.Fatalf("undo exit %d: %s", code, errOut.String())
 	}
 	if n, _, _ := secretFindings(t, r.Dir); n != 1 {

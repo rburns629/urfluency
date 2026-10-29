@@ -46,8 +46,16 @@ func dismiss(args []string, stdout io.Writer) error {
 	reason := fs.String("reason", "", "")
 	undo := fs.Bool("undo", false, "")
 	list := fs.Bool("list", false, "")
-	if err := fs.Parse(args); err != nil {
-		return fmt.Errorf("%w: %v", errUsage, err)
+	// Flags may come before or after the rule and FILE:LINE.
+	var pos []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return fmt.Errorf("%w: %v", errUsage, err)
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		pos, args = append(pos, fs.Arg(0)), fs.Args()[1:]
 	}
 	s, err := loadSettings()
 	if err != nil {
@@ -69,10 +77,10 @@ func dismiss(args []string, stdout io.Writer) error {
 		}
 		return nil
 	}
-	if fs.NArg() != 2 {
+	if len(pos) != 2 {
 		return fmt.Errorf("%w: dismiss takes a rule and FILE:LINE, as scan --locations shows them", errUsage)
 	}
-	rule, at := fs.Arg(0), fs.Arg(1)
+	rule, at := pos[0], pos[1]
 	if _, ok := rules.Lookup(rule); !ok {
 		return fmt.Errorf("%w: unknown rule %q; use the rule id a scan shows, such as sec.hardcoded-password", errUsage, rule)
 	}
