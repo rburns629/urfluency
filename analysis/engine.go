@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -64,6 +66,12 @@ type Options struct {
 	// Dismissed holds DismissalKeys of findings the user dismissed; they are
 	// left out of every count and score, and counted in Result.Dismissed.
 	Dismissed map[string]bool
+
+	// present, set by Scan, reports whether a committed line is still in the
+	// working copy's version of a file. A secret found at HEAD counts only
+	// while it is: one removed locally is no longer in the user's files,
+	// even if the change was never committed.
+	present func(path string, line []byte) bool
 }
 
 // wanted reports whether a file is read as code: a supported language, or an
@@ -237,6 +245,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 			}
 		}
 	}
+	opts.present = workingCopy(repo.Dir)
 	if err := analyzeFiles(ctx, &result, files, tools, scripts, opts); err != nil {
 		return Result{}, err
 	}
@@ -328,7 +337,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 			continue
 		}
 		opts.progress("analyzing "+a.Language(), 0, 0)
-		lr, dismissed, err := run(ctx, a.Language(), group, a.Analyze, opts.Dismissed)
+		lr, dismissed, err := run(ctx, a.Language(), group, a.Analyze, opts)
 		result.Dismissed += dismissed
 		if err != nil {
 			return err
@@ -348,7 +357,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 		if len(group) == 0 {
 			continue
 		}
-		lr, dismissed, err := run(ctx, s.Name(), group, s.Analyze, opts.Dismissed)
+		lr, dismissed, err := run(ctx, s.Name(), group, s.Analyze, opts)
 		result.Dismissed += dismissed
 		if err != nil {
 			return err
@@ -371,9 +380,10 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 }
 
 // run analyzes a group of files and keeps findings on owned lines, except ones
-// the user dismissed, which it counts.
+// the user dismissed, which it counts, and secrets no longer in the working
+// copy.
 func run(ctx context.Context, name string, group []ownedFile,
-	analyze func(context.Context, []File) ([]Finding, error), dismissed map[string]bool) (LanguageResult, int, error) {
+	analyze func(context.Context, []File) ([]Finding, error), opts Options) (LanguageResult, int, error) {
 	lr := LanguageResult{Language: name, Files: len(group), AssistedByRule: map[string]int{}, Idioms: map[string]IdiomUse{}}
 	owned := map[string]map[int]string{}
 	assisted := map[string]map[int]bool{}
@@ -409,8 +419,11 @@ func run(ctx context.Context, name string, group []ownedFile,
 		if owned[fd.Path][fd.Line] == "" {
 			continue
 		}
-		if !fd.Positive && len(dismissed) > 0 && dismissed[DismissalKey(fd.Rule, lineOf(fd.Path, fd.Line))] {
+		if !fd.Positive && len(opts.Dismissed) > 0 && opts.Dismissed[DismissalKey(fd.Rule, lineOf(fd.Path, fd.Line))] {
 			skipped++
+			continue
+		}
+		if opts.present != nil && strings.HasPrefix(fd.Rule, "sec.") && !opts.present(fd.Path, lineOf(fd.Path, fd.Line)) {
 			continue
 		}
 		if fd.Positive {
@@ -439,6 +452,25 @@ func run(ctx context.Context, name string, group []ownedFile,
 		return lr.Findings[i].Line < lr.Findings[j].Line
 	})
 	return lr, skipped, nil
+}
+
+// workingCopy returns a check for whether a committed line is still in the
+// working copy of a file under dir, anywhere in it. Each file is read once; a
+// file deleted or unreadable has none of its lines.
+func workingCopy(dir string) func(path string, line []byte) bool {
+	var mu sync.Mutex
+	files := map[string][]byte{}
+	return func(path string, line []byte) bool {
+		mu.Lock()
+		content, ok := files[path]
+		if !ok {
+			content, _ = os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+			files[path] = content
+		}
+		mu.Unlock()
+		line = bytes.TrimSpace(line)
+		return len(line) > 0 && bytes.Contains(content, line)
+	}
 }
 
 // frameworks lists the frameworks the files use, and how many files use each.

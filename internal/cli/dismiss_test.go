@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -84,5 +85,30 @@ func TestDismiss(t *testing.T) {
 	}
 	if code := Run(context.Background(), []string{"dismiss", "sec.no-such-rule", at}, &out, &errOut); code != 2 {
 		t.Errorf("an unknown rule exit = %d, want 2", code)
+	}
+}
+
+// A committed secret counts only while it is still in the working copy: one
+// removed locally is gone from the user's files, committed or not.
+func TestSecretsRemovedLocallyDoNotCount(t *testing.T) {
+	t.Setenv("URFLUENCY_CONFIG_DIR", t.TempDir())
+	r := testutil.NewRepo(t)
+	withSecret := "package a\n\nconst apiKey = \"Zq8vLm2pR7xTb4\"\n"
+	r.Commit("me@example.com", "", map[string]string{"a.go": withSecret})
+	if n, _, _ := secretFindings(t, r.Dir); n != 1 {
+		t.Fatalf("committed and present: %d findings, want 1", n)
+	}
+	file := filepath.Join(r.Dir, "a.go")
+	if err := os.WriteFile(file, []byte("package a\n\nvar apiKey = os.Getenv(\"API_KEY\")\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n, _, _ := secretFindings(t, r.Dir); n != 0 {
+		t.Errorf("removed locally, not committed: %d findings, want 0", n)
+	}
+	if err := os.WriteFile(file, []byte(withSecret), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n, _, _ := secretFindings(t, r.Dir); n != 1 {
+		t.Errorf("restored: %d findings, want 1", n)
 	}
 }

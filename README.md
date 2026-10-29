@@ -223,7 +223,9 @@ urfluency dismiss sec.hardcoded-password src/model.ts:336 --reason "SDK placehol
 urfluency dismiss --list                         # or --undo RULE FILE:LINE
 ```
 
-Only the rule and a hash of the line are saved, on this machine. A dismissal
+A secret removed from your files no longer counts, even if the change is not
+committed; it can still be in the repository's history, so rotate any that
+were live. Only the rule and a hash of the line are saved, on this machine. A dismissal
 follows the line if the file moves and lapses if the line changes. Reports and
 uploads say how many findings you dismissed, never which.
 
