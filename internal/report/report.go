@@ -146,9 +146,11 @@ type Authorship struct {
 
 // RuleResult is one rule with occurrences on the user's lines.
 type RuleResult struct {
-	ID        string   `json:"id"`
-	Category  string   `json:"category"`
-	Title     string   `json:"title"`
+	ID       string `json:"id"`
+	Category string `json:"category"`
+	Title    string `json:"title"`
+	// Framework names the framework a rule checks, such as "react", if any.
+	Framework string   `json:"framework,omitempty"`
 	Count     int      `json:"count"`
 	PerKLines float64  `json:"per_1000_lines"`
 	Why       string   `json:"why"`
@@ -276,7 +278,7 @@ func buildLanguage(lr analysis.LanguageResult, withLocations bool) Language {
 		}
 		rr := byRule[f.Rule]
 		if rr == nil {
-			rr = &RuleResult{ID: rule.ID, Category: string(rule.Category), Title: rule.Title, Why: rule.Why, Focus: rule.Focus,
+			rr = &RuleResult{ID: rule.ID, Category: string(rule.Category), Title: rule.Title, Framework: rule.Framework, Why: rule.Why, Focus: rule.Focus,
 				AssistedCount: lr.AssistedByRule[f.Rule], Standard: rule.Standard()}
 			byRule[f.Rule] = rr
 		}
