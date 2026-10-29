@@ -1,4 +1,6 @@
 #include "tree_sitter/parser.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wctype.h>
 
@@ -234,7 +236,12 @@ struct ScannerState {
 };
 
 void *tree_sitter_swift_external_scanner_create() {
-    return calloc(0, sizeof(struct ScannerState));
+    void *payload = calloc(1, sizeof(struct ScannerState));
+    if (!payload) {
+        fprintf(stderr, "tree-sitter-swift: out of memory allocating scanner state\n");
+        exit(1);
+    }
+    return payload;
 }
 
 void tree_sitter_swift_external_scanner_destroy(void *payload) {
@@ -735,6 +742,11 @@ static enum TokenType find_possible_compiler_directive(TSLexer *lexer) {
             if (expected_char == '\0') {
                 full_match = dir_idx;
                 lexer->mark_end(lexer);
+                // The directive has matched in full. Stop considering it: at the
+                // end of input the lookahead is 0 as well, and comparing it with
+                // the terminator would carry the match past the end of the string.
+                possible_directives[dir_idx] = false;
+                continue;
             }
 
             if (expected_char != lexer->lookahead) {

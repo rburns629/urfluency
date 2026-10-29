@@ -30,3 +30,17 @@ func TestGrammars(t *testing.T) {
 		tree.Close()
 	}
 }
+
+// TestSwiftScannerMemory exercises the Swift scanner paths with memory-safety
+// fixes backported from upstream (third_party/tree-sitter-swift/README.md): its
+// state, used by raw strings, and a compiler directive at the end of the input.
+// Run under -asan (the nightly fuzz job), a regression fails.
+func TestSwiftScannerMemory(t *testing.T) {
+	for _, src := range []string{"let s = #\"raw \\#(x) \"q\"\"#\n", "#if", "#else", "#endif", "#"} {
+		tree, err := Parse(Swift, []byte(src))
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		tree.Close()
+	}
+}
