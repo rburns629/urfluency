@@ -21,8 +21,8 @@ func TestDeepNestingIsRefused(t *testing.T) {
 }
 
 func TestSlowParseIsCancelled(t *testing.T) {
-	defer func(b time.Duration) { parseBudget = b }(parseBudget)
-	parseBudget = 0
+	defer func(b time.Duration) { ParseBudget = b }(ParseBudget)
+	ParseBudget = 0
 	src := strings.Repeat("function f(a, b) { return a + b * (a - b); }\n", 20000)
 	if _, err := Parse(JavaScript, []byte(src)); !errors.Is(err, ErrTooComplex) {
 		t.Errorf("parse past its budget: err %v, want ErrTooComplex", err)

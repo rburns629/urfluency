@@ -8,8 +8,10 @@ package fuzz
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/parsing"
 
 	_ "github.com/rburns629/urfluency/analyzers/c"
 	_ "github.com/rburns629/urfluency/analyzers/cpp"
@@ -45,9 +47,21 @@ var seeds = []string{
 	"function F { [CmdletBinding()] param([string]$a) @\"\n$($a)\n\"@ | % { $_ } }\n",
 }
 
+// Some inputs make a grammar slow, which ParseBudget bounds by cancelling the
+// parse; the fuzzer looks for crashes and for work nothing bounds. Fuzzing
+// lowers the budget to a second, so a bounded slow input finishes well before
+// hangAfter, and anything past it is a real hang. hangAfter itself fails the
+// input before Go's fuzzer would kill the worker, about ten seconds in, and
+// report only that it hung.
+const (
+	fuzzParseBudget = time.Second
+	hangAfter       = 8 * time.Second
+)
+
 var extensions = []string{".go", ".py", ".js", ".ts", ".tsx", ".rs", ".c", ".cpp", ".cs", ".java", ".kt", ".swift", ".dart", ".sh", ".ps1"}
 
 func FuzzAnalyzers(f *testing.F) {
+	parsing.ParseBudget = fuzzParseBudget
 	for _, s := range seeds {
 		f.Add([]byte(s))
 	}
@@ -63,11 +77,23 @@ func FuzzAnalyzers(f *testing.F) {
 			if a.Skip(file) {
 				continue
 			}
-			if _, err := a.Analyze(context.Background(), []analysis.File{file}); err != nil {
-				t.Fatalf("%s: %v", ext, err)
-			}
-			if fd, ok := a.(analysis.FrameworkDetector); ok {
-				fd.Frameworks(file)
+			// Failing before Go's fuzzer kills the worker names the language,
+			// so a hang can be traced.
+			done := make(chan error, 1)
+			go func() {
+				_, err := a.Analyze(context.Background(), []analysis.File{file})
+				if fd, ok := a.(analysis.FrameworkDetector); ok {
+					fd.Frameworks(file)
+				}
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("%s: %v", ext, err)
+				}
+			case <-time.After(hangAfter):
+				t.Fatalf("%s: analysis took over %s", ext, hangAfter)
 			}
 		}
 	})

@@ -58,8 +58,9 @@ type Tree struct {
 // longer than parseBudget, or nests deeper than maxDepth, is refused. Real
 // code parses in milliseconds and nests a few dozen levels; a crafted file
 // could otherwise stall a scan or exhaust the stack of the recursive walks
-// that analyzers run over the tree.
-var parseBudget = 5 * time.Second
+// that analyzers run over the tree. ParseBudget is a variable only so fuzz
+// tests can lower it; nothing else should change it.
+var ParseBudget = 5 * time.Second
 
 const maxDepth = 2000
 
@@ -74,7 +75,7 @@ func Parse(g Grammar, src []byte) (*Tree, error) {
 	if err := p.SetLanguage(g.lang); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(parseBudget)
+	deadline := time.Now().Add(ParseBudget)
 	t := p.ParseWithOptions(func(i int, _ ts.Point) []byte {
 		if i < len(src) {
 			return src[i:]

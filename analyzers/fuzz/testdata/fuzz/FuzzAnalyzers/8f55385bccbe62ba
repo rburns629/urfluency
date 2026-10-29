@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("A00 AAAA  A { s A() {A() {await A000.A000000 A { string A => $@\"A{0}\";as(0);}}\n")
