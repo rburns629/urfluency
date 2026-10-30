@@ -276,3 +276,26 @@ func TestScanEveryoneInShallowClone(t *testing.T) {
 		t.Errorf("owned %d, marked %d %v; want 11 owned, 2 marked by claude", res.OwnedLines, res.MarkedLines, res.MarkedByTool)
 	}
 }
+
+func TestScanCountsPlatformsFromOwnCommits(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("other@example.com", "", map[string]string{"infra/theirs.tf": "resource \"azurerm_resource_group\" \"g\" {}\n"})
+	r.Commit("me@example.com", "", map[string]string{
+		"infra/main.tf":   "provider \"aws\" {}\nresource \"aws_s3_bucket\" \"b\" {}\n",
+		"cloudbuild.yaml": "steps: []\n",
+		"app/app.go":      "package app\n\nimport \"cloud.google.com/go/storage\"\n\nvar _ = storage.NewClient\n",
+	})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aws := res.Platforms["aws"]; aws.Config != 1 || aws.Code != 0 {
+		t.Errorf("aws = %+v", aws)
+	}
+	if gcp := res.Platforms["gcp"]; gcp.Config != 1 || gcp.Code != 1 || gcp.Files != 2 {
+		t.Errorf("gcp = %+v", gcp)
+	}
+	if _, ok := res.Platforms["azure"]; ok {
+		t.Errorf("another author's Terraform counted: %+v", res.Platforms)
+	}
+}

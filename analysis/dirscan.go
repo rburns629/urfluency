@@ -63,6 +63,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 	}
 	var paths, manifests []string
 	toolFiles := map[string]ToolUse{}
+	platforms := map[string]PlatformUse{}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries are skipped
@@ -81,6 +82,17 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			u := toolFiles[name]
 			u.Repos, u.Files = 1, u.Files+1
 			toolFiles[name] = u
+		}
+		if d.Type().IsRegular() && !ignored[rel] {
+			for _, platform := range platformsOfFile(rel, func() []byte {
+				if info, err := d.Info(); err != nil || info.Size() > maxScanBytes {
+					return nil
+				}
+				b, _ := os.ReadFile(p)
+				return b
+			}) {
+				addPlatform(platforms, platform, 0, 1)
+			}
 		}
 		if d.Type().IsRegular() && isScaffoldManifest(d.Name()) {
 			manifests = append(manifests, rel)
@@ -148,7 +160,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 			scripts = append(scripts, string(content))
 		}
 	}
-	result := Result{Repos: 1, MarkedByTool: map[string]int{}, Declared: true, Tools: toolFiles}
+	result := Result{Repos: 1, MarkedByTool: map[string]int{}, Declared: true, Tools: toolFiles, Platforms: platforms}
 	if err := analyzeFiles(ctx, &result, files, nil, scripts, opts); err != nil {
 		return Result{}, err
 	}

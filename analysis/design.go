@@ -51,7 +51,7 @@ var designLibraries = []struct {
 	{"cloud", "gcp", []string{"cloud.google.com/go", "google.cloud", "google.api_core", "googleapiclient", "@google-cloud/", "com.google.cloud", "functions_framework", "@google-cloud/functions-framework"}},
 	{"cloud", "aws", []string{"github.com/aws/aws-sdk-go", "github.com/aws/aws-sdk-go-v2", "github.com/aws/aws-lambda-go", "boto3", "botocore", "@aws-sdk/", "aws-sdk", "aws-lambda", "software.amazon.awssdk", "com.amazonaws", "amazon.", "aws_sdk_", "aws_config", "aws_lambda_powertools"}},
 	{"cloud", "azure", []string{"github.com/azure/azure-sdk-for-go", "azure.", "@azure/", "com.azure", "azure_", "microsoft.azure"}},
-	{"cloud", "firebase", []string{"firebase", "firebase_admin", "firebase-admin", "firebase-functions", "@react-native-firebase/", "package:firebase_", "package:cloud_firestore", "com.google.firebase", "firebase.google.com/go", "firebasecore", "firebaseauth", "firebasefirestore"}},
+	{"cloud", "firebase", []string{"firebase", "@firebase/", "firebase_admin", "firebase-admin", "firebase-functions", "@react-native-firebase/", "package:firebase_", "package:cloud_firestore", "com.google.firebase", "firebase.google.com/go", "firebasecore", "firebaseauth", "firebasefirestore"}},
 	{"cloud", "cloudflare", []string{"@cloudflare/", "cloudflare"}},
 	{"cloud", "vercel", []string{"@vercel/"}},
 
@@ -353,14 +353,19 @@ func importMatches(imp, pre string) bool {
 }
 
 // designUsage tallies design areas over files with owned lines. A file counts
-// once per area, and once per library within it.
-func designUsage(files []ownedFile) map[string]DesignUse {
+// once per area, and once per library within it. It also counts the files that
+// import each platform's SDKs into platforms.
+func designUsage(files []ownedFile, platforms map[string]PlatformUse) map[string]DesignUse {
 	out := map[string]DesignUse{}
 	for _, f := range files {
 		if f.analyzer == nil || len(f.owned) == 0 {
 			continue
 		}
-		found := DesignOf(Imports(f.analyzer.Language(), f.file))
+		imports := Imports(f.analyzer.Language(), f.file)
+		for _, platform := range PlatformsOf(imports) {
+			addPlatform(platforms, platform, 1, 0)
+		}
+		found := DesignOf(imports)
 		for area, libs := range designInContent(f.file.Content) {
 			if found[area] == nil {
 				found[area] = map[string]bool{}

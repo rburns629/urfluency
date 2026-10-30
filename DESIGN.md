@@ -243,13 +243,13 @@ parts show counts only, so a part never reads as a rating.
 - **Languages** keep their proficiency score from `combined`, with the evidence
   showing lines with and without Git. The overall rating is the mean of language
   scores weighted by lines.
-- **Frameworks, tools, and design areas** get an *experience* rating:
+- **Frameworks, tools, design areas, and platforms** get an *experience* rating:
   `60 × min(1, log2(1 + repos) / log2(1 + R)) + 40 × min(1, log2(1 + files) / log2(1 + F))`,
   with R = 10 and F = 200 for frameworks and tools. Design areas pool many
   libraries and differ in how their code spreads: broad areas (cloud, APIs,
   data, front ends, mobile) use R = 25 and F = 500; narrow ones whose code sits
   in a few modules per service (messaging, auth, observability, command-line
-  tools, AI) use R = 15 and F = 100; the rest use R = 15 and F = 200. The logarithm makes the first projects
+  tools, AI) use R = 15 and F = 100; the rest, and platforms, use R = 15 and F = 200. The logarithm makes the first projects
   count most, and repositories weigh more than files because one large project
   can reflect a team's choices. Confidence: high from five repositories, medium
   from two. Package managers are listed but not rated: a manifest shows a
@@ -279,6 +279,20 @@ scanned name the kind of work: cloud integration (cloud and integrations),
 backend services (APIs and data), event-driven systems (messaging and cloud),
 platform and infrastructure, data engineering, AI applications, machine learning,
 mobile apps, web front ends, and developer tooling.
+
+**Platforms** (AWS, Google Cloud, Azure, Firebase, Kubernetes, Cloudflare,
+Vercel, Supabase, Snowflake, Databricks, Salesforce, Palantir Foundry) count two
+kinds of files: owned code files whose imports match a platform's SDK prefixes,
+and deploy and infrastructure files the user committed to (or, without Git,
+that are present). Deploy files are matched by path alone and never opened,
+such as `cloudbuild.yaml`, `samconfig.toml`, `wrangler.toml`, Bicep files,
+`Chart.yaml`, `sfdx-project.json`, or `force-app/` and `transforms-*/` folders.
+Terraform `.tf` files are the one file type opened, and only the type label of
+each `resource`, `data`, or `provider` block is matched (`aws_s3_bucket` is
+AWS; `google_firebase_*` is Firebase). Stored values are never read: `*.tfvars`
+and state are protected, `.terraform/` is skipped, and Helm values, Ansible
+variables, inventories and vaults, `parameters.json`, and Cloud Build
+substitutions are not platform files. Only platform names and counts are kept.
 
 **Communication** (with `--sessions`) counts task prompts that explain why
 (rationale), set limits (constraints), state expected behavior (criteria), name

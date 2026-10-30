@@ -46,6 +46,7 @@ type Report struct {
 	Practices     *Practices     `json:"practices,omitempty"`
 	Tools         []Tool         `json:"tools"`
 	Design        []DesignArea   `json:"design"`
+	Platforms     []Platform     `json:"platforms"`
 	Git           *Git           `json:"git,omitempty"`
 	// Unversioned covers folders without Git, kept apart because their
 	// authorship is declared rather than recorded.
@@ -172,6 +173,7 @@ type Unversioned struct {
 	Languages []Language   `json:"languages"`
 	Tools     []Tool       `json:"tools"`
 	Design    []DesignArea `json:"design"`
+	Platforms []Platform   `json:"platforms"`
 }
 
 // Combined is all the user's work, with and without Git, scored as one, so a
@@ -185,6 +187,7 @@ type Combined struct {
 	Languages     []Language   `json:"languages"`
 	Tools         []Tool       `json:"tools"`
 	Design        []DesignArea `json:"design"`
+	Platforms     []Platform   `json:"platforms"`
 }
 
 // BuildCombined merges the Git and folder results and scores them as one.
@@ -198,13 +201,14 @@ func BuildCombined(git, folders analysis.Result) *Combined {
 	if folders.Repos > 0 {
 		parts, labels = append(parts, folders), append(labels, "folders")
 	}
-	c := &Combined{Repos: git.Repos, Projects: folders.Repos, Languages: []Language{}, Tools: []Tool{}, Design: []DesignArea{}}
+	c := &Combined{Repos: git.Repos, Projects: folders.Repos, Languages: []Language{}, Tools: []Tool{}, Design: []DesignArea{}, Platforms: []Platform{}}
 	if len(parts) == 0 {
 		return c
 	}
 	all := analysis.Merge(labels, parts)
 	c.Tools = BuildTools(all)
 	c.Design = BuildDesign(all, c.Tools)
+	c.Platforms = BuildPlatforms(all)
 	verified, total := 0, 0
 	for _, lr := range all.Languages {
 		c.Languages = append(c.Languages, buildLanguage(lr, false))
@@ -227,6 +231,7 @@ func BuildCombined(git, folders analysis.Result) *Combined {
 func BuildUnversioned(res analysis.Result, withLocations bool) *Unversioned {
 	u := &Unversioned{Projects: res.Repos, Languages: []Language{}, Tools: BuildTools(res)}
 	u.Design = BuildDesign(res, u.Tools)
+	u.Platforms = BuildPlatforms(res)
 	for _, lr := range res.Languages {
 		u.Languages = append(u.Languages, buildLanguage(lr, withLocations))
 	}
@@ -238,6 +243,7 @@ func Build(res analysis.Result, since time.Time, withLocations bool) Report {
 	r := Report{Format: FormatVersion, Catalog: rules.Version, Commit: shortHash(res.Head), Repos: res.Repos, Since: "all", SkippedSlow: res.SkippedSlow, Dismissed: res.Dismissed,
 		Languages: []Language{}, Tools: BuildTools(res), Git: BuildGit(res)}
 	r.Design = BuildDesign(res, r.Tools)
+	r.Platforms = BuildPlatforms(res)
 	if !since.IsZero() {
 		r.Since = since.Format("2006-01-02")
 	}
@@ -460,6 +466,7 @@ func WriteText(w io.Writer, r Report) error {
 	writePractices(&b, r.Practices, r.Repos)
 	writeTools(&b, r.Tools, r.Git)
 	writeDesign(&b, "DESIGN (from the libraries your files import)", r.Design)
+	writePlatforms(&b, "PLATFORMS (from SDK imports and deploy and infrastructure files; settings and values are not read)", r.Platforms)
 	if u := r.Unversioned; u != nil {
 		fmt.Fprintf(&b, "\nPROJECTS WITHOUT GIT: %d (authorship declared, not verified)\n", u.Projects)
 		b.WriteString("Every line in these folders counts as yours; AI share, durability, and test habits need Git history.\n")
@@ -471,6 +478,7 @@ func WriteText(w io.Writer, r Report) error {
 			writeToolList(&b, u.Tools)
 		}
 		writeDesign(&b, "  DESIGN", u.Design)
+		writePlatforms(&b, "  PLATFORMS", u.Platforms)
 	}
 	writeVulnerabilities(&b, r.Vulnerabilities)
 	writeSummary(&b, r.Summary, r.Combined)

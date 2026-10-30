@@ -106,12 +106,13 @@ func Summarize(r *Report) {
 	s := &Summary{Strengths: []string{}, Design: []string{}, Communication: []string{}, Growth: []string{}, NextSteps: []Step{}, Ratings: []Rating{}, Caveats: []string{}}
 	c := r.Combined
 	if c == nil {
-		c = &Combined{Repos: r.Repos, Languages: r.Languages, Tools: r.Tools, Design: r.Design}
+		c = &Combined{Repos: r.Repos, Languages: r.Languages, Tools: r.Tools, Design: r.Design, Platforms: r.Platforms}
 	}
 	langs := ratedLanguages(r, c)
 	design, tools := c.Design, c.Tools
 
-	// Ratings: languages, frameworks, design areas, tools, ways of working, prompting.
+	// Ratings: languages, frameworks, design areas, platforms, tools, ways of
+	// working, prompting.
 	weighted, lines := 0.0, 0
 	for _, l := range langs {
 		p := l.lang.Proficiency
@@ -125,6 +126,10 @@ func Summarize(r *Report) {
 		s.Ratings = append(s.Ratings, Rating{Area: "design", Name: d.ID, Score: d.Score, Level: d.Level, Basis: "experience",
 			Confidence: experienceConfidence(d.Repos), Verified: c.Projects == 0,
 			Evidence: fmt.Sprintf("%s, %s: %s", count(d.Repos, "repo"), count(d.Files, "file"), libraryNames(d.Libraries, 4))})
+	}
+	for _, p := range c.Platforms {
+		s.Ratings = append(s.Ratings, Rating{Area: "platform", Name: p.ID, Score: p.Score, Level: p.Level, Basis: "experience",
+			Confidence: experienceConfidence(p.Repos), Verified: c.Projects == 0, Evidence: p.evidence()})
 	}
 	for _, t := range tools {
 		if t.Kind == "packages" {
@@ -141,7 +146,7 @@ func Summarize(r *Report) {
 	if prompting != nil {
 		s.Ratings = append(s.Ratings, *prompting)
 	}
-	areas := map[string]int{"language": 0, "framework": 1, "design": 2, "tool": 3, "practice": 4, "prompting": 5}
+	areas := map[string]int{"language": 0, "framework": 1, "design": 2, "platform": 3, "tool": 4, "practice": 5, "prompting": 6}
 	sort.SliceStable(s.Ratings, func(i, j int) bool {
 		if a, b := areas[s.Ratings[i].Area], areas[s.Ratings[j].Area]; a != b {
 			return a < b
@@ -162,6 +167,9 @@ func Summarize(r *Report) {
 	}
 	if fw := topRated(s.Ratings, "framework", 4); fw != "" {
 		s.Strengths = append(s.Strengths, "Framework experience: "+fw)
+	}
+	if p := topRated(s.Ratings, "platform", 4); p != "" {
+		s.Strengths = append(s.Strengths, "Platform experience: "+p)
 	}
 	if t := topRated(s.Ratings, "tool", 5); t != "" {
 		s.Strengths = append(s.Strengths, "Delivery and infrastructure tools: "+t)
@@ -338,7 +346,11 @@ func topRated(ratings []Rating, area string, n int) string {
 			continue
 		}
 		seen[r.Name] = true
-		parts = append(parts, fmt.Sprintf("%s %d (%s; %s)", r.Name, r.Score, r.Level, r.Evidence))
+		name := r.Name
+		if area == "platform" {
+			name = platformTitle(name)
+		}
+		parts = append(parts, fmt.Sprintf("%s %d (%s; %s)", name, r.Score, r.Level, r.Evidence))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -625,6 +637,9 @@ func writeSummary(b *strings.Builder, s *Summary, c *Combined) {
 		b.WriteString("  Ratings\n")
 		for _, r := range s.Ratings {
 			name := r.Name
+			if r.Area == "platform" {
+				name = platformTitle(name)
+			}
 			fmt.Fprintf(b, "    %-10s %-26s %3d  %-12s %-6s %s\n", r.Area, name, r.Score, r.Level, r.Confidence, r.Evidence)
 		}
 	}
@@ -708,8 +723,11 @@ func thousands(n int) string {
 
 // ratingLabel names a rating in text: languages by their display name.
 func ratingLabel(area, name string) string {
-	if area == "language" {
+	switch area {
+	case "language":
 		return displayLanguage(name)
+	case "platform":
+		return platformTitle(name)
 	}
 	return sentenceCase(name)
 }

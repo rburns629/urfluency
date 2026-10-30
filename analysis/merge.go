@@ -9,7 +9,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{MarkedByTool: map[string]int{}, Declared: len(parts) > 0, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}}
+	out := Result{MarkedByTool: map[string]int{}, Declared: len(parts) > 0, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}, Platforms: map[string]PlatformUse{}}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -49,6 +49,14 @@ func Merge(labels []string, parts []Result) Result {
 				sum.Libraries[lib] += n
 			}
 			out.Design[area] = sum
+		}
+		for id, u := range p.Platforms {
+			sum := out.Platforms[id]
+			sum.Repos += u.Repos
+			sum.Files += u.Files
+			sum.Code += u.Code
+			sum.Config += u.Config
+			out.Platforms[id] = sum
 		}
 		out.Durability.AssistedAdded += p.Durability.AssistedAdded
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed

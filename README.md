@@ -221,6 +221,7 @@ Every area gets a rating from 0 to 100 and a level: **Beginner** (below 40),
 | Languages | How well you write it (see Proficiency); one rating per language, combining work with and without Git by lines |
 | Frameworks | Experience: repositories and files of yours that use it |
 | Design | Experience in each kind of system you build, from the libraries your files import: cloud services, integrations with other services, web APIs, messaging, databases, analytics, auth, observability, infrastructure as code, AI applications, machine learning, front ends, mobile, and command-line tools |
+| Platforms | Experience with AWS, Google Cloud, Azure, Firebase, Kubernetes, Cloudflare, Vercel, Supabase, Snowflake, Databricks, Salesforce, and Palantir Foundry: files of yours that import their SDKs, and their deploy and infrastructure files you committed to |
 | Tools | Experience: repositories and files of yours for each tool |
 | Ways of working | Commit messages, changes committed with tests, and the quality gates your CI runs |
 | Prompting | With `--sessions`: how often agent tasks were verified and right the first time |
@@ -234,6 +235,13 @@ stored. These traits are descriptive and are not scored.
 
 Experience ratings measure how much you used something, not how well; only
 language ratings judge quality.
+
+Platform detection never reads stored values. Deploy files such as
+`cloudbuild.yaml`, `samconfig.toml`, or `wrangler.toml` are recognized by name
+and never opened. From Terraform `.tf` files, only the type of each `resource`,
+`data`, and `provider` block is read, such as `aws_s3_bucket`. `*.tfvars`,
+state, `.terraform/`, Helm values, and Ansible variables are never opened. The
+report keeps platform names and counts only.
 
 ## Proficiency
 

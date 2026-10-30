@@ -149,6 +149,9 @@ type Result struct {
 	Git   GitHabits
 	// Design is how much owned code worked in each design area, from imports.
 	Design map[string]DesignUse
+	// Platforms is how much the user worked with each platform, from SDK
+	// imports and deploy and infrastructure files.
+	Platforms map[string]PlatformUse
 }
 
 type ownedFile struct {
@@ -238,6 +241,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 
 	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}, SkippedSlow: slow}
 	result.Tools = toolUsage(added, commits, opts.Since)
+	result.Platforms = platformConfig(added, commits, opts.Since, show)
 	result.Git = gitHabits(commits, opts.Since)
 	excluded, err := notUserCode(ctx, repo, added, files)
 	if err != nil {
@@ -336,7 +340,10 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 			}
 		}
 	}
-	result.Design = designUsage(files)
+	if result.Platforms == nil {
+		result.Platforms = map[string]PlatformUse{}
+	}
+	result.Design = designUsage(files, result.Platforms)
 	byAnalyzer := map[Analyzer][]ownedFile{}
 	for _, f := range files {
 		if f.analyzer != nil {
