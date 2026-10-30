@@ -18,8 +18,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/rburns629/urfluency/analysis"
 	"github.com/rburns629/urfluency/analyzers/secrets"
@@ -161,8 +165,10 @@ func Scan(ctx context.Context, dir string, limits Limits) (Report, error) {
 	}
 	r.Files = len(files)
 
-	for _, f := range files {
-		r.Findings = append(r.Findings, checkFile(f)...)
+	perFile := make([][]Finding, len(files))
+	parallel(len(files), func(i int) { perFile[i] = checkFile(files[i]) })
+	for _, found := range perFile {
+		r.Findings = append(r.Findings, found...)
 	}
 	r.Findings = append(r.Findings, checkRepository(files)...)
 	sec, err := secretFindings(ctx, files)
@@ -315,12 +321,19 @@ func secretFindings(ctx context.Context, files []analysis.File) ([]Finding, erro
 			candidates = append(candidates, f)
 		}
 	}
-	found, err := sc.Analyze(ctx, candidates)
-	if err != nil {
-		return nil, err
+	// One file per call, in parallel; the results keep the files' order.
+	perFile := make([][]analysis.Finding, len(candidates))
+	errs := make([]error, len(candidates))
+	parallel(len(candidates), func(i int) {
+		perFile[i], errs[i] = sc.Analyze(ctx, candidates[i:i+1])
+	})
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
 	}
-	out := make([]Finding, 0, len(found))
-	for _, f := range found {
+	var out []Finding
+	for _, f := range slices.Concat(perFile...) {
 		title := "Committed secret"
 		why := "A credential committed to a public repository can be used by anyone who finds it."
 		if rule, ok := rules.Lookup(f.Rule); ok {
@@ -364,4 +377,18 @@ func excerpt(line string) string {
 		return string(r[:140]) + "…"
 	}
 	return line
+}
+
+// parallel calls fn(i) for each i in [0, n) on every core Go uses.
+func parallel(n int, fn func(i int)) {
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(runtime.GOMAXPROCS(0), n) {
+		wg.Go(func() {
+			for i := int(next.Add(1)) - 1; i < n; i = int(next.Add(1)) - 1 {
+				fn(i)
+			}
+		})
+	}
+	wg.Wait()
 }
