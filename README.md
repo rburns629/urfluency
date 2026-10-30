@@ -236,6 +236,16 @@ stored. These traits are descriptive and are not scored.
 Experience ratings measure how much you used something, not how well; only
 language ratings judge quality.
 
+The summary also builds a **persona** from these ratings: your strongest areas,
+the role families your work fits (backend, front end, full stack, mobile,
+platform and DevOps, site reliability, cloud, integration, data, machine
+learning, AI applications, developer tooling, systems, Salesforce, Palantir
+Foundry), and adjacent roles with what is missing for each, linked to your next
+steps. A role fits when each of its requirements is rated Intermediate (40) or
+higher. It describes the work, not the person: no seniority, salary, or
+personal traits. It is built offline with fixed rules, and the site shows it on
+your public profile or published links only if you turn it on.
+
 Platform detection never reads stored values. Deploy files such as
 `cloudbuild.yaml`, `samconfig.toml`, or `wrangler.toml` are recognized by name
 and never opened. From Terraform `.tf` files, only the type of each `resource`,

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rburns629/urfluency/analysis"
 	"github.com/rburns629/urfluency/gates"
 	"github.com/rburns629/urfluency/internal/sessions"
 	"github.com/rburns629/urfluency/rules"
@@ -25,9 +26,12 @@ type Summary struct {
 	Growth        []string `json:"growth_areas"`
 	// NextSteps are the changes that would raise the ratings most, each with
 	// the rating it is predicted to reach.
-	NextSteps []Step   `json:"next_steps"`
-	Ratings   []Rating `json:"ratings"`
-	Caveats   []string `json:"caveats"`
+	NextSteps []Step `json:"next_steps"`
+	// Persona is what the ratings show about the user's work: role families
+	// it fits and adjacent ones. Profiles show it only when published.
+	Persona *Persona `json:"persona,omitempty"`
+	Ratings []Rating `json:"ratings"`
+	Caveats []string `json:"caveats"`
 }
 
 // Rating is one 0–100 rating with its level. Basis says what it measures:
@@ -189,6 +193,7 @@ func Summarize(r *Report) {
 	}
 	s.Growth = append(s.Growth, growthAreas(r, c, langs, practices)...)
 	s.NextSteps = nextSteps(langs, r)
+	s.Persona = buildPersona(s)
 	s.Headline = headline(s.Overall, langs, design, max(c.Repos+c.Projects, 1))
 	s.Caveats = append(s.Caveats, caveats(r, langs)...)
 	r.Summary = s
@@ -633,6 +638,7 @@ func writeSummary(b *strings.Builder, s *Summary, c *Combined) {
 			fmt.Fprintf(b, "    > %s %d -> %d: %s\n        %s\n", ratingLabel(st.Area, st.Name), st.From, st.To, st.Action, st.Detail)
 		}
 	}
+	writePersona(b, s.Persona)
 	if len(s.Ratings) > 0 {
 		b.WriteString("  Ratings\n")
 		for _, r := range s.Ratings {
@@ -728,6 +734,12 @@ func ratingLabel(area, name string) string {
 		return displayLanguage(name)
 	case "platform":
 		return platformTitle(name)
+	case "design":
+		for _, a := range analysis.DesignAreas {
+			if a.ID == name {
+				return a.Title
+			}
+		}
 	}
 	return sentenceCase(name)
 }

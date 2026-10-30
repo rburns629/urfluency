@@ -294,6 +294,17 @@ and state are protected, `.terraform/` is skipped, and Helm values, Ansible
 variables, inventories and vaults, `parameters.json`, and Cloud Build
 substitutions are not platform files. Only platform names and counts are kept.
 
+**Persona** (`summary.persona`) is derived from the summary's ratings with no
+new data and no AI service. Strongest: the top five ratings at 70 or above, one
+per name. Each role family in `roleFamilies` (internal/report/persona.go) lists
+requirements, each met by the best of several ratings (`design:api`,
+`language:go`, `platform:aws`, `tool:terraform`, ...). A role fits when every
+requirement is 40 or higher; it is adjacent when at least half are met and the
+first, defining requirement has some evidence. Fit is the mean of the
+requirements' best ratings. Gaps name the next step that raises them, when one
+exists. It never states seniority, salary, or personal traits. The API strips it
+from public profiles and published links unless the owner turns it on.
+
 **Communication** (with `--sessions`) counts task prompts that explain why
 (rationale), set limits (constraints), state expected behavior (criteria), name
 specific code (context), or ask for checks (verification), plus how often the
