@@ -163,6 +163,10 @@ func languageName(id string) string {
 		return "Java"
 	case "kotlin":
 		return "Kotlin"
+	case "php":
+		return "PHP"
+	case "ruby":
+		return "Ruby"
 	case "swift":
 		return "Swift"
 	case "dart":

@@ -21,7 +21,7 @@ func TestAnalyzersClaimDistinctExtensions(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"c", "cpp", "csharp", "dart", "go", "java", "javascript", "kotlin", "powershell", "python", "rust", "shell", "swift", "typescript"}
+	want := []string{"c", "cpp", "csharp", "dart", "go", "java", "javascript", "kotlin", "php", "powershell", "python", "ruby", "rust", "shell", "swift", "typescript"}
 	got := map[string]bool{}
 	for _, a := range analysis.Analyzers() {
 		got[a.Language()] = true

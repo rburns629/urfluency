@@ -14,6 +14,8 @@ func TestGrammars(t *testing.T) {
 		"csharp":     {CSharp, "using System;\nclass A { async Task M() { await Task.Delay(1); } }"},
 		"java":       {Java, "class A { void m() { var x = java.util.List.of(1); } }"},
 		"kotlin":     {Kotlin, "data class P(val x: Int)\nfun main() { val p = P(1) }"},
+		"php":        {PHP, "<h1><?php echo htmlspecialchars($t); ?></h1>\n<?php\nfunction f(int $x): int { return $x + 1; }"},
+		"ruby":       {Ruby, "class P\n  def initialize(x) = @x = x\n  def to_s = \"#{@x}\"\nend"},
 		"swift":      {Swift, "struct P { let x: Int }\nfunc main() { let p = P(x: 1); print(p) }"},
 		"dart":       {Dart, "class P { final int x; P(this.x); }\nvoid main() { final p = P(1); print(p.x); }"},
 		"bash":       {Bash, "#!/bin/bash\nset -euo pipefail\nf() { local x=\"$1\"; [[ -n $x ]] && echo \"$x\"; }\nf \"$@\""},

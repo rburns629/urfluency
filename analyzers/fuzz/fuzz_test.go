@@ -21,8 +21,10 @@ import (
 	_ "github.com/rburns629/urfluency/analyzers/java"
 	_ "github.com/rburns629/urfluency/analyzers/javascript"
 	_ "github.com/rburns629/urfluency/analyzers/kotlin"
+	_ "github.com/rburns629/urfluency/analyzers/php"
 	_ "github.com/rburns629/urfluency/analyzers/powershell"
 	_ "github.com/rburns629/urfluency/analyzers/python"
+	_ "github.com/rburns629/urfluency/analyzers/ruby"
 	_ "github.com/rburns629/urfluency/analyzers/rust"
 	_ "github.com/rburns629/urfluency/analyzers/secrets"
 	_ "github.com/rburns629/urfluency/analyzers/shell"
@@ -45,6 +47,8 @@ var seeds = []string{
 	"void main() { final s = '''${a}\n'''; print(\"$x ${y.z}\"); }\n",
 	"#!/bin/bash\ncat <<-EOF\n\t$x ${y:-z} $(cmd \"$a\")\n\tEOF\ncase $1 in a|b) echo;; esac\n",
 	"function F { [CmdletBinding()] param([string]$a) @\"\n$($a)\n\"@ | % { $_ } }\n",
+	"<html><?php if ($a): ?><p><?= \"x {$b->c}\" ?></p><?php endif; ?>\n<?php $s = <<<EOT\n$x\nEOT;\n$f = fn($y) => $y?->z ?? match(true) { default => 1 };\n",
+	"# frozen_string_literal: true\nclass A\n  def f(x) = \"#{x} %q(y)\"\n  def g = <<~EOS\n    #{case x in {a:} then a end}\n  EOS\nend\n",
 }
 
 // Some inputs make a grammar slow, which ParseBudget bounds by cancelling the
@@ -58,7 +62,7 @@ const (
 	hangAfter       = 8 * time.Second
 )
 
-var extensions = []string{".go", ".py", ".js", ".ts", ".tsx", ".rs", ".c", ".cpp", ".cs", ".java", ".kt", ".swift", ".dart", ".sh", ".ps1"}
+var extensions = []string{".go", ".py", ".js", ".ts", ".tsx", ".rs", ".c", ".cpp", ".cs", ".java", ".kt", ".swift", ".dart", ".sh", ".ps1", ".php", ".rb"}
 
 func FuzzAnalyzers(f *testing.F) {
 	parsing.ParseBudget = fuzzParseBudget

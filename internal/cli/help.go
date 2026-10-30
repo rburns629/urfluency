@@ -51,7 +51,7 @@ const scanFlagsHelp = `  --since WHEN        Only count lines written since WHEN
                       secrets, such as .tf,.yml; repeat or separate with commas.
                       Without it, only files in supported languages are read
                       (Go, Python, JavaScript, TypeScript, Rust, C, C++, C#,
-                      Java, Kotlin, Swift, Dart, Shell, PowerShell)
+                      Java, Kotlin, PHP, Ruby, Swift, Dart, Shell, PowerShell)
   --sessions          Also grade your prompts from local Claude Code, Codex, and
                       GitHub Copilot Chat sessions for these projects, and report
                       how much code agents wrote. Prompts are read in memory only

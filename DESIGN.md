@@ -1044,5 +1044,5 @@ scan isolation (Cloud Run jobs in a locked-down network, 2026-10-28).
 
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
-- Languages after the current fourteen, shell scripts without a `.sh` or `.bash` extension (found by their `#!` line), and F# and Visual Basic for .NET.
+- Languages after the current sixteen, shell scripts without a `.sh` or `.bash` extension (found by their `#!` line), and F# and Visual Basic for .NET.
 

@@ -180,6 +180,43 @@ var designLibraries = []struct {
 	{"cli", "picocli", []string{"picocli", "info.picocli"}},
 	{"cli", "system.commandline", []string{"system.commandline"}},
 	{"cli", "swift-argument-parser", []string{"argumentparser"}},
+	// PHP namespaces (Aws\S3 is read as aws/s3) and Ruby gems by their require path.
+	{"cloud", "aws", []string{"aws/", "aws-sdk-", "aws-sdk"}},
+	{"cloud", "gcp", []string{"google/cloud/", "google/cloud-", "google-cloud-"}},
+	{"cloud", "azure", []string{"microsoftazure/", "azure-storage-", "azure/"}},
+	{"cloud", "firebase", []string{"kreait/firebase/", "firebase/firebase", "firebase-admin"}},
+	{"messaging", "rabbitmq", []string{"phpamqplib/", "bunny/", "bunny", "sneakers"}},
+	{"messaging", "background-jobs", []string{"sidekiq", "resque", "good_job", "solid_queue", "delayed_job", "illuminate/queue/", "illuminate/bus/"}},
+	{"messaging", "kafka", []string{"rdkafka", "ruby-kafka", "karafka"}},
+	{"data", "sql", []string{"doctrine/dbal/", "doctrine/orm/", "illuminate/database/", "pg", "mysql2", "sqlite3", "sequel", "active_record", "activerecord"}},
+	{"data", "redis", []string{"predis/", "redis"}},
+	{"data", "mongodb", []string{"mongodb/", "mongo", "mongoid"}},
+	{"data", "elasticsearch", []string{"elastic/elasticsearch/", "elasticsearch"}},
+	{"integration", "http-client", []string{"guzzlehttp/", "symfony/component/httpclient/", "symfony/contracts/httpclient/", "faraday", "httparty", "excon", "http.rb"}},
+	{"integration", "stripe", []string{"stripe/", "stripe"}},
+	{"integration", "twilio", []string{"twilio/", "twilio-ruby"}},
+	{"integration", "slack", []string{"slack-ruby-client", "jolicode/slack/"}},
+	{"api", "laravel", []string{"illuminate/http/", "illuminate/routing/", "illuminate/support/facades/route"}},
+	{"api", "symfony", []string{"symfony/component/httpfoundation/", "symfony/component/routing/", "symfony/bundle/frameworkbundle/"}},
+	{"api", "slim", []string{"slim/"}},
+	{"api", "rails", []string{"rails", "action_controller", "rails/all"}},
+	{"api", "sinatra", []string{"sinatra", "sinatra/base"}},
+	{"api", "grape", []string{"grape"}},
+	{"api", "graphql", []string{"graphql", "graphql/", "nuwave/lighthouse/"}},
+	{"auth", "jwt", []string{"firebase/jwt/", "lcobucci/jwt/", "jwt"}},
+	{"auth", "oauth", []string{"league/oauth2/", "laravel/socialite/", "laravel/passport/", "omniauth", "omniauth-", "doorkeeper", "oauth2"}},
+	{"auth", "devise", []string{"devise"}},
+	{"observability", "structured-logging", []string{"monolog/", "psr/log/", "semantic_logger", "lograge"}},
+	{"observability", "sentry", []string{"sentry/", "sentry-ruby", "sentry-rails"}},
+	{"observability", "opentelemetry", []string{"opentelemetry/", "opentelemetry-", "opentelemetry/sdk"}},
+	{"observability", "datadog", []string{"ddtrace", "datadog"}},
+	{"ai", "openai", []string{"openai/", "openai"}},
+	{"ai", "anthropic", []string{"anthropic/", "anthropic"}},
+	{"cli", "symfony-console", []string{"symfony/component/console/"}},
+	{"cli", "thor", []string{"thor"}},
+	{"frontend", "livewire", []string{"livewire/"}},
+	{"frontend", "hotwire", []string{"turbo-rails", "stimulus-rails"}},
+	{"infrastructure", "docker-sdk", []string{"docker-api", "docker/"}},
 }
 
 // designPatterns find design areas that code shows without importing a
@@ -223,6 +260,11 @@ var importPatterns = map[string]*regexp.Regexp{
 	"cpp":        regexp.MustCompile(`(?m)^[ \t]*#[ \t]*include[ \t]*[<"]([^>"\n]+)[>"]`),
 	"swift":      regexp.MustCompile(`(?m)^[ \t]*(?:@\w+[ \t]+)*import[ \t]+(?:(?:class|struct|enum|protocol|func|var|let|typealias)[ \t]+)?([\w.]+)`),
 	"dart":       regexp.MustCompile(`(?m)^[ \t]*(?:import|export)[ \t]+['"]([^'"\n]+)['"]`),
+	// PHP use statements, including function and const imports and the
+	// shared prefix of a group use (use A\{B, C}).
+	"php": regexp.MustCompile(`(?m)^[ \t]*use[ \t]+(?:function[ \t]+|const[ \t]+)?\\?([\w\\]+)`),
+	// Ruby require; require_relative names the project's own files.
+	"ruby": regexp.MustCompile(`(?m)^[ \t]*require[ \t(]*['"]([^'"\n]+)['"]`),
 }
 
 // Imports returns the lowercased modules a file imports, or nil for a language
@@ -260,6 +302,10 @@ func Imports(language string, f File) []string {
 	for _, p := range raw {
 		if p == "" || strings.HasPrefix(p, ".") || strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~") || strings.HasPrefix(p, "@/") {
 			continue
+		}
+		if language == "php" {
+			// Namespaces read like paths: Aws\S3\S3Client is aws/s3/s3client.
+			p = strings.ReplaceAll(strings.Trim(p, `\`), `\`, "/")
 		}
 		// Java and Kotlin wildcard imports ("a.b.*") leave a trailing dot.
 		out = append(out, strings.ToLower(strings.TrimRight(p, ".")))

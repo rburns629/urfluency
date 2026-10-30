@@ -17,7 +17,9 @@ import (
 	cpp "github.com/tree-sitter/tree-sitter-cpp/bindings/go"
 	java "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	php "github.com/tree-sitter/tree-sitter-php/bindings/go"
 	python "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	ruby "github.com/tree-sitter/tree-sitter-ruby/bindings/go"
 	rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 
@@ -46,6 +48,9 @@ var (
 	Dart       = Grammar{ts.NewLanguage(dart.Language())}
 	Bash       = Grammar{ts.NewLanguage(bash.Language())}
 	PowerShell = Grammar{ts.NewLanguage(powershell.Language())}
+	// PHP parses whole .php files, including HTML around <?php blocks.
+	PHP  = Grammar{ts.NewLanguage(php.LanguagePHP())}
+	Ruby = Grammar{ts.NewLanguage(ruby.Language())}
 )
 
 // Tree is a parsed file. Call Close when done; nodes are invalid afterwards.

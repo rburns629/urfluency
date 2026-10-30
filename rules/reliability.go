@@ -28,7 +28,7 @@ func init() {
 			Why:   "useEffect without a second argument runs after every render, which easily causes repeated fetches or render loops.",
 			Focus: "Pass the values the effect uses as dependencies, or [] to run once on mount."},
 		Rule{ID: "clean.cognitive-complexity", Category: CleanCode, Languages: []string{"go", "python", "javascript", "typescript",
-			"rust", "c", "cpp", "csharp", "java", "kotlin", "swift", "dart", "shell", "powershell"},
+			"rust", "c", "cpp", "csharp", "java", "kotlin", "php", "ruby", "swift", "dart", "shell", "powershell"},
 			Title: "Function too complex to follow",
 			Why:   "Cognitive complexity above 15 (SonarSource's measure of nesting, branching, and jumps) makes a function hard to read, review, and change safely.",
 			Focus: "Extract nested branches into well-named functions, return early instead of nesting, and split functions that do several things."},

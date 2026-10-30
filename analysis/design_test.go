@@ -77,3 +77,20 @@ func TestDesignInContent(t *testing.T) {
 		}
 	}
 }
+
+func TestPHPAndRubyDesign(t *testing.T) {
+	php := Imports("php", File{Path: "a.php", Content: []byte("<?php\nnamespace App;\n\nuse Aws\\S3\\S3Client;\nuse GuzzleHttp\\Client;\nuse function Illuminate\\Support\\Facades\\Route;\n")})
+	rb := Imports("ruby", File{Path: "a.rb", Content: []byte("require 'aws-sdk-s3'\nrequire \"sidekiq\"\nrequire_relative 'helper'\n")})
+	got := DesignOf(append(php, rb...))
+	for area, lib := range map[string]string{"cloud": "aws", "integration": "http-client", "messaging": "background-jobs"} {
+		if !got[area][lib] {
+			t.Errorf("%s/%s not found in %v (imports %v %v)", area, lib, got, php, rb)
+		}
+	}
+	// Standard-library HTTP in other languages is not an integration.
+	for _, imp := range []string{"net/http", "http.server", "http"} {
+		if DesignOf([]string{imp})["integration"]["http-client"] {
+			t.Errorf("%s counted as an HTTP client integration", imp)
+		}
+	}
+}
