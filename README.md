@@ -1,26 +1,29 @@
 # urFluency
 
-Free tooling that shows engineers how their code and agent prompting are developing,
-and checks whether public repositories are safe to run.
+Rates the code you write, in 14 languages, and how you work with coding agents,
+from your own Git history. It runs on your machine: your code and prompts never
+leave it. It also checks repositories for malicious code before you run them.
 
-- **Personal metrics:** a local CLI analyzes your own commits and agent sessions and
-  uploads aggregate metrics, never code. The web app at urfluency.com shows
-  strengths, weaknesses, and what to practice across clean code, architecture, type
-  safety, language proficiency, and prompting.
-- **Repository safety scans:** submit a public Git URL to get a report of malicious
-  or privacy-invasive indicators.
-- **Badges and API:** add badges to repositories and embed your published metrics in
-  a portfolio site.
+- **Your ratings:** `urfluency scan` rates each language you write, the frameworks,
+  tools, and kinds of systems you build, your ways of working, and, with
+  `--sessions`, how you brief coding agents. Strengths come first, with what to
+  practice next.
+- **A profile and badges (optional):** `urfluency upload` sends the ratings, never
+  code, to a profile on [urfluency.com](https://urfluency.com) that you choose to
+  publish, with badges for your README and a card for your portfolio site.
+- **Repository ratings:** connect a repository on urfluency.com to rate everyone's
+  code in it and show its badges: through the urFluency GitHub App, or the
+  GitHub Action (`urfluency attest`), which rates it in your own CI.
+- **Safety checks:** `urfluency check` looks for malicious or privacy-invasive
+  behavior in a repository without running it, locally and at no cost. The same
+  engine runs the hosted scanner at [urfluency.com/scan](https://urfluency.com/scan).
 
-Status: phase 1, a local CLI with analyzers for Go, Python, JavaScript, and
-TypeScript. See [DESIGN.md](DESIGN.md).
-
-The CLI command and Go module use lowercase: `urfluency`,
-`github.com/rburns629/urfluency`.
+The CLI is free and MIT licensed, and everything that decides a rating is here:
+the analyzers, the rule catalog, and the scoring formula. Hosted scans beyond the
+free ones are paid; see [pricing](https://urfluency.com/pricing). Documentation:
+[urfluency.com/docs](https://urfluency.com/docs). Design notes: [DESIGN.md](DESIGN.md).
 
 ## Install
-
-Once releases are published:
 
 ```sh
 brew install rburns629/tap/urfluency    # macOS and Linux; installs Git if missing
@@ -28,7 +31,8 @@ urfluency doctor                        # checks dependencies; installs nothing
 ```
 
 Release archives for macOS (Apple Silicon and Intel, macOS 13+) and Linux (x86-64
-and ARM, static binaries) are also attached to each GitHub Release with a
+and ARM, static binaries) are also attached to each
+[GitHub Release](https://github.com/rburns629/urfluency/releases) with a
 `checksums.txt`. To build from source you need Go 1.26.10 or later, a C compiler
 (for tree-sitter), and Git: `go build -o urfluency ./cmd/urfluency`.
 
@@ -36,14 +40,14 @@ and ARM, static binaries) are also attached to each GitHub Release with a
 would read, and looks for a local model runtime. It never installs anything; it
 prints the official install command for whatever is missing.
 
-## Try the CLI
+## Scan your code
 
 ```sh
-./urfluency scan /path/to/your/repo              # finds your commits automatically
-./urfluency scan --since 90d --locations .
-./urfluency scan --json .
-./urfluency scan --sessions ~/Projects           # every repo below, plus your agent prompts
-./urfluency scan --exclude 'Archive*' ~/Projects # skip folders by name or relative path
+urfluency scan /path/to/your/repo              # finds your commits automatically
+urfluency scan --since 90d --locations .
+urfluency scan --json .
+urfluency scan --sessions ~/Projects           # every repo below, plus your agent prompts
+urfluency scan --exclude 'Archive*' ~/Projects # skip folders by name or relative path
 ```
 
 The scan analyzes only lines that `git blame` attributes to your emails at the
@@ -124,6 +128,11 @@ out of 100; it can find indicators but never proves a repository is safe.
 Findings in tests, CI, and container builds count less, since they do not run on
 install. `--json` prints the report as data.
 
+The hosted scanner at [urfluency.com/scan](https://urfluency.com/scan) runs the
+same checks in an isolated, disposable machine with no credentials, whose network
+reaches only the Git hosts. Anyone can run a few scans a day without an account;
+signed-in accounts get more and keep a private history of verdicts.
+
 ## Sharing your results (optional)
 
 Scans never send anything. To publish a profile and badges on urfluency.com:
@@ -139,6 +148,12 @@ pass it the same path and flags. It says what it will send and asks first;
 ratings only: never code, prompt text, repository names, paths, commit hashes,
 or email addresses, and it refuses a payload that looks like it contains them.
 Uploads start private. `urfluency logout` deletes the token on this machine.
+
+To rate a repository as a whole, connect it at
+[urfluency.com/account/repos](https://urfluency.com/account/repos). A public one is
+rated by urFluency when you connect it and on each release; a private one is rated
+in your own CI by the GitHub Action, which sends only the ratings, or by urFluency
+on Pro with credit. See [Connect a repository](https://urfluency.com/docs/repositories/connect).
 
 ## What is read
 
@@ -198,8 +213,8 @@ Go, dataclasses and generators in Python, or type guards in TypeScript, and how
 cleanly you write it in each category (security, type safety, clean code, language
 proficiency). A weak category caps the score, so strengths cannot hide it. The
 report lists the idioms you demonstrate under **Shows**. The model (version
-`0.2-uncalibrated`) is documented in DESIGN.md and will be calibrated against
-outcomes before scores are published anywhere.
+`0.3-uncalibrated`) is documented in DESIGN.md. It is not yet calibrated against
+outcomes, and every rating names the model version that produced it.
 
 ## What it checks
 

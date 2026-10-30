@@ -1,6 +1,7 @@
 # urFluency design
 
-Status: draft, 2026-10-26. Product name **urFluency**; lowercase `urfluency` for the
+Status: living design record, started 2026-10-26 and kept current (last updated
+2026-10-30). Sections marked decided or built carry their dates. Product name **urFluency**; lowercase `urfluency` for the
 CLI, Go module (`github.com/rburns629/urfluency`), and URLs. Domain: urfluency.com.
 
 ## Purpose
@@ -63,14 +64,15 @@ safe to run.
 └──────────────────────────────────┘        │ Scan workers (isolated)               │
                                             │  └ safety scanner for public Git URLs │
 ┌────────── repository CI ─────────┐ OIDC   │ Firestore · Cloud Run · API Gateway   │
-│ urfluency Action (later)         │──────► │                                       │
+│ urfluency Action (attest)        │──────► │                                       │
 └──────────────────────────────────┘        └───────────────────────────────────────┘
 ```
 
-Suggested stack: Go for the CLI, API, analyzers, and workers; Postgres; S3-compatible
-object storage for scan reports; a Postgres-backed job queue to start; a
-server-rendered web app (Go templates plus htmx) unless richer interactivity is
-needed. All are decisions to confirm, not requirements.
+Stack (decided 2026-10-27, built in `urfluency-app`): Go for the CLI, API,
+analyzers, and scan jobs; a Next.js site on Firebase App Hosting; the API on Cloud
+Run behind API Gateway, with Cloud Armor rate limits at the edge; Firestore;
+Firebase Authentication; hosted scans as Cloud Run jobs; Terraform for every
+resource. `urfluency-app/ARCHITECTURE.md` describes how it is operated.
 
 ## Repositories and distribution
 
@@ -91,8 +93,8 @@ operated, not by CLI versus website.
   the hosted scanner and the CLI run identical detection. The shared packages are public
   top-level packages (`rules`, `analysis`, `analyzers/*`, `parsing`, `gitdata`, and
   `gates`), moved out of `internal/` on 2026-10-27, and `upload`, the upload
-  contract (2026-10-27); the scoring
-  formula, and scanner engine will be created as public packages when built.
+  contract (2026-10-27); then `score`, which rates a whole repository for its
+  badges, and `safety`, the scanner engine (2026-10-28).
   Sessions, reports, and the CLI stay internal.
 - **Local safety checks.** Because the scanner engine is public, the CLI can check a
   repository locally: `urfluency check <git-url>` clones into a temporary directory and
@@ -116,8 +118,10 @@ operated, not by CLI versus website.
 - **History audit** (2026-10-27): all 290 file versions and 70 commits were checked
   for credentials, personal addresses, local paths, and private project names; none
   were found.
-- **Before the repository goes public:** create a fine-grained token with write
-  access to the tap repository only, stored as an Actions secret.
+- **Public.** The release workflow updates the tap with a
+  fine-grained token that can write to the tap repository only. Releases start from
+  Actions → Release → Run workflow with a version, which refuses to release unless
+  CI passed on `main`'s latest commit; release tags cannot be moved or deleted.
 
 ## Metrics
 
@@ -847,7 +851,7 @@ terminal prompts or credential helpers, under a two-minute timeout and a 500 MB
 size limit. Scans read at most 20,000 files of up to 2 MB each and skip `.git`
 and installed dependency folders.
 
-### Hosted scanning (decided 2026-10-28, not built)
+### Hosted scanning (decided 2026-10-28, built 2026-10-29)
 
 - **Runner:** Cloud Run jobs running an image built from a pinned urFluency
   release with `git`, as a non-root user. Not Cloud Build, which queues, keeps
@@ -858,8 +862,15 @@ and installed dependency folders.
   repository from the API and returns the report, each time with that token and
   a Google-signed ID token for its service account. A compromised job has
   nothing to steal.
-- **Network:** direct VPC egress with firewall rules allowing only the Git hosts
-  and the API.
+- **Network:** a private network whose firewall allows only HTTPS to the Git hosts
+  and the API (by name, plus GitHub's published address blocks) and denies and
+  logs everything else, out through Cloud NAT. Jobs reach it through a Serverless
+  VPC Access connector: direct VPC egress, used first, took 52 to 90 seconds to
+  connect after each job started (replaced 2026-10-30).
+- **Machines:** free scans run on 1 vCPU and 2 GiB; paid scans on 4 vCPU and
+  8 GiB, with checkouts up to 2 GB, charged by the second and by the byte
+  downloaded. Connected repositories are rated in the same job, in an isolated
+  child process with CPU-time, process, and file limits.
 - **Access:** signed-in users can scan and keep a private history of
   `owner/repo`, verdict, score, and date for public repositories. Without an
   account, three scans per IP address per 24 hours, with Firebase App Check;
@@ -963,13 +974,17 @@ repository owner has published.
   upload-only token that expires after 90 days; only its hash is stored, and the
   CLI keeps it in `credentials.json` beside the settings, readable only by the user.
   Personal API tokens with read-only scopes for portfolio use come later.
-- Built in `urfluency-app/api` with an OpenAPI 2.0 spec for API Gateway; the
-  remaining endpoints in this table are planned.
+- Built in `urfluency-app/api`. This table was the first plan; the current
+  contract is `urfluency-app/api/openapi.yaml` (OpenAPI 2.0, for API Gateway), and
+  the public endpoints are documented at urfluency.com/docs/reference/api.
 - Public endpoints allow CORS and are cached; all endpoints are rate limited.
 - Responses include `method`, `tier`, `period`, and `sample` so consumers can show
   provenance.
 
 ## Data model (initial)
+
+The first plan, kept for its reasoning. The service stores its data in Firestore;
+`urfluency-app/firestore/SCHEMA.md` is the current schema.
 
 | Table | Key fields |
 | --- | --- |
@@ -1002,28 +1017,31 @@ repository owner has published.
 
 ## Phases
 
-1. **Local CLI:** Go analyzers (pitfalls, type safety, clean code), local report; no
-   accounts.
-2. **Distribution:** license, history audit, public repository, release workflow,
-   Homebrew tap, `urfluency doctor`, and shared packages moved out of `internal/`.
-3. **Service and web app** (in `urfluency-app`): Google and email sign-in, upload, dashboard
-   with strengths, weaknesses, and focus points; public profiles and user badges;
-   API tokens.
-4. **Safety scanner:** the engine and `urfluency check` in the public repository;
-   hosted scanning of public URLs in isolated workers and safety badges in
-   `urfluency-app`.
+1. **Local CLI** (done): analyzers, the local report; no accounts.
+2. **Distribution** (done): license, history audit, public repository, release
+   workflow, Homebrew tap, `urfluency doctor`, and shared packages moved out of
+   `internal/`.
+3. **Service and web app** (done, in `urfluency-app`): Google and email sign-in,
+   upload, profile with strengths, weaknesses, and focus points; public profiles,
+   user badges, and the portfolio card. Read-only API tokens for portfolios are
+   still to come.
+4. **Safety scanner** (done): the engine and `urfluency check` here; hosted scans
+   in isolated jobs, a private scan history, and safety badges in `urfluency-app`.
 5. **Prompting:** session adapters for Claude Code, Codex, and Copilot Chat in VS
-   Code, outcome-based grading, and AI-written share (local CLI done); Copilot CLI,
-   Cursor, and Gemini CLI next. Commit-trailer detection done.
-6. **Repository connections:** GitHub App for public repos; Action with OIDC for
-   private repos.
-7. **More languages and dynamic scanning.**
+   Code, outcome-based grading, AI-written share, and commit-trailer detection
+   (done); Copilot CLI, Cursor, and Gemini CLI next.
+6. **Repository connections** (done): the GitHub App for public repositories and
+   Pro's private ones; the Action with OIDC, or a link code, for private ones.
+7. **Paid hosted scans** (done 2026-10-29): credit packs and Pro through Stripe,
+   charged by scan time and download.
+8. **Next:** dynamic scanning, more languages, and calibrating the proficiency
+   model against outcomes.
 
 ## Open decisions
 
-- Web stack: server-rendered Go with htmx, or a separate frontend.
-- Hosting and the isolation technology for scan workers (containers with gVisor,
-  or microVMs).
+Decided since the first draft: the web stack (Next.js, 2026-10-27) and hosting and
+scan isolation (Cloud Run jobs in a locked-down network, 2026-10-28).
+
 - Exact score formula per category and the minimum sample for a band.
 - Whether model-assisted review is offered in the hosted scanner, and its cost limits.
 - Languages after the current fourteen, shell scripts without a `.sh` or `.bash` extension (found by their `#!` line), and F# and Visual Basic for .NET.
