@@ -1,0 +1,27 @@
+{
+    "_meta": {
+        "hash": {"sha256": "0000"},
+        "pipfile-spec": 6,
+        "requires": {"python_version": "3.11"},
+        "sources": [{"name": "pypi", "url": "https://pypi.org/simple", "verify_ssl": true}]
+    },
+    "default": {
+        "django": {
+            "hashes": ["sha256:aaaa"],
+            "index": "pypi",
+            "markers": "python_version >= '3.8'",
+            "version": "==3.2.0"
+        },
+        "internal-tool": {
+            "editable": true,
+            "git": "https://github.com/example/internal-tool.git",
+            "ref": "0123456789abcdef"
+        }
+    },
+    "develop": {
+        "pytest": {
+            "hashes": ["sha256:bbbb"],
+            "version": "==7.4.0"
+        }
+    }
+}

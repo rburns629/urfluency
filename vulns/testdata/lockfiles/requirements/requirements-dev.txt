@@ -1,0 +1,16 @@
+# Pinned with pip-compile
+-r requirements-base.txt
+-e git+https://github.com/example/internal-tool.git#egg=internal-tool
+--index-url https://pypi.org/simple
+
+Django==3.2.0
+requests[security] == 2.25.0 ; python_version >= "3.6"
+urllib3==1.26.4 \
+    --hash=sha256:aaaa \
+    --hash=sha256:bbbb
+flask>=2.0
+numpy==1.*
+pyyaml===5.4
+six==1.16.0  # via pip-compile
+https://example.com/pkg-1.0.tar.gz
+pkg @ https://example.com/pkg-1.0.tar.gz
