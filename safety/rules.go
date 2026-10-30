@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"bytes"
 	"encoding/json"
 	"path"
 	"regexp"
@@ -46,7 +47,43 @@ func isScript(p string) bool {
 	return false
 }
 
+// isPHP and isRuby are source files of each language, where their own
+// web-shell and evaluation patterns run as written.
+func isPHP(p string) bool {
+	switch ext(p) {
+	case ".php", ".phtml", ".inc":
+		return true
+	}
+	return false
+}
+
+func isRuby(p string) bool {
+	switch ext(p) {
+	case ".rb", ".rake", ".gemspec", ".ru":
+		return true
+	}
+	base := path.Base(p)
+	return base == "Gemfile" || base == "Rakefile"
+}
+
 var lineRules = []lineRule{
+	// PHP and Ruby: code or commands taken straight from a request, and
+	// evaluated payloads. These are the shapes web shells take.
+	{"safety.php-request-exec", "remote-code", "Runs code or commands taken from a web request",
+		"Passing request input straight to eval, assert, or a shell function lets anyone who can reach the page run code on the server: the shape of a PHP web shell.",
+		High, Likely, regexp.MustCompile(`(?i)\b(eval|assert|create_function|system|exec|shell_exec|passthru|popen|proc_open|pcntl_exec)\s*\(\s*@?\s*\$_(GET|POST|REQUEST|COOKIE|SERVER|FILES)\b`), isPHP},
+	{"safety.php-eval-decoded", "obfuscation", "Evaluates a decoded or decompressed PHP payload",
+		"eval or assert of base64_decode, gzinflate, or str_rot13 output hides the code that runs from anyone reading the file.",
+		High, Likely, regexp.MustCompile(`(?i)\b(eval|assert)\s*\(\s*@?\s*(base64_decode|gzinflate|gzuncompress|gzdecode|str_rot13|hex2bin|convert_uudecode)\s*\(`), isPHP},
+	{"safety.php-preg-eval", "remote-code", "Regular expression replacement evaluated as PHP (/e)",
+		"preg_replace with the /e modifier evaluates the replacement as PHP code; it was removed from PHP 7 because it ran injected code.",
+		Medium, Likely, regexp.MustCompile(`\bpreg_replace\s*\(\s*['"]/[^'"]*/[a-zA-Z]*e[a-zA-Z]*['"]`), isPHP},
+	{"safety.ruby-eval-fetched", "remote-code", "Evaluates downloaded or decoded Ruby code",
+		"eval of a download or a decoded string runs code that is not in the repository and cannot be reviewed.",
+		High, Likely, regexp.MustCompile(`\b(eval|instance_eval|class_eval|module_eval)\b\s*\(?\s*(Base64\.(strict_|urlsafe_)?decode64|URI\.open|URI\.parse\([^)]*\)\.read|Net::HTTP\.get|Zlib::Inflate\.inflate|open\(\s*['"]https?:)`), isRuby},
+	{"safety.ruby-params-exec", "remote-code", "Runs a command or code from request parameters",
+		"Passing params to system, exec, eval, or a backtick lets anyone who can send a request run commands on the server.",
+		High, Likely, regexp.MustCompile(`\b(system|exec|spawn|eval|instance_eval|IO\.popen|Open3\.\w+)\b\s*\(?\s*params\[`), isRuby},
 	// Remote code execution.
 	{"safety.pipe-to-shell", "remote-code", "Downloads a script and runs it",
 		"Piping a download straight into a shell runs whatever the server returns, with no chance to read it first.",
@@ -256,6 +293,13 @@ func checkRepository(files []analysis.File) []Finding {
 			out = append(out, checkSetupPy(f)...)
 		case "requirements.txt":
 			out = append(out, checkRequirements(f)...)
+		case "composer.json":
+			out = append(out, checkComposerJSON(f)...)
+		case "Gemfile":
+			out = append(out, checkGemfile(f)...)
+		}
+		if strings.HasSuffix(f.Path, ".gemspec") {
+			out = append(out, checkGemspec(f)...)
 		}
 	}
 	return out
@@ -297,6 +341,101 @@ func checkPackageJSON(f analysis.File) []Finding {
 		}
 	}
 	return out
+}
+
+// checkComposerJSON reports Composer scripts that run on install. Composer
+// runs a project's own scripts on composer install or update; a repository
+// someone clones and installs runs them on that machine.
+func checkComposerJSON(f analysis.File) []Finding {
+	var pkg struct {
+		Scripts map[string]json.RawMessage `json:"scripts"`
+	}
+	if json.Unmarshal(f.Content, &pkg) != nil {
+		return nil
+	}
+	var out []Finding
+	// post-root-package-install and post-create-project-cmd run only for
+	// composer create-project, not when a cloned repository is installed.
+	for _, hook := range []string{"pre-install-cmd", "post-install-cmd", "pre-update-cmd", "post-update-cmd"} {
+		raw, ok := pkg.Scripts[hook]
+		if !ok {
+			continue
+		}
+		// A script is a string or a list of strings.
+		var cmds []string
+		if json.Unmarshal(raw, &cmds) != nil {
+			var one string
+			if json.Unmarshal(raw, &one) != nil {
+				continue
+			}
+			cmds = []string{one}
+		}
+		script := strings.Join(cmds, " && ")
+		sev, conf := Medium, Possible
+		switch {
+		case risky.MatchString(script) || composerRisky.MatchString(script):
+			sev, conf = High, Likely
+		case composerOwn(cmds):
+			// Only the project's own Composer scripts or framework commands,
+			// such as Laravel's @php artisan: worth knowing, rarely a threat.
+			sev, conf = Low, Weak
+		}
+		out = append(out, Finding{Rule: "safety.composer-install-script", Category: "install", Title: "Runs a script when the project is installed",
+			Severity: sev, Confidence: conf, Path: f.Path, Line: lineOf(f.Content, `"`+hook+`"`), Evidence: excerpt(hook + ": " + script),
+			Why: "Composer runs " + hook + " scripts automatically during composer install or update, before anyone has used the project."})
+	}
+	return out
+}
+
+// composerOwn reports whether every command only references another Composer
+// script, Composer itself, or the project's own artisan or bin/console.
+func composerOwn(cmds []string) bool {
+	for _, c := range cmds {
+		c = strings.TrimSpace(c)
+		if !(strings.HasPrefix(c, "@composer ") || strings.HasPrefix(c, "@php artisan ") || strings.HasPrefix(c, "@php bin/console ") ||
+			(strings.HasPrefix(c, "@") && !strings.ContainsAny(c, " \t"))) {
+			return false
+		}
+	}
+	return len(cmds) > 0
+}
+
+// composerRisky are commands that run code inline from a Composer script.
+var composerRisky = regexp.MustCompile(`(?i)\bphp\s+-r\b|\bbash\s+-c\b|\bsh\s+-c\b`)
+
+var (
+	gemSource     = regexp.MustCompile(`(?m)^\s*source\s+['"]http://`)
+	gemFromGit    = regexp.MustCompile(`(?m)^\s*gem\s+['"]([^'"]+)['"][^\n]*\b(git|github):\s*['"]`)
+	gemExtensions = regexp.MustCompile(`\.extensions\s*(=|<<)`)
+)
+
+// checkGemfile reports gem sources that skip the registry's integrity: plain
+// HTTP sources and gems taken from a Git repository.
+func checkGemfile(f analysis.File) []Finding {
+	var out []Finding
+	if loc := gemSource.FindIndex(f.Content); loc != nil {
+		out = append(out, Finding{Rule: "safety.gem-insecure-source", Category: "supply-chain", Title: "Gems installed from a plain HTTP source",
+			Severity: Medium, Confidence: Likely, Path: f.Path, Line: lineAt(f.Content, loc[0]), Evidence: excerpt(string(f.Content[loc[0]:loc[1]])),
+			Why: "Over plain HTTP, anyone on the network path can swap the gems that get installed."})
+	}
+	for _, m := range gemFromGit.FindAllSubmatchIndex(f.Content, -1) {
+		out = append(out, Finding{Rule: "safety.url-dependency", Category: "supply-chain", Title: "Dependency installed from a URL",
+			Severity: Low, Confidence: Possible, Path: f.Path, Line: lineAt(f.Content, m[0]), Evidence: excerpt(string(f.Content[m[2]:m[3]])),
+			Why: "Git dependencies skip the registry's checks and can change without a version bump."})
+	}
+	return out
+}
+
+// checkGemspec reports gems that build native extensions: installing the gem
+// runs its extconf.rb on the installing machine.
+func checkGemspec(f analysis.File) []Finding {
+	loc := gemExtensions.FindIndex(f.Content)
+	if loc == nil {
+		return nil
+	}
+	return []Finding{{Rule: "safety.gem-native-extension", Category: "install", Title: "Runs a build script when the gem is installed",
+		Severity: Low, Confidence: Possible, Path: f.Path, Line: lineAt(f.Content, loc[0]),
+		Why: "A gem with native extensions runs its extconf.rb during gem install; read it before installing."}}
 }
 
 var (
@@ -365,6 +504,11 @@ func lineOf(content []byte, needle string) int {
 		}
 	}
 	return 0
+}
+
+// lineAt is the 1-based line of a byte offset in content.
+func lineAt(content []byte, offset int) int {
+	return bytes.Count(content[:offset], []byte("\n")) + 1
 }
 
 // popular packages often typosquatted; a dependency one edit away from one of
