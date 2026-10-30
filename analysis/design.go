@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Usage is how many repositories and owned files used something.
@@ -16,10 +17,31 @@ type Usage struct {
 
 // DesignUse is how much owned code worked in one area of design, such as cloud
 // services or messaging, judged from the imports of files with owned lines.
-// Libraries counts files per library; only library names are kept.
+// Libraries counts files per library; only library names are kept. Languages
+// counts the owned lines of those files per language, and Months the months
+// in which they were committed (empty without Git).
 type DesignUse struct {
 	Usage
 	Libraries map[string]int
+	Languages map[string]int
+	Months    Months
+}
+
+// Months is a set of months, as "2006-01", in which the user committed work.
+type Months map[string]bool
+
+// Add records the month of t; a zero time is ignored.
+func (m Months) Add(t time.Time) {
+	if !t.IsZero() {
+		m[t.UTC().Format("2006-01")] = true
+	}
+}
+
+// Union adds every month of o.
+func (m Months) Union(o Months) {
+	for k := range o {
+		m[k] = true
+	}
 }
 
 // DesignAreas names each design area, in report order.
@@ -354,8 +376,9 @@ func importMatches(imp, pre string) bool {
 
 // designUsage tallies design areas over files with owned lines. A file counts
 // once per area, and once per library within it. It also counts the files that
-// import each platform's SDKs into platforms.
-func designUsage(files []ownedFile, platforms map[string]PlatformUse) map[string]DesignUse {
+// import each platform's SDKs into platforms. when gives a commit's time; it
+// is nil without Git.
+func designUsage(files []ownedFile, platforms map[string]PlatformUse, when func(commit string) time.Time) map[string]DesignUse {
 	out := map[string]DesignUse{}
 	for _, f := range files {
 		if f.analyzer == nil || len(f.owned) == 0 {
@@ -374,16 +397,27 @@ func designUsage(files []ownedFile, platforms map[string]PlatformUse) map[string
 				found[area][lib] = true
 			}
 		}
+		if len(found) == 0 {
+			continue
+		}
+		months := Months{}
+		if when != nil {
+			for _, commit := range f.owned {
+				months.Add(when(commit))
+			}
+		}
 		for area, libs := range found {
 			u := out[area]
 			if u.Libraries == nil {
-				u.Libraries = map[string]int{}
+				u.Libraries, u.Languages, u.Months = map[string]int{}, map[string]int{}, Months{}
 				u.Repos = 1
 			}
 			u.Files++
 			for lib := range libs {
 				u.Libraries[lib]++
 			}
+			u.Languages[f.analyzer.Language()] += len(f.owned)
+			u.Months.Union(months)
 			out[area] = u
 		}
 	}

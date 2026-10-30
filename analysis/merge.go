@@ -36,18 +36,28 @@ func Merge(labels []string, parts []Result) Result {
 			if u.Last.After(sum.Last) {
 				sum.Last = u.Last
 			}
+			if len(u.Months) > 0 {
+				if sum.Months == nil {
+					sum.Months = Months{}
+				}
+				sum.Months.Union(u.Months)
+			}
 			out.Tools[name] = sum
 		}
 		for area, u := range p.Design {
 			sum := out.Design[area]
 			if sum.Libraries == nil {
-				sum.Libraries = map[string]int{}
+				sum.Libraries, sum.Languages, sum.Months = map[string]int{}, map[string]int{}, Months{}
 			}
 			sum.Repos += u.Repos
 			sum.Files += u.Files
 			for lib, n := range u.Libraries {
 				sum.Libraries[lib] += n
 			}
+			for lang, n := range u.Languages {
+				sum.Languages[lang] += n
+			}
+			sum.Months.Union(u.Months)
 			out.Design[area] = sum
 		}
 		for id, u := range p.Platforms {

@@ -241,10 +241,13 @@ the role families your work fits (backend and API, front end, full stack,
 microservices, mobile, platform and DevOps, site reliability, cloud,
 integration, data, machine learning, AI applications, developer tooling,
 systems, Salesforce, Palantir Foundry), ranked by how many repositories show
-the evidence, and adjacent roles with what is missing for each, linked to your next
+the evidence, how well that code is written, and how recently you did it,
+and adjacent roles with what is missing for each, linked to your next
 steps. A role fits when each of its requirements is rated Intermediate (40) or
-higher. It describes the work, not the person: no seniority, salary, or
-personal traits. It is built offline with fixed rules, and the site shows it on
+higher. Each role shows its repositories, the code rating of the languages
+its work is in, and the first and latest months of that work. Dates cover
+only the repositories scanned, so no total of years is ever claimed. It
+describes the work, not the person: no seniority, salary, or personal traits. It is built offline with fixed rules, and the site shows it on
 your public profile or published links only if you turn it on.
 
 Platform detection never reads stored values. Deploy files such as

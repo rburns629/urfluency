@@ -161,7 +161,7 @@ func ScanDir(ctx context.Context, dir string, opts Options) (Result, error) {
 		}
 	}
 	result := Result{Repos: 1, MarkedByTool: map[string]int{}, Declared: true, Tools: toolFiles, Platforms: platforms}
-	if err := analyzeFiles(ctx, &result, files, nil, scripts, opts); err != nil {
+	if err := analyzeFiles(ctx, &result, files, nil, nil, scripts, opts); err != nil {
 		return Result{}, err
 	}
 	return result, nil

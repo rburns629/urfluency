@@ -299,3 +299,23 @@ func TestScanCountsPlatformsFromOwnCommits(t *testing.T) {
 		t.Errorf("another author's Terraform counted: %+v", res.Platforms)
 	}
 }
+
+func TestScanRecordsDesignLanguagesAndMonths(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "2021-03-10T12:00:00Z", map[string]string{"api/a.go": "package api\n\nimport \"net/http\"\n\nvar _ = http.Get\n"})
+	r.Commit("me@example.com", "2024-07-02T12:00:00Z", map[string]string{
+		"api/b.go":   "package api\n\nimport \"github.com/gin-gonic/gin\"\n\nvar _ = gin.New\n",
+		"infra/x.tf": "resource \"aws_s3_bucket\" \"b\" {}\n",
+	})
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: r.Dir}, analysis.Options{Emails: []string{"me@example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := res.Design["api"]
+	if api.Languages["go"] != 5 || !api.Months["2024-07"] || len(api.Months) != 1 {
+		t.Errorf("api = %+v, want 5 Go lines committed in 2024-07", api)
+	}
+	if tf := res.Tools["terraform"]; !tf.Months["2024-07"] {
+		t.Errorf("terraform months = %v", tf.Months)
+	}
+}

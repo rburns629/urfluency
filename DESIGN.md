@@ -305,7 +305,16 @@ requirements' best ratings. Experience ratings saturate for broad work, so
 fitted roles are ranked by breadth: for each requirement, the most
 repositories behind any alternative that meets the bar (design areas,
 platforms, and tools have counts; languages do not), and the fewest across
-requirements. Up to eight are shown. When the fits include both application
+requirements. Strength = breadth × quality × recency: quality is
+0.5 + code/200, where code is the line-weighted language rating of the files
+behind the role's design areas (once 300 lines are rated; otherwise the
+role's language requirement, or 0.85 when there is no code, such as
+Terraform); recency is 1 when the role's work was last committed within a
+year, 0.75 within three, and 0.5 before. Design areas record the owned lines
+per language of their files and the months those lines were committed (tool
+files: the months of commits to them), so roles also show since, last, and
+active months. Totals of years are never computed: history covers only
+scanned repositories. Up to eight are shown. When the fits include both application
 roles and infrastructure roles (platform, site reliability, cloud), the
 summary says the work spans applications and the platforms under them. Gaps name the next step that raises them, when one
 exists. It never states seniority, salary, or personal traits. The API strips it

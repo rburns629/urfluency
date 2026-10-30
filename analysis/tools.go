@@ -19,6 +19,7 @@ type ToolUse struct {
 	Commits int
 	Lines   int       // lines added in the user's commits
 	Last    time.Time // the user's latest commit to the tool's files
+	Months  Months    // months with commits to the tool's files
 }
 
 // tools identifies the tool behind a path. Kinds group tools in the report.
@@ -168,6 +169,10 @@ func toolUsage(added map[string]map[string]int, commits map[string]gitdata.Commi
 			if c.Time.After(u.Last) {
 				u.Last = c.Time
 			}
+			if u.Months == nil {
+				u.Months = Months{}
+			}
+			u.Months.Add(c.Time)
 			usage[name] = u
 		}
 	}

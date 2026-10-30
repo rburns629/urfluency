@@ -2,9 +2,13 @@ package report
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/rburns629/urfluency/analysis"
 )
 
 // Persona describes the work the ratings show: the strongest areas, the role
@@ -14,7 +18,10 @@ import (
 // no seniority, salary, or personal traits. Profiles show it only when their
 // owner publishes it.
 type Persona struct {
-	Summary   string   `json:"summary"`
+	Summary string `json:"summary"`
+	// Window is the scan's "since": "all", or the first day counted, which
+	// bounds every role's timeline.
+	Window    string   `json:"window"`
 	Strongest []Rating `json:"strongest"`
 	Fits      []Role   `json:"fits"`
 	Adjacent  []Role   `json:"adjacent"`
@@ -23,15 +30,24 @@ type Persona struct {
 // Role is one role family and how well the ratings meet its requirements.
 // Fit is the mean of the requirements' best ratings. Repos is how widely the
 // evidence appears: the fewest repositories behind any requirement with a
-// count (design areas, platforms, and tools; languages have none). Experience
-// ratings saturate for broad work, so roles are ranked by Repos first.
+// count (design areas, platforms, and tools; languages have none). Code is the
+// rating of the languages the role's work is written in, weighted by lines,
+// and Since, Last, and ActiveMonths when that work was committed. Roles are
+// ranked by strength (see roleStrength), since experience ratings saturate
+// for broad work.
 type Role struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	Fit   int    `json:"fit"`
-	Repos int    `json:"repositories,omitempty"`
-	Met   []Need `json:"met"`
-	Gaps  []Need `json:"gaps"`
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Fit           int      `json:"fit"`
+	Repos         int      `json:"repositories,omitempty"`
+	Code          int      `json:"code,omitempty"`
+	CodeLanguages []string `json:"code_languages,omitempty"`
+	Since         string   `json:"since,omitempty"` // "2006-01"
+	Last          string   `json:"last,omitempty"`
+	ActiveMonths  int      `json:"active_months,omitempty"`
+	Met           []Need   `json:"met"`
+	Gaps          []Need   `json:"gaps"`
+	strength      float64
 }
 
 // Need is one requirement of a role: the best rating that meets it, and for a
@@ -155,10 +171,13 @@ func prefixed(prefix string, ids []string) []string {
 	return out
 }
 
+// personaNow is the time recency is judged at; tests set it.
+var personaNow = time.Now
+
 // buildPersona works out the persona from the summary's ratings and next
-// steps, with repository counts from the combined result. It returns nil when
-// nothing is rated.
-func buildPersona(s *Summary, c *Combined) *Persona {
+// steps, with repository counts, languages, and months from the combined
+// result. since is the scan window. It returns nil when nothing is rated.
+func buildPersona(s *Summary, c *Combined, since string) *Persona {
 	if len(s.Ratings) == 0 {
 		return nil
 	}
@@ -167,11 +186,18 @@ func buildPersona(s *Summary, c *Combined) *Persona {
 		ratings[r.Area+":"+r.Name] = r
 	}
 	repos := repoCounts(c)
-	p := &Persona{Strongest: strongest(s.Ratings), Fits: []Role{}, Adjacent: []Role{}}
+	work := workOf(c)
+	if since == "" {
+		since = "all"
+	}
+	p := &Persona{Window: since, Strongest: strongest(s.Ratings), Fits: []Role{}, Adjacent: []Role{}}
 	for _, f := range roleFamilies {
 		role := Role{ID: f.id, Title: f.title, Met: []Need{}, Gaps: []Need{}}
 		total := 0
 		defined := false
+		months := analysis.Months{}
+		lines := map[string]int{}
+		languageNeed := Need{}
 		for i, req := range f.needs {
 			n := Need{Title: req.title}
 			// Breadth is the widest alternative that meets the bar, such as
@@ -188,6 +214,15 @@ func buildPersona(s *Summary, c *Combined) *Persona {
 				if count, has := repos[key]; has && r.Score >= needBar {
 					widest, counted = max(widest, count), true
 				}
+				if w, has := work[key]; has && r.Score >= needBar {
+					months.Union(w.months)
+					for lang, n := range w.lines {
+						lines[lang] += n
+					}
+				}
+			}
+			if strings.HasPrefix(req.any[0], "language:") && n.Score > languageNeed.Score {
+				languageNeed = n
 			}
 			if counted && (role.Repos == 0 || widest < role.Repos) {
 				role.Repos = widest
@@ -202,6 +237,9 @@ func buildPersona(s *Summary, c *Combined) *Persona {
 			role.Gaps = append(role.Gaps, n)
 		}
 		role.Fit = total / len(f.needs)
+		role.Code, role.CodeLanguages = roleCode(lines, ratings, languageNeed)
+		role.Since, role.Last, role.ActiveMonths = span(months)
+		role.strength = roleStrength(role, personaNow())
 		switch {
 		case len(role.Gaps) == 0:
 			p.Fits = append(p.Fits, role)
@@ -210,8 +248,8 @@ func buildPersona(s *Summary, c *Combined) *Persona {
 		}
 	}
 	sort.SliceStable(p.Fits, func(i, j int) bool {
-		if p.Fits[i].Repos != p.Fits[j].Repos {
-			return p.Fits[i].Repos > p.Fits[j].Repos
+		if p.Fits[i].strength != p.Fits[j].strength {
+			return p.Fits[i].strength > p.Fits[j].strength
 		}
 		return p.Fits[i].Fit > p.Fits[j].Fit
 	})
@@ -219,6 +257,97 @@ func buildPersona(s *Summary, c *Combined) *Persona {
 	p.Fits, p.Adjacent = p.Fits[:min(maxFits, len(p.Fits))], p.Adjacent[:min(maxAdjacent, len(p.Adjacent))]
 	p.Summary = personaSummary(p, s.Ratings)
 	return p
+}
+
+// areaWork is what a rating's work was written in and when.
+type areaWork struct {
+	lines  map[string]int // owned lines per language
+	months analysis.Months
+}
+
+// workOf maps "area:name" to the languages and months behind design areas
+// and tools.
+func workOf(c *Combined) map[string]areaWork {
+	out := map[string]areaWork{}
+	if c == nil {
+		return out
+	}
+	for _, d := range c.Design {
+		w := areaWork{lines: map[string]int{}, months: d.months}
+		for _, l := range d.Languages {
+			w.lines[l.Language] = l.Lines
+		}
+		out["design:"+d.ID] = w
+	}
+	for _, t := range c.Tools {
+		out["tool:"+t.Name] = areaWork{months: t.months}
+	}
+	return out
+}
+
+// roleCode is the code rating of a role's work: the language ratings of the
+// lines behind its design areas, weighted by lines, once at least
+// MinOwnedLines of them are rated. A role without such lines, such as systems
+// programming, takes the rating of its language requirement. It also returns
+// the two languages with the most lines.
+func roleCode(lines map[string]int, ratings map[string]Rating, language Need) (int, []string) {
+	type rated struct {
+		name         string
+		lines, score int
+	}
+	var langs []rated
+	total, weighted := 0, 0
+	for lang, n := range lines {
+		r, ok := ratings["language:"+lang]
+		if !ok {
+			continue
+		}
+		langs = append(langs, rated{lang, n, r.Score})
+		total += n
+		weighted += n * r.Score
+	}
+	if total < MinOwnedLines {
+		if language.Score >= needBar {
+			return language.Score, []string{language.Best}
+		}
+		return 0, nil
+	}
+	sort.Slice(langs, func(i, j int) bool {
+		if langs[i].lines != langs[j].lines {
+			return langs[i].lines > langs[j].lines
+		}
+		return langs[i].name < langs[j].name
+	})
+	var names []string
+	for i, l := range langs {
+		if i == 2 {
+			break
+		}
+		names = append(names, displayLanguage(l.name))
+	}
+	return int(math.Round(float64(weighted) / float64(total))), names
+}
+
+// roleStrength ranks fitted roles: breadth (repositories), scaled by code
+// quality and recency. Quality scales from 0.5 at a code rating of 0 to 1 at
+// 100, and 0.85 for roles with no code to rate, such as infrastructure as
+// code. Recency is 1 when the work was last committed within a year, 0.75
+// within three, and 0.5 before; work without dates counts as recent.
+func roleStrength(r Role, now time.Time) float64 {
+	quality := 0.85
+	if r.Code > 0 {
+		quality = 0.5 + float64(r.Code)/200
+	}
+	recency := 1.0
+	if last, err := time.Parse("2006-01", r.Last); err == nil {
+		switch age := now.Sub(last); {
+		case age > 3*365*24*time.Hour:
+			recency = 0.5
+		case age > 13*30*24*time.Hour:
+			recency = 0.75
+		}
+	}
+	return float64(max(r.Repos, 1)) * quality * recency
 }
 
 // repoCounts maps "area:name" to the repositories behind a rating, for the
@@ -352,7 +481,10 @@ func writePersona(b *strings.Builder, p *Persona) {
 		fmt.Fprintf(b, "    Strongest: %s\n", strings.Join(parts, ", "))
 	}
 	for _, r := range p.Fits {
-		fmt.Fprintf(b, "    = %s, fit %d: %s\n", r.Title, r.Fit, needList(r.Met))
+		fmt.Fprintf(b, "    = %s, fit %d%s: %s\n", r.Title, r.Fit, roleFacts(r), needList(r.Met))
+	}
+	if p.Window != "all" {
+		fmt.Fprintf(b, "    Timelines cover work since %s; scan with --since all for older work.\n", p.Window)
 	}
 	for _, r := range p.Adjacent {
 		fmt.Fprintf(b, "    ~ %s, fit %d: missing %s\n", r.Title, r.Fit, needList(r.Gaps))
@@ -362,6 +494,24 @@ func writePersona(b *strings.Builder, p *Persona) {
 			}
 		}
 	}
+}
+
+// roleFacts says how widely, how well, and when a role's work was done.
+func roleFacts(r Role) string {
+	var parts []string
+	if r.Repos > 0 {
+		parts = append(parts, count(r.Repos, "repo"))
+	}
+	if r.Code > 0 {
+		parts = append(parts, fmt.Sprintf("code %d in %s", r.Code, strings.Join(r.CodeLanguages, " and ")))
+	}
+	if r.Since != "" {
+		parts = append(parts, fmt.Sprintf("%s to %s, active %s", r.Since, r.Last, count(r.ActiveMonths, "month")))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
 }
 
 func needList(needs []Need) string {

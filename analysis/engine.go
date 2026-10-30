@@ -262,7 +262,8 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 	}
 	opts.present = workingCopy(repo.Dir)
-	if err := analyzeFiles(ctx, &result, files, tools, scripts, opts); err != nil {
+	when := func(commit string) time.Time { return commits[commit].Time }
+	if err := analyzeFiles(ctx, &result, files, tools, when, scripts, opts); err != nil {
 		return Result{}, err
 	}
 	return result, nil
@@ -313,9 +314,9 @@ func dropVendored(ctx context.Context, repo gitdata.Repo, paths []string) ([]str
 
 // analyzeFiles runs every analyzer and scanner over the loaded files and fills in
 // the result's languages, AI-assisted counts, and per-repository practices. tools
-// maps commits to the coding tools their trailers name; it is empty for folders
-// without Git.
-func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools map[string][]string, scripts []string, opts Options) error {
+// maps commits to the coding tools their trailers name, and when gives a
+// commit's time; both are empty for folders without Git.
+func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools map[string][]string, when func(string) time.Time, scripts []string, opts Options) error {
 	ai := map[string]map[int]bool{}
 	for i := range files {
 		f := &files[i]
@@ -343,7 +344,7 @@ func analyzeFiles(ctx context.Context, result *Result, files []ownedFile, tools 
 	if result.Platforms == nil {
 		result.Platforms = map[string]PlatformUse{}
 	}
-	result.Design = designUsage(files, result.Platforms)
+	result.Design = designUsage(files, result.Platforms, when)
 	byAnalyzer := map[Analyzer][]ownedFile{}
 	for _, f := range files {
 		if f.analyzer != nil {

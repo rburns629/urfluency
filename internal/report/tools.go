@@ -18,6 +18,7 @@ type Tool struct {
 	Commits int    `json:"commits,omitempty"`
 	Lines   int    `json:"lines_added,omitempty"`
 	Last    string `json:"last_used,omitempty"` // year and month
+	months  analysis.Months
 }
 
 // Git is how the user writes commits, as shares of their commits.
@@ -33,7 +34,7 @@ type Git struct {
 func BuildTools(res analysis.Result) []Tool {
 	out := []Tool{}
 	for name, u := range res.Tools {
-		t := Tool{Name: name, Kind: analysis.ToolKind(name), Repos: u.Repos, Files: u.Files, Commits: u.Commits, Lines: u.Lines}
+		t := Tool{Name: name, Kind: analysis.ToolKind(name), Repos: u.Repos, Files: u.Files, Commits: u.Commits, Lines: u.Lines, months: u.Months}
 		if !u.Last.IsZero() {
 			t.Last = u.Last.Format("2006-01")
 		}
