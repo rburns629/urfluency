@@ -169,6 +169,13 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
+	// Files are read through one git process rather than one per file.
+	blobs, err := repo.OpenBlobs(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	defer blobs.Close()
+	show := func(p string) ([]byte, error) { return blobs.Show(head, p) }
 	// Files over maxScanBytes are vendored or generated, and blaming them can take
 	// minutes, so they are excluded before any Git command reads them.
 	paths, err := repo.TrackedFiles(ctx, maxScanBytes)
@@ -191,7 +198,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		}
 	}
 	generated := scaffolding(paths, func(p string) []byte {
-		b, _ := repo.Show(ctx, head, p)
+		b, _ := show(p)
 		return b
 	})
 	kept := candidates[:0]
@@ -224,7 +231,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 
-	files, slow, err := loadOwned(ctx, repo, head, candidates, blame, opts)
+	files, slow, err := loadOwned(ctx, repo, head, candidates, blame, show, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -244,7 +251,7 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	for _, p := range paths {
 		for _, s := range buildScriptPaths {
 			if p == s {
-				if content, err := repo.Show(ctx, head, p); err == nil {
+				if content, err := show(p); err == nil {
 					scripts = append(scripts, string(content))
 				}
 			}
@@ -538,8 +545,8 @@ func everyLine(content []byte, commit string) map[int]string {
 }
 
 // loadOwned blames each path, or only those blame accepts when it is not nil,
-// and loads the files with owned lines.
-func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, blame func(string) bool, opts Options) ([]ownedFile, int, error) {
+// and loads the files with owned lines through show.
+func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, blame func(string) bool, show func(string) ([]byte, error), opts Options) ([]ownedFile, int, error) {
 	results := make([]ownedFile, len(paths))
 	errs := make([]error, len(paths))
 	limit := make(chan struct{}, runtime.NumCPU())
@@ -576,7 +583,7 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 					return
 				}
 			}
-			content, err := repo.Show(ctx, head, p)
+			content, err := show(p)
 			if err != nil {
 				errs[i] = fmt.Errorf("%s: %w", p, err)
 				return
