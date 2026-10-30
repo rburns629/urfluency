@@ -94,7 +94,8 @@ Flags:
   urfluency dismiss --list                           List dismissed findings
 
 For a finding that is not a real problem, such as a placeholder flagged as a
-secret. RULE and FILE:LINE are as scan --locations shows them. Later scans and
+secret. RULE is the finding's id and FILE:LINE one of its locations, both
+shown by scan --json --locations. Later scans and
 uploads leave it out while that line stays the same; reports say how many
 findings you dismissed, never which. Only the rule and a hash of the line are
 saved, on this machine.

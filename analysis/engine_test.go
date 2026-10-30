@@ -247,3 +247,32 @@ func TestScanSkipsFilesThatTakeTooLongToAttribute(t *testing.T) {
 		t.Errorf("skipped = %d, want 2", res.SkippedSlow)
 	}
 }
+
+// Scoring everyone in a shallow clone, only files AI-marked commits touched are
+// blamed; the rest count every line. The totals match blaming every file.
+func TestScanEveryoneInShallowClone(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("a@example.com", "2024-01-01T00:00:00Z", map[string]string{"a.go": theirs})
+	r.Commit("b@example.com", "2025-01-01T00:00:00Z", map[string]string{"b.go": "package a\n\nfunc b() {}\n"})
+	if err := os.WriteFile(filepath.Join(r.Dir, "b.go"), []byte("package a\n\nfunc b() {}\n\nfunc c() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.Git("b@example.com", "2025-02-01T00:00:00Z", "commit", "-qam", "Add c", "-m", "Co-authored-by: Claude <noreply@anthropic.com>")
+	r.Commit("d@example.com", "2025-03-01T00:00:00Z", map[string]string{"d.go": "package a\n\nfunc d() {}\n"})
+	// Someone else renames the AI-touched file afterwards.
+	r.Git("d@example.com", "2025-04-01T00:00:00Z", "mv", "b.go", "bc.go")
+	r.Git("d@example.com", "2025-04-01T00:00:00Z", "commit", "-qm", "Rename b")
+	clone := filepath.Join(t.TempDir(), "clone")
+	r.Git("a@example.com", "", "clone", "-q", "--depth=4", "file://"+r.Dir, clone)
+
+	res, err := analysis.Scan(context.Background(), gitdata.Repo{Dir: clone},
+		analysis.Options{Emails: gitdata.Everyone, Since: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a.go predates the clone, so its lines are dated to the boundary commit,
+	// inside the window: 3 + 5 + 3 lines, 2 of them from the AI-marked commit.
+	if res.OwnedLines != 11 || res.MarkedLines != 2 || res.MarkedByTool["claude"] != 2 {
+		t.Errorf("owned %d, marked %d %v; want 11 owned, 2 marked by claude", res.OwnedLines, res.MarkedLines, res.MarkedByTool)
+	}
+}

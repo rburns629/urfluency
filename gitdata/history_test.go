@@ -102,3 +102,35 @@ func TestAuthorMatchingIsLiteralAndExact(t *testing.T) {
 		t.Errorf("added lines for the noreply address: %v %v", added, err)
 	}
 }
+
+// A shallow clone's oldest commit has no parent, so it would count every file as
+// added; AddedLines leaves it out.
+func TestAddedLinesSkipsShallowBoundary(t *testing.T) {
+	r := testutil.NewRepo(t)
+	r.Commit("me@example.com", "2025-01-01T00:00:00Z", map[string]string{"old.go": "a\nb\nc\n"})
+	r.Commit("me@example.com", "2025-02-01T00:00:00Z", map[string]string{"mid.go": "a\n"})
+	r.Commit("me@example.com", "2025-03-01T00:00:00Z", map[string]string{"new.go": "a\nb\n"})
+	clone := filepath.Join(t.TempDir(), "clone")
+	r.Git("me@example.com", "", "clone", "-q", "--depth=2", "file://"+r.Dir, clone)
+	ctx := context.Background()
+
+	full, err := gitdata.Repo{Dir: r.Dir}.Shallow(ctx)
+	if err != nil || full {
+		t.Fatalf("Shallow(full clone) = %v, %v", full, err)
+	}
+	repo := gitdata.Repo{Dir: clone}
+	if shallow, err := repo.Shallow(ctx); err != nil || !shallow {
+		t.Fatalf("Shallow(depth 2) = %v, %v", shallow, err)
+	}
+	added, err := repo.AddedLines(ctx, gitdata.Everyone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]int
+	for _, perPath := range added {
+		got = append(got, perPath)
+	}
+	if want := []map[string]int{{"new.go": 2}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("added = %v, want only the newest commit's %v", got, want)
+	}
+}

@@ -205,12 +205,6 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 		return Result{}, err
 	}
 
-	files, slow, err := loadOwned(ctx, repo, head, candidates, opts)
-	if err != nil {
-		return Result{}, err
-	}
-
-	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}, SkippedSlow: slow}
 	commits, err := repo.Commits(ctx, opts.Emails)
 	if err != nil {
 		return Result{}, err
@@ -225,6 +219,17 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
+	blame, err := needsBlame(ctx, repo, opts, tools)
+	if err != nil {
+		return Result{}, err
+	}
+
+	files, slow, err := loadOwned(ctx, repo, head, candidates, blame, opts)
+	if err != nil {
+		return Result{}, err
+	}
+
+	result := Result{Head: head, Repos: 1, MarkedByTool: map[string]int{}, SkippedSlow: slow}
 	result.Tools = toolUsage(added, commits, opts.Since)
 	result.Git = gitHabits(commits, opts.Since)
 	excluded, err := notUserCode(ctx, repo, added, files)
@@ -491,7 +496,50 @@ func frameworks(fd FrameworkDetector, group []ownedFile) ([]string, map[string]U
 
 // loadOwned reads each candidate file and its owned lines with a bounded worker
 // pool. Results are written by index, so no shared slice is appended concurrently.
-func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, opts Options) ([]ownedFile, int, error) {
+// needsBlame returns which paths must be blamed, or nil for all of them. Scoring
+// everyone's work in a shallow clone, every line counts (the clone's oldest
+// commits are inside the window and carry all older lines), so blame only finds
+// which lines came from AI-marked commits, and only files those commits touched,
+// under their current names, can hold such lines. For big repositories that is
+// a small share of the files: 135 of 31,639 in kubernetes, measured 2026-10-30.
+// Lines that -C would trace to an AI-marked commit through a copy into an
+// untouched file are missed.
+func needsBlame(ctx context.Context, repo gitdata.Repo, opts Options, tools map[string][]string) (func(string) bool, error) {
+	if !gitdata.IsEveryone(opts.Emails) {
+		return nil, nil
+	}
+	shallow, err := repo.Shallow(ctx)
+	if err != nil || !shallow {
+		return nil, err
+	}
+	aiCommits := map[string]bool{}
+	for hash := range tools {
+		aiCommits[hash] = true
+	}
+	marked, err := repo.ChangedPaths(ctx, aiCommits)
+	if err != nil {
+		return nil, err
+	}
+	return func(p string) bool { return marked[p] }, nil
+}
+
+// everyLine maps each line of content to commit, as blame would for a file
+// whose lines all come from that one commit.
+func everyLine(content []byte, commit string) map[int]string {
+	owned := map[int]string{}
+	n := bytes.Count(content, []byte("\n"))
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		n++
+	}
+	for i := 1; i <= n; i++ {
+		owned[i] = commit
+	}
+	return owned
+}
+
+// loadOwned blames each path, or only those blame accepts when it is not nil,
+// and loads the files with owned lines.
+func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []string, blame func(string) bool, opts Options) ([]ownedFile, int, error) {
 	results := make([]ownedFile, len(paths))
 	errs := make([]error, len(paths))
 	limit := make(chan struct{}, runtime.NumCPU())
@@ -509,25 +557,35 @@ func loadOwned(ctx context.Context, repo gitdata.Repo, head string, paths []stri
 				errs[i] = ctx.Err()
 				return
 			}
-			fileCtx, cancel := context.WithTimeout(ctx, BlameTimeout)
-			owned, err := repo.OwnedLines(fileCtx, head, p, opts.Emails, opts.Since)
-			timedOut := errors.Is(fileCtx.Err(), context.DeadlineExceeded) // checked before cancel
-			cancel()
-			if err != nil {
-				if timedOut && ctx.Err() == nil {
-					slow.Add(1)
+			var owned map[int]string
+			if blame == nil || blame(p) {
+				fileCtx, cancel := context.WithTimeout(ctx, BlameTimeout)
+				var err error
+				owned, err = repo.OwnedLines(fileCtx, head, p, opts.Emails, opts.Since)
+				timedOut := errors.Is(fileCtx.Err(), context.DeadlineExceeded) // checked before cancel
+				cancel()
+				if err != nil {
+					if timedOut && ctx.Err() == nil {
+						slow.Add(1)
+						return
+					}
+					errs[i] = fmt.Errorf("%s: %w", p, err)
 					return
 				}
-				errs[i] = fmt.Errorf("%s: %w", p, err)
-				return
-			}
-			if len(owned) == 0 {
-				return
+				if len(owned) == 0 {
+					return
+				}
 			}
 			content, err := repo.Show(ctx, head, p)
 			if err != nil {
 				errs[i] = fmt.Errorf("%s: %w", p, err)
 				return
+			}
+			if owned == nil {
+				owned = everyLine(content, "")
+				if len(owned) == 0 {
+					return
+				}
 			}
 			f := File{Path: p, Content: content}
 			if bytes.IndexByte(content, 0) >= 0 {

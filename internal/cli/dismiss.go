@@ -78,7 +78,7 @@ func dismiss(args []string, stdout io.Writer) error {
 		return nil
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("%w: dismiss takes a rule and FILE:LINE, as scan --locations shows them", errUsage)
+		return fmt.Errorf("%w: dismiss takes a rule id and FILE:LINE, as scan --json --locations shows them", errUsage)
 	}
 	rule, at := pos[0], pos[1]
 	if _, ok := rules.Lookup(rule); !ok {

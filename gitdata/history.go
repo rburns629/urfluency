@@ -4,6 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,10 +15,17 @@ import (
 )
 
 // AddedLines returns the lines each non-merge commit by one of emails added, per
-// path. Renames are followed, so moving a file does not count as adding it.
+// path. Renames are followed, so moving a file does not count as adding it. In a
+// shallow clone the oldest commits have no parent to compare with, so they would
+// count every file as added; they are left out.
 func (r Repo) AddedLines(ctx context.Context, emails []string) (map[string]map[string]int, error) {
 	args := []string{"log", "--no-merges", "-M", "--numstat", "--format=%x1e%H"}
 	args = append(args, authorArgs(emails)...)
+	boundary, err := r.shallowBoundary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, boundary...)
 	out, err := r.git(ctx, append(args, "HEAD")...)
 	if err != nil {
 		return nil, err
@@ -40,6 +51,45 @@ func (r Repo) AddedLines(ctx context.Context, emails []string) (map[string]map[s
 		added[lines[0]] = perPath
 	}
 	return added, nil
+}
+
+// shallowBoundary returns "^hash" for each of a shallow clone's oldest commits,
+// to leave them out of a log, and nothing for a full clone. The shallow file can
+// list commits the clone does not have, which --ignore-missing drops.
+func (r Repo) shallowBoundary(ctx context.Context) ([]string, error) {
+	path, err := r.git(ctx, "rev-parse", "--git-path", "shallow")
+	if err != nil {
+		return nil, err
+	}
+	p := strings.TrimSpace(string(path))
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(r.Dir, p)
+	}
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var hashes []string
+	for _, h := range strings.Fields(string(data)) {
+		if (len(h) == 40 || len(h) == 64) && isHex(h) { // only hashes reach git's arguments
+			hashes = append(hashes, h)
+		}
+	}
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	out, err := r.git(ctx, append([]string{"rev-list", "--no-walk", "--ignore-missing"}, hashes...)...)
+	if err != nil {
+		return nil, err
+	}
+	var not []string
+	for _, h := range strings.Fields(string(out)) {
+		not = append(not, "^"+h)
+	}
+	return not, nil
 }
 
 var (
@@ -75,11 +125,42 @@ func (r Repo) TouchedPaths(ctx context.Context, emails []string) (map[string]boo
 			touched[p] = true
 		}
 	}
+	return r.followRenames(ctx, touched)
+}
+
+// ChangedPaths returns the current paths of files that any of the given
+// non-merge commits changed, following later renames by anyone.
+func (r Repo) ChangedPaths(ctx context.Context, commits map[string]bool) (map[string]bool, error) {
+	changed := map[string]bool{}
+	if len(commits) == 0 {
+		return changed, nil
+	}
+	out, err := r.git(ctx, "log", "--no-merges", "--name-only", "--format=%x1e%H", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	for _, rec := range strings.Split(string(out), "\x1e") {
+		lines := strings.Split(strings.TrimSpace(rec), "\n")
+		if !commits[lines[0]] {
+			continue
+		}
+		for _, p := range lines[1:] {
+			if p != "" {
+				changed[p] = true
+			}
+		}
+	}
+	return r.followRenames(ctx, changed)
+}
+
+// followRenames adds to paths the later names of any of them that someone
+// renamed, and returns it.
+func (r Repo) followRenames(ctx context.Context, touched map[string]bool) (map[string]bool, error) {
 	if len(touched) == 0 {
 		return touched, nil
 	}
 	// Renames by any author, newest first: "R100\told\tnew".
-	out, err = r.git(ctx, "log", "--no-merges", "-M", "--name-status", "--diff-filter=R", "--format=", "HEAD")
+	out, err := r.git(ctx, "log", "--no-merges", "-M", "--name-status", "--diff-filter=R", "--format=", "HEAD")
 	if err != nil {
 		return nil, err
 	}

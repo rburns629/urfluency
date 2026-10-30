@@ -88,6 +88,16 @@ func Lookup(id string) (Rule, bool) {
 	return r, ok
 }
 
+// All returns every rule in the catalog, sorted by ID.
+func All() []Rule {
+	out := make([]Rule, 0, len(catalog))
+	for _, r := range catalog {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 // ForLanguage returns the rules that apply to a language, sorted by ID.
 func ForLanguage(language string) []Rule {
 	var out []Rule

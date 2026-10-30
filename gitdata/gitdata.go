@@ -209,6 +209,17 @@ func (r Repo) TrackedFiles(ctx context.Context, maxBytes int64) ([]string, error
 	return files, nil
 }
 
+// Shallow reports whether the clone's history is cut off, as the hosted
+// scanner's --shallow-since clones are. Its oldest commits then carry every
+// older line, so blame dates those lines to them.
+func (r Repo) Shallow(ctx context.Context) (bool, error) {
+	out, err := r.git(ctx, "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "true", nil
+}
+
 // Show returns a file's content at the given revision.
 func (r Repo) Show(ctx context.Context, rev, path string) ([]byte, error) {
 	return r.git(ctx, "show", "--no-textconv", rev+":"+path)
@@ -222,7 +233,7 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 	if err != nil {
 		return nil, err
 	}
-	all, wanted := everyone(emails), map[string]bool{}
+	all, wanted := IsEveryone(emails), map[string]bool{}
 	for _, e := range emails {
 		wanted[strings.ToLower(e)] = true
 	}
@@ -271,7 +282,8 @@ func (r Repo) OwnedLines(ctx context.Context, rev, path string, emails []string,
 // empty list can never mean everyone by accident.
 var Everyone = []string{"*"}
 
-func everyone(emails []string) bool { return len(emails) == 1 && emails[0] == "*" }
+// IsEveryone reports whether emails is Everyone.
+func IsEveryone(emails []string) bool { return len(emails) == 1 && emails[0] == "*" }
 
 // authorArgs limits git log to commits whose author email is one of emails. The
 // emails are matched as fixed strings with their angle brackets, so "+" in a
@@ -279,7 +291,7 @@ func everyone(emails []string) bool { return len(emails) == 1 && emails[0] == "*
 // escaped "\+" as "one or more") and "me@example.com" does not also match
 // "nome@example.com". Case is ignored, as email addresses are case-insensitive.
 func authorArgs(emails []string) []string {
-	if everyone(emails) {
+	if IsEveryone(emails) {
 		return nil
 	}
 	args := []string{"--fixed-strings", "--regexp-ignore-case"}
