@@ -55,6 +55,7 @@ func doctor(ctx context.Context, stdout io.Writer) error {
 	gitOK := checkGit(ctx, &b)
 	checkSessions(&b)
 	checkRuntimes(ctx, &b)
+	checkVulnDatabases(&b)
 	if gitOK {
 		b.WriteString("\nEverything required is present.\n")
 	} else {

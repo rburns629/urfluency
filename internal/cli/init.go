@@ -32,6 +32,8 @@ func initSettings(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	var authors stringList
 	fs.Var(&authors, "author", "")
 	yes := fs.Bool("yes", false, "")
+	offline := fs.Bool("offline", false, "")
+	online := fs.Bool("online", false, "")
 	var include stringList
 	fs.Var(&include, "include-ext", "")
 	if err := fs.Parse(args); err != nil {
@@ -87,11 +89,24 @@ func initSettings(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return fmt.Errorf("%w: could not tell which commits are yours; set git user.name or pass --author", errUsage)
 	}
 	exts := append(slices.Clone(saved.Extensions), extensions(include)...)
-	where, err := settings{Emails: append(saved.Emails, id.Emails...), NotMine: notMine, Extensions: exts}.save()
+	if *offline && *online {
+		return fmt.Errorf("%w: --offline and --online cannot be used together", errUsage)
+	}
+	mode := saved.Offline
+	if *offline || *online {
+		mode = *offline
+	}
+	where, err := settings{Emails: append(saved.Emails, id.Emails...), NotMine: notMine, Extensions: exts, Dismissed: saved.Dismissed, Offline: mode}.save()
 	if err != nil {
 		return fmt.Errorf("save settings: %w", err)
 	}
 	fmt.Fprintf(stdout, "Saved to %s. Scans start from these addresses and still find new ones; run init again to update.\n", tildePath(where))
+	switch {
+	case *offline:
+		fmt.Fprintln(stdout, "Offline by default: dependency checks use the downloaded databases (urfluency vulns update) and nothing is sent. Pass --online to a scan to check live.")
+	case *online:
+		fmt.Fprintln(stdout, "Dependency checks are live again by default: package names and versions are sent to osv.dev.")
+	}
 	return nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rburns629/urfluency/internal/report"
 	"github.com/rburns629/urfluency/safety"
 )
 
@@ -20,8 +21,18 @@ func check(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	asJSON := fs.Bool("json", false, "")
+	offlineFlag := fs.Bool("offline", false, "")
+	onlineFlag := fs.Bool("online", false, "")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
+	}
+	saved, err := loadSettings()
+	if err != nil {
+		return fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
+	}
+	offline, err := offlineMode(*offlineFlag, *onlineFlag, saved)
+	if err != nil {
+		return err
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("%w: check takes one repository URL or path", errUsage)
@@ -48,20 +59,24 @@ func check(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		}
 		target = repoURL
 	}
+	deps := make(chan *report.Vulnerabilities, 1)
+	go func() { deps <- checkDependencies(ctx, dir, []string{dir}, offline) }()
 	r, err := safety.Scan(ctx, dir, safety.DefaultLimits)
 	if err != nil {
 		return err
 	}
+	v := <-deps
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(struct {
 			Target string `json:"target"`
 			safety.Report
-		}{target, r})
+			Vulnerabilities *report.Vulnerabilities `json:"vulnerabilities"`
+		}{target, r, v})
 	}
 	writeSafety(stdout, target, r)
-	return nil
+	return report.WriteVulnerabilities(stdout, v)
 }
 
 func writeSafety(w io.Writer, target string, r safety.Report) {

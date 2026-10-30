@@ -20,6 +20,9 @@ type settings struct {
 	Extensions []string `json:"extensions"`
 	// Dismissed are findings the user said are not real problems.
 	Dismissed []dismissal `json:"dismissed,omitempty"`
+	// Offline keeps every command off the network unless --online is passed:
+	// dependency checks use the downloaded databases, and no update check runs.
+	Offline bool `json:"offline,omitempty"`
 }
 
 // settingsPath is <user config dir>/urfluency/settings.json, or the same file in

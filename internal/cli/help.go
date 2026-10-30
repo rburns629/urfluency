@@ -7,7 +7,8 @@ import (
 )
 
 const usage = `urfluency rates the code you wrote and reports strengths and areas to improve.
-Your code stays on your machine.
+Your code stays on your machine. Dependency versions are checked against osv.dev
+for known vulnerabilities, unless you scan --offline.
 
 Rate your code
   scan [flags] [path]       Scan the repository at path, or every project below it
@@ -28,6 +29,8 @@ Repository badges
 
 Setup and troubleshooting
   init [path]               Confirm and save which commit addresses are yours
+  vulns update|status|remove
+                            Download vulnerability databases for --offline scans
   doctor                    Check Git and optional features; installs nothing
   version                   Print the version
 
@@ -55,6 +58,9 @@ const scanFlagsHelp = `  --since WHEN        Only count lines written since WHEN
   --sessions          Also grade your prompts from local Claude Code, Codex, and
                       GitHub Copilot Chat sessions for these projects, and report
                       how much code agents wrote. Prompts are read in memory only
+  --offline           Check dependencies against the downloaded databases and
+                      send nothing (see urfluency vulns update)
+  --online            Check dependencies live, overriding a saved offline default
 `
 
 var commandHelp = map[string]string{
@@ -62,8 +68,11 @@ var commandHelp = map[string]string{
 
 Scans the repository at path, or every project below it (default "."), and
 prints a report. Repositories are rated on the lines Git says you wrote; project
-folders without Git are rated on every line and reported separately. Nothing is
-sent or saved: to share the results, run upload with the same path and flags.
+folders without Git are rated on every line and reported separately. Your code
+is never sent. Locked dependency versions (package name, version, and ecosystem
+only) are checked against osv.dev for known vulnerabilities, which are shown to
+you and never uploaded; --offline checks the downloaded databases instead.
+Nothing is saved: to share the results, run upload with the same path and flags.
 
 Flags:
 ` + scanFlagsHelp + `  --locations         Show file:line for each finding, as dismiss takes them
@@ -100,14 +109,33 @@ uploads leave it out while that line stays the same; reports say how many
 findings you dismissed, never which. Only the rule and a hash of the line are
 saved, on this machine.
 `,
-	"check": `Usage: urfluency check [--json] URL|PATH
+	"check": `Usage: urfluency check [flags] URL|PATH
 
 Looks for signs of malicious behavior in a repository before you run it, such as
-install scripts that download and execute code. A URL is cloned into a temporary
-folder with hooks, submodules, and LFS off, then removed. Nothing is run or sent.
+install scripts that download and execute code, and for known vulnerabilities in
+its locked dependencies and pinned runtimes. A URL is cloned into a temporary
+folder with hooks, submodules, and LFS off, then removed. Nothing is run. Only
+dependency names and versions are sent, to osv.dev, unless --offline.
 
 Flags:
   --json              Print the result as JSON
+  --offline           Check dependencies against the downloaded databases and
+                      send nothing
+  --online            Check dependencies live, overriding a saved offline default
+`,
+	"vulns": `Usage:
+  urfluency vulns update [PATH...]        Download databases for the ecosystems
+                                          the projects at PATH use
+  urfluency vulns update --all            Every ecosystem (about 285 MB)
+  urfluency vulns update --ecosystem npm,Packagist
+  urfluency vulns status                  What is downloaded, and how old
+  urfluency vulns remove                  Delete the downloaded databases
+
+Scans check dependencies live against osv.dev by default. These databases let
+scan --offline and check --offline do it with nothing sent. update shows each
+download's size and asks first (--yes skips the question), and fetches only
+databases with newer advisories. They are kept in your user cache folder.
+Run update now and then: reports say when databases are over a week old.
 `,
 	"attest": `Usage: urfluency attest [--since WHEN] [--dry-run]
 
@@ -133,6 +161,10 @@ Flags:
   --yes               Don't ask; save only the addresses found for certain
   --include-ext EXT   Save extra file extensions for every scan to read, such
                       as .tf,.yml
+  --offline           Make offline the default: dependency checks use the
+                      downloaded databases and nothing is sent; --online on a
+                      scan overrides it
+  --online            Go back to checking dependencies live by default
 `,
 	"login": `Usage: urfluency login
 

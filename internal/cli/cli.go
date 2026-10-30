@@ -57,6 +57,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if args[0] != "help" && len(args) > 1 && wantsHelp(args[1:]) {
 		args = []string{"help", args[0]}
 	}
+	notice := startUpdateCheck(ctx, args)
+	defer func() {
+		if n := notice(); n != "" {
+			fmt.Fprintln(stderr, n)
+		}
+	}()
 	switch args[0] {
 	case "init":
 		err = initSettings(ctx, args[1:], stdout, stderr)
@@ -64,6 +70,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = scan(ctx, args[1:], stdout, stderr)
 	case "check":
 		err = check(ctx, args[1:], stdout, stderr)
+	case "vulns":
+		err = vulnsCmd(ctx, args[1:], stdin, stdout)
 	case "login":
 		err = login(ctx, args[1:], stdout)
 	case "upload":
@@ -112,6 +120,7 @@ type scanFlags struct {
 	authors, excludes, include stringList
 	since                      *string
 	sessions, noGit            *bool
+	offline, online            *bool
 }
 
 func addScanFlags(fs *flag.FlagSet) *scanFlags {
@@ -120,6 +129,8 @@ func addScanFlags(fs *flag.FlagSet) *scanFlags {
 	f.since = fs.String("since", "365d", "")
 	f.sessions = fs.Bool("sessions", false, "")
 	f.noGit = fs.Bool("no-git", false, "")
+	f.offline = fs.Bool("offline", false, "")
+	f.online = fs.Bool("online", false, "")
 	fs.Var(&f.excludes, "exclude", "")
 	fs.Var(&f.include, "include-ext", "")
 	return f
@@ -178,8 +189,15 @@ func scan(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err := report.WriteText(stdout, r); err != nil {
 		return err
 	}
-	// A scan is not kept; say so where people look for how to share it.
-	_, err = fmt.Fprintf(stderr, "\nNothing was sent or saved. To share these results, run:\n  urfluency upload %s\nIt scans again, then shows what it would send and asks first.\n", shellArgs(args))
+	// A scan is not kept; say so where people look for how to share it, and
+	// say exactly what, if anything, left the machine.
+	sent := "Your code was not sent, and nothing was saved."
+	if v := r.Vulnerabilities; v != nil && v.Mode == "live" && len(v.Checked) > 0 {
+		sent = "Your code was not sent: only dependency names and versions went to osv.dev. Nothing was saved."
+	} else if v == nil || len(v.Checked) == 0 {
+		sent = "Nothing was sent or saved."
+	}
+	_, err = fmt.Fprintf(stderr, "\n%s To share these results, run:\n  urfluency upload %s\nIt scans again, then shows what it would send and asks first.\n", sent, shellArgs(args))
 	return err
 }
 
@@ -235,6 +253,14 @@ func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations 
 		return report.Report{}, fmt.Errorf("read settings (run urfluency init to rewrite them): %w", err)
 	}
 	exts := sortedSet(append(saved.Extensions, extensions(sf.include)...))
+	offline, err := offlineMode(*sf.offline, *sf.online, saved)
+	if err != nil {
+		return report.Report{}, err
+	}
+	// Dependencies are checked beside the code analysis, so the lookup adds
+	// almost nothing to the scan's time.
+	deps := make(chan *report.Vulnerabilities, 1)
+	go func() { deps <- checkDependencies(ctx, abs, append(append([]string{}, repos...), folders...), offline) }()
 	var authors []string
 	if len(repos) > 0 {
 		prog.phase("Finding your commits")
@@ -325,6 +351,9 @@ func buildReport(ctx context.Context, sf *scanFlags, path string, withLocations 
 		r.Practices = report.BuildPractices(res)
 	}
 	report.Summarize(&r)
+	prog.phase("Checking dependencies for known vulnerabilities")
+	r.Vulnerabilities = <-deps
+	prog.clear()
 	return r, nil
 }
 

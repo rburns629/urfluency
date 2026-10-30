@@ -272,3 +272,17 @@ func TestBuildPractices(t *testing.T) {
 		}
 	}
 }
+
+func TestUpgradeTo(t *testing.T) {
+	d := VulnerableDependency{Version: "3.1.8", Advisories: []VulnAdvisory{
+		{ID: "a", Fixed: []string{"4.2.3", "3.1.9", "2.4.8"}},
+		{ID: "b", Fixed: []string{"3.1.10", "4.0.0"}},
+	}}
+	if got := upgradeTo(d); got != "3.1.10" {
+		t.Errorf("upgradeTo = %q, want 3.1.10", got)
+	}
+	d.Advisories = append(d.Advisories, VulnAdvisory{ID: "c"})
+	if got := upgradeTo(d); got != "" {
+		t.Errorf("an advisory with no fix: upgradeTo = %q, want none", got)
+	}
+}

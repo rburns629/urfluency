@@ -50,6 +50,9 @@ type Report struct {
 	// Unversioned covers folders without Git, kept apart because their
 	// authorship is declared rather than recorded.
 	Unversioned *Unversioned `json:"unversioned,omitempty"`
+	// Vulnerabilities are known vulnerabilities in locked dependencies and
+	// pinned runtimes, for the person who ran the scan; never uploaded.
+	Vulnerabilities *Vulnerabilities `json:"vulnerabilities,omitempty"`
 }
 
 // Prompting grades task prompts from local agent sessions.
@@ -469,7 +472,9 @@ func WriteText(w io.Writer, r Report) error {
 		}
 		writeDesign(&b, "  DESIGN", u.Design)
 	}
+	writeVulnerabilities(&b, r.Vulnerabilities)
 	writeSummary(&b, r.Summary, r.Combined)
+	b.WriteString(vulnerabilityPointer(r.Vulnerabilities))
 	_, err := io.WriteString(w, b.String())
 	return err
 }

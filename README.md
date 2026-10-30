@@ -133,9 +133,39 @@ same checks in an isolated, disposable machine with no credentials, whose networ
 reaches only the Git hosts. Anyone can run a few scans a day without an account;
 signed-in accounts get more and keep a private history of verdicts.
 
+## Known vulnerabilities in your dependencies
+
+`scan` and `check` read each project's lockfiles (npm, Yarn, and pnpm; Poetry,
+Pipfile, and pinned requirements; Go modules; Composer; Bundler; Cargo; NuGet;
+and Pub) and look up the locked versions in [OSV](https://osv.dev), the open
+vulnerability database. The report lists each vulnerable package with its CVE
+IDs and severity, and the version that fixes all of them. It also flags pinned
+runtimes with known critical flaws, such as PHP versions affected by PHP2Shell
+(CVE-2026-109618 and CVE-2026-109619) in a Dockerfile, `composer.json`, or
+`.tool-versions`. Results are yours alone: they never reach an upload, a
+profile, or a badge, and they never change a safety check's verdict.
+
+```
+urfluency vulns update ~/Projects    # download databases for these projects' ecosystems
+urfluency scan --offline ~/Projects  # check against them; nothing is sent
+urfluency vulns status               # what is downloaded, and how old
+```
+
+A live check sends only package names, versions, and ecosystems, and takes about
+a second. If osv.dev cannot be reached, the scan still finishes, uses
+downloaded databases if there are any, and says what was not checked; it never
+reports a check that did not run as clean.
+
 ## Sharing your results (optional)
 
-Scans never send anything. To publish a profile and badges on urfluency.com:
+Scans never send your code. To check your dependencies for known
+vulnerabilities, they send each locked package's name, version, and ecosystem
+to [osv.dev](https://osv.dev), the open vulnerability database, and show you
+the results; these are never uploaded. `--offline` checks against databases you
+download once with `urfluency vulns update`, and sends nothing at all;
+`urfluency init --offline` makes that the default.
+
+To publish a profile and badges on urfluency.com:
 
 ```
 urfluency login                      # approve the code at urfluency.com/connect
