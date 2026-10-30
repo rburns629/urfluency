@@ -155,8 +155,12 @@ func TestAffects(t *testing.T) {
 			[]indexRange{{"ECOSYSTEM", ev("introduced", "0", "fixed", "4.5.1")}}, true, nil},
 		{"enumerated versions match exactly", "PyPI", "1.0", []string{"1.0.0", "1.1"},
 			[]indexRange{{"ECOSYSTEM", ev("introduced", "5.0")}}, true, nil},
-		{"enumerated versions, no match ignores ranges", "PyPI", "1.2", []string{"1.0", "1.1"},
-			[]indexRange{{"ECOSYSTEM", ev("introduced", "0")}}, false, nil},
+		// A release after the advisory's snapshot of versions is still in its
+		// unfixed range: the entry affects the union of both.
+		{"in the range but not the enumerated snapshot", "PyPI", "1.2", []string{"1.0", "1.1"},
+			[]indexRange{{"ECOSYSTEM", ev("introduced", "0")}}, true, nil},
+		{"in neither the enumerated versions nor the range", "PyPI", "2.1", []string{"1.0", "1.1"},
+			[]indexRange{{"ECOSYSTEM", ev("introduced", "0", "fixed", "2.0")}}, false, nil},
 		{"GIT ranges skipped", "npm", "1.0.0", nil,
 			[]indexRange{{"GIT", ev("introduced", "0", "fixed", "abcdef")}}, false, nil},
 		{"unparseable event version", "npm", "1.0.0", nil,

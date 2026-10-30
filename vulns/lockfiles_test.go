@@ -2,6 +2,7 @@ package vulns
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -164,8 +165,8 @@ func TestLockfilesDirectoryLimit(t *testing.T) {
 		}
 	}
 	got, err := Lockfiles(root)
-	if !errors.Is(err, ErrTooManyDirectories) {
-		t.Fatalf("err = %v, want ErrTooManyDirectories", err)
+	if !errors.Is(err, ErrLimit) {
+		t.Fatalf("err = %v, want ErrLimit", err)
 	}
 	if len(got) != 1 {
 		t.Errorf("packages found before the limit = %d, want 1", len(got))
@@ -175,5 +176,27 @@ func TestLockfilesDirectoryLimit(t *testing.T) {
 func TestLockfilesMissingRoot(t *testing.T) {
 	if _, err := Lockfiles(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Error("no error for a missing root")
+	}
+}
+
+// Many lockfiles that each pass the per-file size check still stop the walk
+// once their packages pass the total, so a hostile repository cannot exhaust
+// a scan's memory.
+func TestLockfilesPackageLimit(t *testing.T) {
+	root := t.TempDir()
+	var b strings.Builder
+	b.WriteString("GEM\n  remote: https://rubygems.org/\n  specs:\n")
+	for i := range 30_000 {
+		fmt.Fprintf(&b, "    gem%d (1.0.%d)\n", i, i)
+	}
+	for _, dir := range []string{"a", "b", "c", "d"} {
+		writeFile(t, filepath.Join(root, dir, "Gemfile.lock"), b.String())
+	}
+	got, err := Lockfiles(root)
+	if !errors.Is(err, ErrLimit) {
+		t.Fatalf("err = %v, want ErrLimit", err)
+	}
+	if len(got) == 0 || len(got) > maxPackages {
+		t.Errorf("kept %d packages, want some and at most %d", len(got), maxPackages)
 	}
 }

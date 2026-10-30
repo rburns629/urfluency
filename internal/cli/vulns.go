@@ -60,10 +60,10 @@ func checkDependencies(ctx context.Context, root string, projects []string, offl
 	var pkgs []vulns.Package
 	for _, dir := range projects {
 		found, err := vulns.Lockfiles(dir)
-		if err != nil && !errors.Is(err, vulns.ErrTooManyDirectories) {
+		if err != nil && !errors.Is(err, vulns.ErrLimit) {
 			v.Notes = append(v.Notes, fmt.Sprintf("Could not read the lockfiles in %s: %v", label(root, dir), err))
 		} else if err != nil {
-			v.Notes = append(v.Notes, fmt.Sprintf("%s has too many folders to search them all for lockfiles; some were not checked.", label(root, dir)))
+			v.Notes = append(v.Notes, fmt.Sprintf("%s is too large to search all its lockfiles; some dependencies were not checked.", label(root, dir)))
 		}
 		for _, p := range found {
 			p.Lockfile = filepath.ToSlash(filepath.Join(label(root, dir), p.Lockfile))
@@ -90,13 +90,13 @@ func checkDependencies(ctx context.Context, root string, projects []string, offl
 		findings, cov = newLiveChecker().Check(ctx, pkgs)
 		// osv.dev could not be reached at all: use downloaded databases if
 		// there are any, and say so.
-		if len(cov.Checked) == 0 && hasDatabases(dir) {
+		if len(cov.Checked) == 0 && cov.Unreachable() && hasDatabases(dir) {
 			findings, cov = vulns.Offline(dir).Check(ctx, pkgs)
 			v.Notes = append(v.Notes, "osv.dev could not be reached, so the downloaded databases were used instead.")
 		}
 	}
 	v.Mode, v.Checked, v.Unchecked, v.DatabaseDates = cov.Mode, cov.Checked, cov.Unchecked, cov.DatabaseDates
-	if len(cov.Checked) == 0 && !offline && v.Notes == nil {
+	if len(cov.Checked) == 0 && !offline && cov.Unreachable() && v.Notes == nil {
 		v.Mode = ""
 	}
 	for _, f := range findings {
@@ -124,7 +124,7 @@ func dependencyNotes(v *report.Vulnerabilities, offline bool, pkgs []vulns.Packa
 		switch {
 		case offline && len(missing) > 0:
 			notes = append(notes, "To check offline, download the databases once: urfluency vulns update "+strings.Join(missing, " "))
-		case !offline && len(v.Checked) == 0:
+		case !offline && v.Mode == "":
 			notes = append(notes, "Could not reach osv.dev. Check your connection, or run urfluency vulns update once and scan with --offline.")
 		}
 	}

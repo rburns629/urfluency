@@ -134,6 +134,23 @@ func checkable(p Package) string {
 
 func advisoryURL(id string) string { return "https://osv.dev/vulnerability/" + id }
 
+// unreachableReasons start the Unchecked reasons of a live check that could
+// not reach OSV, as opposed to packages that could not be checked anywhere.
+var unreachableReasons = []string{"OSV did not answer", "OSV query failed", "OSV answered"}
+
+// Unreachable reports whether a live check left packages unchecked because
+// OSV could not be reached or failed, so downloaded databases may help.
+func (c Coverage) Unreachable() bool {
+	for _, reason := range c.Unchecked {
+		for _, r := range unreachableReasons {
+			if strings.Contains(reason, r) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // tally accumulates Coverage while a check runs.
 type tally struct {
 	mode     string

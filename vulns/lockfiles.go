@@ -12,15 +12,21 @@ import (
 	"github.com/rburns629/urfluency/analysis"
 )
 
+// A project's lockfiles are bounded as a whole as well as one by one, since a
+// hosted scan reads untrusted repositories: a repository of many large
+// lockfiles must not exhaust the scan's memory. Real projects stay far below
+// these; a large Rails and React application locks about 1,700 packages.
 const (
 	maxDirs          = 10000
 	maxLockfileBytes = 64 << 20
+	maxTotalBytes    = 256 << 20
+	maxPackages      = 100_000
 )
 
-// ErrTooManyDirectories is returned, wrapped, by Lockfiles when a project has
-// more directories than it walks. The packages found until then are returned
-// with it.
-var ErrTooManyDirectories = fmt.Errorf("more than %d directories", maxDirs)
+// ErrLimit is returned, wrapped, by Lockfiles when a project has more
+// directories, lockfile bytes, or packages than one check reads. The packages
+// found until then are returned with it.
+var ErrLimit = fmt.Errorf("more than %d directories, %d MB of lockfiles, or %d packages", maxDirs, maxTotalBytes>>20, maxPackages)
 
 // skippedDirs hold installed dependencies, virtual environments, or build
 // output: the lockfiles in them describe other projects.
@@ -36,6 +42,7 @@ var skippedDirs = map[string]bool{
 func Lockfiles(root string) ([]Package, error) {
 	var pkgs []Package
 	dirs := 0
+	var read int64
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if p == root {
@@ -53,7 +60,7 @@ func Lockfiles(root string) ([]Package, error) {
 				return filepath.SkipDir
 			}
 			if dirs++; dirs > maxDirs {
-				return ErrTooManyDirectories
+				return ErrLimit
 			}
 			return nil
 		}
@@ -64,12 +71,18 @@ func Lockfiles(root string) ([]Package, error) {
 		if !ok {
 			return nil
 		}
+		if read += int64(len(content)); read > maxTotalBytes {
+			return ErrLimit
+		}
 		found, _ := ParseLockfile(rel, content)
+		if len(pkgs)+len(found) > maxPackages {
+			return ErrLimit
+		}
 		pkgs = append(pkgs, found...)
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, ErrTooManyDirectories) {
+		if errors.Is(err, ErrLimit) {
 			return pkgs, fmt.Errorf("find lockfiles in %s: %w", root, err)
 		}
 		return nil, fmt.Errorf("find lockfiles: %w", err)

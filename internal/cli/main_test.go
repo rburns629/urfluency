@@ -30,7 +30,7 @@ type offlineChecker struct{}
 func (offlineChecker) Check(_ context.Context, pkgs []vulns.Package) ([]vulns.Finding, vulns.Coverage) {
 	cov := vulns.Coverage{Mode: "live", Checked: map[string]int{}, Unchecked: map[string]string{}}
 	for _, e := range vulns.Ecosystems(pkgs) {
-		cov.Unchecked[e] = "osv.dev could not be reached"
+		cov.Unchecked[e] = "OSV query failed: no network in tests"
 	}
 	return nil, cov
 }

@@ -100,12 +100,12 @@ end
 			want: []string{},
 		},
 		{
-			name: "YAML.load and Marshal.load",
+			name: "YAML.unsafe_load and Marshal.load",
 			path: "lib/store.rb",
 			src: `def read(data, path)
-  YAML.load(data)
+  YAML.unsafe_load(data)
   Psych.unsafe_load(data)
-  ::YAML.load(File.read(path))
+  ::YAML.unsafe_load_file(path)
   Marshal.load(data)
   Marshal.restore(Base64.decode64(data))
 end
@@ -118,6 +118,7 @@ end
 			path: "lib/store.rb",
 			src: `def read(data, obj)
   YAML.safe_load(data, permitted_classes: [Date])
+  YAML.load(data)
   YAML.load_file("config/app.yml")
   JSON.parse(data)
   Marshal.load(Marshal.dump(obj))

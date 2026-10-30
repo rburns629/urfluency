@@ -103,7 +103,9 @@ func (c *checker) checkCall(call *ts.Node) {
 		if receiver != nil && c.fromParams(receiver) {
 			c.report("ruby.dynamic-dispatch-from-params", call)
 		}
-	case (name == "load" || name == "unsafe_load") && c.receiverIs(receiver, "YAML", "Psych"):
+	case (name == "unsafe_load" || name == "unsafe_load_file") && c.receiverIs(receiver, "YAML", "Psych"):
+		// YAML.load itself has been the safe loader since Psych 4, which every
+		// supported Ruby (3.1 and later) ships.
 		c.report("ruby.unsafe-deserialization", call)
 	case (name == "load" || name == "restore") && c.receiverIs(receiver, "Marshal"):
 		// Marshal.load(Marshal.dump(x)) is the deep-copy idiom on trusted data.

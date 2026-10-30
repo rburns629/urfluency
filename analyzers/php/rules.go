@@ -23,10 +23,11 @@ var (
 	}
 	// wpdbMethods run raw SQL on WordPress's $wpdb.
 	wpdbMethods = map[string]bool{"get_results": true, "get_var": true, "get_row": true, "get_col": true}
-	// sqlFunctions take the SQL as their last argument after an optional link.
+	// sqlFunctions run SQL; sqlArgument says which argument holds it.
 	sqlFunctions = map[string]bool{
 		"mysqli_query": true, "mysqli_real_query": true, "mysqli_multi_query": true, "mysqli_prepare": true,
-		"mysql_query": true, "pg_query": true, "pg_prepare": true, "sqlsrv_query": true,
+		"mysql_query": true, "pg_query": true, "pg_prepare": true, "pg_send_query": true, "sqlsrv_query": true,
+		"sqlsrv_prepare": true,
 	}
 	// sqlSafeCalls return values that cannot break out of SQL: numbers, or
 	// strings escaped or already bound by a driver.
@@ -136,7 +137,7 @@ func (c *checker) checkFunction(call *ts.Node, name string, args []*ts.Node) {
 			c.report("php.command-built", call)
 		}
 	case sqlFunctions[name]:
-		if len(args) > 0 && c.built(args[len(args)-1]) {
+		if q := sqlArgument(name, args); q != nil && c.built(q) {
 			c.report("php.sql-string-built", call)
 		}
 	case name == "md5" || name == "sha1":
@@ -152,6 +153,26 @@ func (c *checker) checkFunction(call *ts.Node, name string, args []*ts.Node) {
 			c.report("php.tls-verify-disabled", call)
 		}
 	}
+}
+
+// sqlArgument returns the argument of a SQL function that holds the query,
+// or nil: mysqli_query($link, $sql, $mode) and sqlsrv_query($conn, $sql,
+// $params) take it second, before optional arguments; mysql_query($sql, $link)
+// first; pg_query and pg_send_query take it last after an optional
+// connection, and pg_prepare($conn, $name, $sql) third, or second without a
+// connection.
+func sqlArgument(name string, args []*ts.Node) *ts.Node {
+	at := 1
+	switch name {
+	case "mysql_query":
+		at = 0
+	case "pg_query", "pg_send_query", "pg_prepare":
+		at = len(args) - 1
+	}
+	if at < 0 || at >= len(args) {
+		return nil
+	}
+	return args[at]
 }
 
 // restrictsClasses reports whether unserialize is given allowed_classes, which

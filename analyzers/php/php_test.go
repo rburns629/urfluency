@@ -51,9 +51,13 @@ $pdo->prepare("SELECT * FROM t WHERE id = $id");
 pg_query(<<<SQL
 SELECT * FROM t WHERE id = $id
 SQL);
+sqlsrv_query($conn, "SELECT * FROM t WHERE id = " . $id, $params);
+mysqli_query($conn, "SELECT * FROM t WHERE id = $id", MYSQLI_USE_RESULT);
+pg_prepare($conn, "q", "SELECT * FROM t WHERE id = " . $id);
 `,
-			want: []string{"php.sql-string-built:2", "php.sql-string-built:3", "php.sql-string-built:4", "php.sql-string-built:5",
-				"php.sql-string-built:6", "php.sql-string-built:7", "php.sql-string-built:8", "php.sql-string-built:9"},
+			want: []string{"php.sql-string-built:12", "php.sql-string-built:13", "php.sql-string-built:14", "php.sql-string-built:2",
+				"php.sql-string-built:3", "php.sql-string-built:4", "php.sql-string-built:5", "php.sql-string-built:6",
+				"php.sql-string-built:7", "php.sql-string-built:8", "php.sql-string-built:9"},
 		},
 		{
 			name: "SQL with bound parameters, constants, casts, and table names",

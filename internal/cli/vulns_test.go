@@ -131,3 +131,29 @@ func TestOfflineMode(t *testing.T) {
 		}
 	}
 }
+
+// Packages that cannot be checked anywhere, such as Composer branches, are
+// not a network failure: no fallback, and no "could not reach" note.
+func TestUncheckableIsNotUnreachable(t *testing.T) {
+	root := writeProject(t, map[string]string{"composer.lock": `{"packages":[{"name":"acme/lib","version":"dev-main"}]}`})
+	defer func(f func() vulns.Checker) { newLiveChecker = f }(newLiveChecker)
+	newLiveChecker = func() vulns.Checker { return uncheckable{} }
+	v := checkDependencies(context.Background(), root, []string{root}, false)
+	var text bytes.Buffer
+	_ = report.WriteVulnerabilities(&text, v)
+	if v.Mode != "live" || strings.Contains(text.String(), "Could not reach") || !strings.Contains(text.String(), "version not understood") {
+		t.Errorf("uncheckable packages reported as:\n%s", text.String())
+	}
+}
+
+// uncheckable answers as the live checker does for versions no comparator
+// understands: unchecked before any request is made.
+type uncheckable struct{}
+
+func (uncheckable) Check(_ context.Context, pkgs []vulns.Package) ([]vulns.Finding, vulns.Coverage) {
+	cov := vulns.Coverage{Mode: "live", Checked: map[string]int{}, Unchecked: map[string]string{}}
+	for _, e := range vulns.Ecosystems(pkgs) {
+		cov.Unchecked[e] = "version not understood (1): acme/lib@dev-main"
+	}
+	return nil, cov
+}

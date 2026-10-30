@@ -266,9 +266,12 @@ func rangeParser(rangeType, ecosystem string) parser {
 	return nil
 }
 
-// affects reports whether one affected entry covers rawVersion. Enumerated
-// versions match exactly (equal strings or equal parsed versions); otherwise
-// SEMVER and ECOSYSTEM ranges are evaluated.
+// affects reports whether one affected entry covers rawVersion: whether it is
+// one of the enumerated versions (equal strings or equal parsed versions) or
+// falls in a SEMVER or ECOSYSTEM range. As in the OSV schema, an entry affects
+// the union of both: the enumerated list is a snapshot of the versions known
+// when the advisory was written, so a later release can be in a range but not
+// in the list.
 func affects(ecosystem, rawVersion string, versions []string, ranges []indexRange) (bool, error) {
 	if len(versions) > 0 {
 		v, ok := parseVersion(ecosystem, rawVersion)
@@ -282,7 +285,6 @@ func affects(ecosystem, rawVersion string, versions []string, ranges []indexRang
 				}
 			}
 		}
-		return false, nil
 	}
 	var firstErr error
 	for _, r := range ranges {
