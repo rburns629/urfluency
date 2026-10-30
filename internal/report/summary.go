@@ -23,8 +23,11 @@ type Summary struct {
 	Design        []string `json:"design_trends"`
 	Communication []string `json:"communication"`
 	Growth        []string `json:"growth_areas"`
-	Ratings       []Rating `json:"ratings"`
-	Caveats       []string `json:"caveats"`
+	// NextSteps are the changes that would raise the ratings most, each with
+	// the rating it is predicted to reach.
+	NextSteps []Step   `json:"next_steps"`
+	Ratings   []Rating `json:"ratings"`
+	Caveats   []string `json:"caveats"`
 }
 
 // Rating is one 0–100 rating with its level. Basis says what it measures:
@@ -100,7 +103,7 @@ var categoryNames = map[string]string{
 // Summarize builds the summary from a finished report. Call it last, after the
 // optional sections are filled in.
 func Summarize(r *Report) {
-	s := &Summary{Strengths: []string{}, Design: []string{}, Communication: []string{}, Growth: []string{}, Ratings: []Rating{}, Caveats: []string{}}
+	s := &Summary{Strengths: []string{}, Design: []string{}, Communication: []string{}, Growth: []string{}, NextSteps: []Step{}, Ratings: []Rating{}, Caveats: []string{}}
 	c := r.Combined
 	if c == nil {
 		c = &Combined{Repos: r.Repos, Languages: r.Languages, Tools: r.Tools, Design: r.Design}
@@ -177,6 +180,7 @@ func Summarize(r *Report) {
 		s.Communication = append(s.Communication, p.Communication.Traits...)
 	}
 	s.Growth = append(s.Growth, growthAreas(r, c, langs, practices)...)
+	s.NextSteps = nextSteps(langs, r)
 	s.Headline = headline(s.Overall, langs, design, max(c.Repos+c.Projects, 1))
 	s.Caveats = append(s.Caveats, caveats(r, langs)...)
 	r.Summary = s
@@ -611,6 +615,12 @@ func writeSummary(b *strings.Builder, s *Summary, c *Combined) {
 	section("Design trends", "•", s.Design)
 	section("How you brief agents", "•", s.Communication)
 	section("What holds the ratings down", "-", s.Growth)
+	if len(s.NextSteps) > 0 {
+		b.WriteString("  Next steps (predicted rating)\n")
+		for _, st := range s.NextSteps {
+			fmt.Fprintf(b, "    > %s %d -> %d: %s\n        %s\n", ratingLabel(st.Area, st.Name), st.From, st.To, st.Action, st.Detail)
+		}
+	}
 	if len(s.Ratings) > 0 {
 		b.WriteString("  Ratings\n")
 		for _, r := range s.Ratings {
@@ -692,4 +702,12 @@ func thousands(n int) string {
 		s = s[:i] + "," + s[i:]
 	}
 	return s
+}
+
+// ratingLabel names a rating in text: languages by their display name.
+func ratingLabel(area, name string) string {
+	if area == "language" {
+		return displayLanguage(name)
+	}
+	return sentenceCase(name)
 }

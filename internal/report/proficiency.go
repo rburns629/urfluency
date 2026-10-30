@@ -85,18 +85,15 @@ func proficiency(lr analysis.LanguageResult, counts map[rules.Category]int) (*Pr
 
 	p := &Proficiency{Categories: map[string]CategoryScore{}, Model: ProficiencyModel}
 	kLines := float64(lr.OwnedLines) / 1000
-	sum, weakest := 0.0, 100.0
+	var scores []float64
 	for c := range applicable {
 		rate := float64(counts[c]) / kLines
-		score := 100 / (1 + rate/scoredCategories[c])
+		score := categoryScore(c, rate)
 		p.Categories[string(c)] = CategoryScore{Score: int(math.Round(score)), Band: band(score), PerKLines: round2(rate)}
-		sum += score
-		weakest = min(weakest, score)
+		scores = append(scores, score)
 	}
 	rng := 100 * float64(len(idioms)) / float64(catalog)
-	score := rangeWeight*rng + (1-rangeWeight)*sum/float64(len(applicable))
-	score = min(score, weakest+weakestLead)
-	p.Score, p.Range = int(math.Round(score)), int(math.Round(rng))
+	p.Score, p.Range = int(math.Round(blend(rng, scores))), int(math.Round(rng))
 	switch {
 	case lr.OwnedLines >= 10000:
 		p.Confidence = "high"
@@ -111,6 +108,24 @@ func proficiency(lr analysis.LanguageResult, counts map[rules.Category]int) (*Pr
 	}
 	p.Level = level(p.Score)
 	return p, idioms
+}
+
+// categoryScore rates one category from its findings per 1,000 lines: 100
+// with none, 50 at the category's reference rate.
+func categoryScore(c rules.Category, rate float64) float64 {
+	return 100 / (1 + rate/scoredCategories[c])
+}
+
+// blend is the language score: idiom range and the category scores' average,
+// capped above the weakest category.
+func blend(rng float64, categories []float64) float64 {
+	sum, weakest := 0.0, 100.0
+	for _, s := range categories {
+		sum += s
+		weakest = min(weakest, s)
+	}
+	score := rangeWeight*rng + (1-rangeWeight)*sum/float64(len(categories))
+	return min(score, weakest+weakestLead)
 }
 
 func band(score float64) string {
