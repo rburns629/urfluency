@@ -21,11 +21,15 @@ type Persona struct {
 }
 
 // Role is one role family and how well the ratings meet its requirements.
-// Fit is the mean of the requirements' best ratings.
+// Fit is the mean of the requirements' best ratings. Repos is how widely the
+// evidence appears: the fewest repositories behind any requirement with a
+// count (design areas, platforms, and tools; languages have none). Experience
+// ratings saturate for broad work, so roles are ranked by Repos first.
 type Role struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	Fit   int    `json:"fit"`
+	Repos int    `json:"repositories,omitempty"`
 	Met   []Need `json:"met"`
 	Gaps  []Need `json:"gaps"`
 }
@@ -44,7 +48,7 @@ const needBar = 40
 
 const (
 	maxStrongest = 5
-	maxFits      = 3
+	maxFits      = 8
 	maxAdjacent  = 3
 )
 
@@ -60,72 +64,81 @@ type requirement struct {
 // least half are met and its first requirement, the one that defines it, has
 // some evidence. Requirements name ratings from the summary: design areas,
 // languages, platforms, and tools.
+// Infrastructure roles are the platforms that application roles run on; the
+// summary names both when the work spans them. Work is how the summary says
+// what the role builds.
 var roleFamilies = []struct {
-	id, title string
-	needs     []requirement
+	id, title, work string
+	infra           bool
+	needs           []requirement
 }{
-	{"backend", "Backend engineering", []requirement{
+	{"backend", "Backend and API engineering", "backend and API services", false, []requirement{
 		{"Web APIs and services", []string{"design:api"}},
 		{"Databases and storage", []string{"design:data"}},
 		{"A server-side language", languages("go", "java", "kotlin", "python", "csharp", "rust", "php", "ruby", "typescript", "javascript")},
 	}},
-	{"frontend", "Front-end engineering", []requirement{
+	{"frontend", "Front-end engineering", "web front ends", false, []requirement{
 		{"Web front ends", []string{"design:frontend"}},
 		{"JavaScript or TypeScript", languages("javascript", "typescript")},
 	}},
-	{"fullstack", "Full-stack engineering", []requirement{
+	{"fullstack", "Full-stack engineering", "full-stack applications", false, []requirement{
 		{"Web front ends", []string{"design:frontend"}},
 		{"Web APIs and services", []string{"design:api"}},
 		{"Databases and storage", []string{"design:data"}},
 	}},
-	{"mobile", "Mobile engineering", []requirement{
+	{"mobile", "Mobile engineering", "mobile apps", false, []requirement{
 		{"Mobile apps", []string{"design:mobile"}},
 		{"A mobile language", languages("swift", "kotlin", "dart", "typescript", "javascript", "java")},
 	}},
-	{"platform", "Platform and DevOps engineering", []requirement{
+	{"platform", "Platform and DevOps engineering", "platform engineering", true, []requirement{
 		{"Infrastructure as code", []string{"design:infrastructure"}},
 		{"Delivery tools", tools("docker", "terraform", "helm", "kustomize", "pulumi", "ansible", "github-actions", "gitlab-ci", "jenkins", "cloud-build", "azure-pipelines", "circleci")},
 		{"A cloud platform or Kubernetes", platforms("aws", "gcp", "azure", "kubernetes")},
 	}},
-	{"sre", "Site reliability engineering", []requirement{
+	{"sre", "Site reliability engineering", "site reliability", true, []requirement{
 		{"Infrastructure as code", []string{"design:infrastructure"}},
 		{"Logging, metrics, and tracing", []string{"design:observability"}},
 		{"A cloud platform or Kubernetes", platforms("aws", "gcp", "azure", "kubernetes")},
 	}},
-	{"cloud", "Cloud engineering", []requirement{
+	{"cloud", "Cloud engineering", "cloud infrastructure", true, []requirement{
 		{"Cloud services", []string{"design:cloud"}},
 		{"A cloud platform", platforms("aws", "gcp", "azure", "firebase")},
 		{"Infrastructure as code", []string{"design:infrastructure"}},
 	}},
-	{"integration", "Integration engineering", []requirement{
+	{"services", "Microservices and distributed systems", "microservices", false, []requirement{
+		{"Web APIs and services", []string{"design:api"}},
+		{"Messaging and events", []string{"design:messaging"}},
+		{"A cloud platform or Kubernetes", platforms("aws", "gcp", "azure", "kubernetes")},
+	}},
+	{"integration", "Integration engineering", "service integrations", false, []requirement{
 		{"Integrations with other services", []string{"design:integration"}},
 		{"Web APIs and services", []string{"design:api"}},
 		{"Messaging and events", []string{"design:messaging"}},
 	}},
-	{"data", "Data engineering", []requirement{
+	{"data", "Data engineering", "data pipelines", false, []requirement{
 		{"Data processing and analytics", append([]string{"design:analytics"}, platforms("snowflake", "databricks", "palantir")...)},
 		{"Databases and storage", []string{"design:data"}},
 		{"A data language", languages("python", "java", "kotlin", "go", "rust")},
 	}},
-	{"ml", "Machine learning engineering", []requirement{
+	{"ml", "Machine learning engineering", "machine learning", false, []requirement{
 		{"Machine learning", []string{"design:ml"}},
 		{"Python", languages("python")},
 	}},
-	{"ai", "AI application engineering", []requirement{
+	{"ai", "AI application engineering", "AI applications", false, []requirement{
 		{"AI and LLM applications", []string{"design:ai"}},
 		{"Web APIs and services", []string{"design:api"}},
 	}},
-	{"tooling", "Developer tooling", []requirement{
+	{"tooling", "Developer tooling", "developer tools", false, []requirement{
 		{"Command-line tools", []string{"design:cli"}},
 		{"A language", languages("go", "rust", "python", "typescript", "javascript", "csharp", "java", "kotlin", "swift", "shell", "powershell")},
 	}},
-	{"systems", "Systems programming", []requirement{
+	{"systems", "Systems programming", "systems software", false, []requirement{
 		{"C, C++, or Rust", languages("c", "cpp", "rust")},
 	}},
-	{"salesforce", "Salesforce development", []requirement{
+	{"salesforce", "Salesforce development", "Salesforce apps", false, []requirement{
 		{"Salesforce", platforms("salesforce")},
 	}},
-	{"foundry", "Palantir Foundry development", []requirement{
+	{"foundry", "Palantir Foundry development", "Palantir Foundry pipelines", false, []requirement{
 		{"Palantir Foundry", platforms("palantir")},
 	}},
 }
@@ -143,8 +156,9 @@ func prefixed(prefix string, ids []string) []string {
 }
 
 // buildPersona works out the persona from the summary's ratings and next
-// steps. It returns nil when nothing is rated.
-func buildPersona(s *Summary) *Persona {
+// steps, with repository counts from the combined result. It returns nil when
+// nothing is rated.
+func buildPersona(s *Summary, c *Combined) *Persona {
 	if len(s.Ratings) == 0 {
 		return nil
 	}
@@ -152,6 +166,7 @@ func buildPersona(s *Summary) *Persona {
 	for _, r := range s.Ratings {
 		ratings[r.Area+":"+r.Name] = r
 	}
+	repos := repoCounts(c)
 	p := &Persona{Strongest: strongest(s.Ratings), Fits: []Role{}, Adjacent: []Role{}}
 	for _, f := range roleFamilies {
 		role := Role{ID: f.id, Title: f.title, Met: []Need{}, Gaps: []Need{}}
@@ -159,10 +174,23 @@ func buildPersona(s *Summary) *Persona {
 		defined := false
 		for i, req := range f.needs {
 			n := Need{Title: req.title}
+			// Breadth is the widest alternative that meets the bar, such as
+			// the delivery tool used in the most repositories.
+			widest, counted := 0, false
 			for _, key := range req.any {
-				if r, ok := ratings[key]; ok && r.Score > n.Score {
+				r, ok := ratings[key]
+				if !ok {
+					continue
+				}
+				if r.Score > n.Score {
 					n.Best, n.Score = ratingLabel(r.Area, r.Name), r.Score
 				}
+				if count, has := repos[key]; has && r.Score >= needBar {
+					widest, counted = max(widest, count), true
+				}
+			}
+			if counted && (role.Repos == 0 || widest < role.Repos) {
+				role.Repos = widest
 			}
 			total += n.Score
 			defined = defined || (i == 0 && n.Score > 0)
@@ -181,13 +209,35 @@ func buildPersona(s *Summary) *Persona {
 			p.Adjacent = append(p.Adjacent, role)
 		}
 	}
-	byFit := func(roles []Role, n int) []Role {
-		sort.SliceStable(roles, func(i, j int) bool { return roles[i].Fit > roles[j].Fit })
-		return roles[:min(n, len(roles))]
-	}
-	p.Fits, p.Adjacent = byFit(p.Fits, maxFits), byFit(p.Adjacent, maxAdjacent)
+	sort.SliceStable(p.Fits, func(i, j int) bool {
+		if p.Fits[i].Repos != p.Fits[j].Repos {
+			return p.Fits[i].Repos > p.Fits[j].Repos
+		}
+		return p.Fits[i].Fit > p.Fits[j].Fit
+	})
+	sort.SliceStable(p.Adjacent, func(i, j int) bool { return p.Adjacent[i].Fit > p.Adjacent[j].Fit })
+	p.Fits, p.Adjacent = p.Fits[:min(maxFits, len(p.Fits))], p.Adjacent[:min(maxAdjacent, len(p.Adjacent))]
 	p.Summary = personaSummary(p, s.Ratings)
 	return p
+}
+
+// repoCounts maps "area:name" to the repositories behind a rating, for the
+// design areas, platforms, and tools of the combined result.
+func repoCounts(c *Combined) map[string]int {
+	out := map[string]int{}
+	if c == nil {
+		return out
+	}
+	for _, d := range c.Design {
+		out["design:"+d.ID] = d.Repos
+	}
+	for _, p := range c.Platforms {
+		out["platform:"+p.ID] = p.Repos
+	}
+	for _, t := range c.Tools {
+		out["tool:"+t.Name] = t.Repos
+	}
+	return out
 }
 
 // strongest picks the highest ratings at Advanced or above, one per name.
@@ -251,6 +301,22 @@ func personaSummary(p *Persona, ratings []Rating) string {
 			return "Not enough evidence yet to match a role family."
 		}
 		return fmt.Sprintf("No role family is fully matched yet; the closest is %s%s.", inSentence(p.Adjacent[0].Title), built)
+	}
+	var apps, infra []string
+	for _, r := range p.Fits {
+		for _, f := range roleFamilies {
+			if f.id != r.ID {
+				continue
+			}
+			if f.infra && len(infra) < 2 {
+				infra = append(infra, f.work)
+			} else if !f.infra && len(apps) < 3 {
+				apps = append(apps, f.work)
+			}
+		}
+	}
+	if len(apps) > 0 && len(infra) > 0 {
+		return fmt.Sprintf("The work spans applications and the platforms they run on: %s, and the %s under them%s.", joinAnd(apps), joinAnd(infra), built)
 	}
 	var titles []string
 	for i, r := range p.Fits {

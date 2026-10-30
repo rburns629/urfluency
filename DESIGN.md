@@ -301,7 +301,13 @@ requirements, each met by the best of several ratings (`design:api`,
 `language:go`, `platform:aws`, `tool:terraform`, ...). A role fits when every
 requirement is 40 or higher; it is adjacent when at least half are met and the
 first, defining requirement has some evidence. Fit is the mean of the
-requirements' best ratings. Gaps name the next step that raises them, when one
+requirements' best ratings. Experience ratings saturate for broad work, so
+fitted roles are ranked by breadth: for each requirement, the most
+repositories behind any alternative that meets the bar (design areas,
+platforms, and tools have counts; languages do not), and the fewest across
+requirements. Up to eight are shown. When the fits include both application
+roles and infrastructure roles (platform, site reliability, cloud), the
+summary says the work spans applications and the platforms under them. Gaps name the next step that raises them, when one
 exists. It never states seniority, salary, or personal traits. The API strips it
 from public profiles and published links unless the owner turns it on.
 

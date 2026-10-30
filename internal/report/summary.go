@@ -193,7 +193,7 @@ func Summarize(r *Report) {
 	}
 	s.Growth = append(s.Growth, growthAreas(r, c, langs, practices)...)
 	s.NextSteps = nextSteps(langs, r)
-	s.Persona = buildPersona(s)
+	s.Persona = buildPersona(s, c)
 	s.Headline = headline(s.Overall, langs, design, max(c.Repos+c.Projects, 1))
 	s.Caveats = append(s.Caveats, caveats(r, langs)...)
 	r.Summary = s

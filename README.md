@@ -237,10 +237,11 @@ Experience ratings measure how much you used something, not how well; only
 language ratings judge quality.
 
 The summary also builds a **persona** from these ratings: your strongest areas,
-the role families your work fits (backend, front end, full stack, mobile,
-platform and DevOps, site reliability, cloud, integration, data, machine
-learning, AI applications, developer tooling, systems, Salesforce, Palantir
-Foundry), and adjacent roles with what is missing for each, linked to your next
+the role families your work fits (backend and API, front end, full stack,
+microservices, mobile, platform and DevOps, site reliability, cloud,
+integration, data, machine learning, AI applications, developer tooling,
+systems, Salesforce, Palantir Foundry), ranked by how many repositories show
+the evidence, and adjacent roles with what is missing for each, linked to your next
 steps. A role fits when each of its requirements is rated Intermediate (40) or
 higher. It describes the work, not the person: no seniority, salary, or
 personal traits. It is built offline with fixed rules, and the site shows it on
