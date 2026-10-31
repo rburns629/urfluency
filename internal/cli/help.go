@@ -19,6 +19,7 @@ Share your results (optional)
   login                     Link this CLI to your urfluency.com account
   upload [flags] [path]     Scan again, show what would be sent, and upload the
                             ratings after you confirm
+  status                    Show the login, when it expires, and your plan
   logout                    Delete the upload token on this machine
 
 Before running someone else's code
@@ -170,6 +171,12 @@ Flags:
 
 Links this CLI to your urfluency.com account in your browser, so you can upload.
 The upload token is saved on this machine; logout deletes it.
+`,
+	"status": `Usage: urfluency status
+
+Shows whether this CLI is logged in, when the login expires, and your account's
+plan. Every plan gets the same ratings, findings, and steps from the CLI; Pro
+adds features on the site.
 `,
 	"logout": `Usage: urfluency logout
 

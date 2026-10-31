@@ -177,7 +177,10 @@ pass it the same path and flags. It says what it will send and asks first;
 `--dry-run` prints the exact payload instead. It sends the report's summary and
 ratings only: never code, prompt text, repository names, paths, commit hashes,
 or email addresses, and it refuses a payload that looks like it contains them.
-Uploads start private. `urfluency logout` deletes the token on this machine.
+Uploads start private. `urfluency status` shows the login, when it expires,
+and your plan; `urfluency logout` deletes the token on this machine. The CLI's
+results are the same on every plan: Pro adds AI-written persona text, upload
+history, and published links on the site.
 
 To rate a repository as a whole, connect it at
 [urfluency.com/account/repos](https://urfluency.com/account/repos). A public one is

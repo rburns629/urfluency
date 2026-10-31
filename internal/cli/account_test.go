@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,7 +58,14 @@ func fakeAPI(t *testing.T, deny bool, uploaded chan<- *http.Request) *httptest.S
 		}
 		uploaded <- r
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(uploadResult{ProfileURL: "https://urfluency.test/u/me"})
+		json.NewEncoder(w).Encode(uploadResult{ProfileURL: "https://urfluency.test/u/me", Plan: "free"})
+	})
+	mux.HandleFunc("GET /v1/plan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer upload-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"plan": "pro"})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -159,7 +167,7 @@ func TestUpload(t *testing.T) {
 	default:
 		t.Fatal("nothing was uploaded")
 	}
-	if !strings.Contains(out.String(), "This upload contains") || !strings.Contains(out.String(), "https://urfluency.test/u/me") {
+	if !strings.Contains(out.String(), "This upload contains") || !strings.Contains(out.String(), "https://urfluency.test/u/me") || !strings.Contains(out.String(), proNote) {
 		t.Errorf("upload output:\n%s", out.String())
 	}
 }
@@ -178,5 +186,45 @@ func TestCheckLocalPath(t *testing.T) {
 	}
 	if err := check(context.Background(), []string{"http://github.com/o/r"}, &out, &errOut); err == nil {
 		t.Error("check accepted a non-https URL")
+	}
+}
+
+// status reports the login and the plan, and never fails: not logged in, a
+// revoked token, and an unreachable API are each a line of output.
+func TestStatus(t *testing.T) {
+	srv := fakeAPI(t, false, nil)
+	useAPI(t, srv.URL)
+	run := func() string {
+		t.Helper()
+		var out strings.Builder
+		if err := status(context.Background(), nil, &out); err != nil {
+			t.Fatalf("status: %v", err)
+		}
+		return out.String()
+	}
+	if got := run(); !strings.Contains(got, "not logged in") {
+		t.Errorf("logged out:\n%s", got)
+	}
+	expires := time.Now().Add(48 * time.Hour)
+	if err := (credentials{API: srv.URL, Token: "upload-token", Expires: expires}).save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(); !strings.Contains(got, "Plan: Pro.") || !strings.Contains(got, expires.Format("2006-01-02")) || strings.Contains(got, proNote) {
+		t.Errorf("pro:\n%s", got)
+	}
+	if err := (credentials{API: srv.URL, Token: "revoked", Expires: expires}).save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(); !strings.Contains(got, "run urfluency login") {
+		t.Errorf("revoked:\n%s", got)
+	}
+	if err := (credentials{API: "http://127.0.0.1:1", Token: "upload-token", Expires: expires}).save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(); !strings.Contains(got, "Plan: unknown") {
+		t.Errorf("unreachable:\n%s", got)
+	}
+	if err := status(context.Background(), []string{"x"}, io.Discard); err == nil {
+		t.Error("status accepted an argument")
 	}
 }

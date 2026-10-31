@@ -142,6 +142,21 @@ func postJSONWith(ctx context.Context, endpoint, token string, headers map[strin
 		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return sendJSON(req, token, headers, out)
+}
+
+// getJSON is postJSON for a GET without a body.
+func getJSON(ctx context.Context, endpoint, token string, out any) (int, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	return sendJSON(req, token, nil, out)
+}
+
+// sendJSON sends req and decodes its JSON answer, as postJSON describes.
+func sendJSON(req *http.Request, token string, headers map[string]string, out any) (int, string, error) {
+	endpoint := req.URL.String()
 	req.Header.Set("User-Agent", "urfluency/"+Version)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -314,7 +329,15 @@ func count(n int, noun string) string {
 
 type uploadResult struct {
 	ProfileURL string `json:"profile_url"`
+	Plan       string `json:"plan"`
 }
+
+// pricingURL lists what Pro adds on the site.
+const pricingURL = "https://urfluency.com/pricing"
+
+// proNote names what Pro adds to an upload on the site. The CLI's own results
+// are the same on every plan.
+const proNote = "On Pro, the site adds AI-written persona text, your upload history, and published links: " + pricingURL
 
 func uploadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("upload", flag.ContinueOnError)
@@ -372,12 +395,54 @@ func uploadCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	switch {
 	case status == http.StatusUnauthorized:
 		return errors.New("the API did not accept your login; run urfluency login")
+	case code == "daily_limit":
+		return errors.New("upload: today's upload limit is reached; try again tomorrow (UTC)")
 	case status/100 != 2:
 		return fmt.Errorf("upload: %s (%d)", code, status)
 	}
 	fmt.Fprintln(stdout, "Uploaded. Metrics stay private until you publish them.")
 	if res.ProfileURL != "" {
 		fmt.Fprintln(stdout, "Your profile:", res.ProfileURL)
+	}
+	if res.Plan != "" && res.Plan != "pro" {
+		fmt.Fprintln(stdout, proNote)
+	}
+	return nil
+}
+
+// planNames are the plans as the site names them.
+var planNames = map[string]string{"free": "Free", "credit": "Credit packs", "pro": "Pro"}
+
+// status says whether this CLI is logged in, until when, and the account's
+// plan. It gates nothing, and the plan is left out when the API is out of reach.
+func status(ctx context.Context, args []string, stdout io.Writer) error {
+	if len(args) > 0 {
+		return fmt.Errorf("%w: status takes no arguments", errUsage)
+	}
+	c, err := loadCredentials()
+	if err != nil {
+		fmt.Fprintf(stdout, "Not ready to upload: %v. Scans work without an account.\n", err)
+		return nil
+	}
+	fmt.Fprintf(stdout, "Logged in to %s. Uploads are allowed until %s.\n", c.API, c.Expires.Format("2006-01-02"))
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var res struct {
+		Plan string `json:"plan"`
+	}
+	code, _, err := getJSON(ctx, c.API+"/v1/plan", c.Token, &res)
+	switch {
+	case err != nil:
+		fmt.Fprintf(stdout, "Plan: unknown, could not reach %s.\n", c.API)
+	case code == http.StatusUnauthorized:
+		fmt.Fprintln(stdout, "The API no longer accepts this login; run urfluency login.")
+	case code/100 != 2 || planNames[res.Plan] == "":
+		fmt.Fprintf(stdout, "Plan: unknown (%d).\n", code)
+	default:
+		fmt.Fprintf(stdout, "Plan: %s.\n", planNames[res.Plan])
+		if res.Plan != "pro" {
+			fmt.Fprintln(stdout, proNote)
+		}
 	}
 	return nil
 }

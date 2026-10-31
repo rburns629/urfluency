@@ -78,6 +78,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		err = uploadCmd(ctx, args[1:], stdout, stderr)
 	case "logout":
 		err = logout(args[1:], stdout)
+	case "status":
+		err = status(ctx, args[1:], stdout)
 	case "attest":
 		err = attest(ctx, args[1:], stdout)
 	case "dismiss":
