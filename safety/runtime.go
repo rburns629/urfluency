@@ -124,7 +124,7 @@ func phpFixed(version string) (string, bool) {
 
 // RuntimeFiles reads the small files that pin a runtime version: Dockerfiles,
 // .tool-versions, .php-version, and composer.json, skipping dependency, hidden,
-// and protected folders, for RuntimeAdvisories.
+// test data, and protected folders, for RuntimeAdvisories.
 func RuntimeFiles(root string) []analysis.File {
 	var out []analysis.File
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -133,7 +133,7 @@ func RuntimeFiles(root string) []analysis.File {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if p != root && (strings.HasPrefix(name, ".") || analysis.IsDependencyDir(name) || analysis.IsProtectedDir(name)) {
+			if p != root && (strings.HasPrefix(name, ".") || analysis.IsDependencyDir(name) || analysis.IsTestDataDir(name) || analysis.IsProtectedDir(name)) {
 				return filepath.SkipDir
 			}
 			return nil

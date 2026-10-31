@@ -9,6 +9,13 @@ import (
 // RSpec's and JavaScript's.
 var testDirs = map[string]bool{"tests": true, "test": true, "__tests__": true, "Tests": true, "androidTest": true, "testFixtures": true, "spec": true}
 
+// IsTestDataDir reports folders of sample inputs for tests: Go's testdata
+// and the fixtures folders of other languages. Their lockfiles and Dockerfiles
+// are samples, not the project's own.
+func IsTestDataDir(name string) bool {
+	return name == "testdata" || name == "fixtures" || name == "__fixtures__"
+}
+
 // testSuffixes end test file names by convention in compiled languages:
 // FooTest.java, FooTests.cs, foo_test.dart, foo_test.cc, FooTest.php,
 // foo_spec.rb, and so on.

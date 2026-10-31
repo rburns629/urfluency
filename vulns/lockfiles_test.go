@@ -124,6 +124,7 @@ func TestLockfilesWalk(t *testing.T) {
 		".venv/requirements.txt", "venv/requirements.txt", "__pycache__/requirements.txt",
 		"target/requirements.txt", "build/requirements.txt", "dist/requirements.txt",
 		"secrets/requirements.txt", ".aws/requirements.txt", "credentials/requirements.txt",
+		"vulns/testdata/requirements.txt", "test/fixtures/requirements.txt", "src/__fixtures__/requirements.txt",
 	} {
 		writeFile(t, filepath.Join(root, p), req)
 	}

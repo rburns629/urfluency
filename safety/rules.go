@@ -165,6 +165,44 @@ var lineRules = []lineRule{
 // $(warning …), $(info …), and $(error …), and Write-Host.
 var printedText = regexp.MustCompile(`(?i)^\s*(@?echo\b|printf\b|\$\((warning|info|error)\s|write-host\b)`)
 
+// patternStart finds a regular expression built from a string literal:
+// Go, Python, JavaScript, Ruby, Java, C#, and Rust, up to the literal's
+// opening quote. PHP's preg functions are left out: php-preg-eval matches
+// their patterns on purpose.
+var patternStart = regexp.MustCompile(`(\bregexp\.(Must)?Compile(POSIX)?|\bre\.(compile|search|match|fullmatch|findall|finditer)|\bRegExp|\bRegexp\.new|\bPattern\.compile|\bnew\s+Regex|\bRegex::new)\s*\(\s*[rRbu@]*(["'\x60])`)
+
+// inPattern reports whether every match of re on line falls inside the string
+// literal of a regular expression: a scanner's own rules, which match text
+// rather than run it.
+func inPattern(re *regexp.Regexp, line string) bool {
+	var literals [][2]int
+	for _, m := range patternStart.FindAllStringSubmatchIndex(line, -1) {
+		open, quote := m[len(m)-1], line[m[len(m)-2]]
+		end := open
+		for end < len(line) && line[end] != quote {
+			if line[end] == '\\' && quote != '`' {
+				end++
+			}
+			end++
+		}
+		literals = append(literals, [2]int{open, end})
+	}
+	matches := re.FindAllStringIndex(line, -1)
+	if len(literals) == 0 || len(matches) == 0 {
+		return false
+	}
+	for _, m := range matches {
+		inside := false
+		for _, l := range literals {
+			inside = inside || (m[0] >= l[0] && m[1] <= l[1])
+		}
+		if !inside {
+			return false
+		}
+	}
+	return true
+}
+
 // isCommentLine recognizes whole-line comments in common languages.
 func isCommentLine(line string) bool {
 	t := strings.TrimSpace(line)
@@ -212,6 +250,11 @@ func checkFile(f analysis.File) []Finding {
 			if fd.Severity != Low && printedText.MatchString(line) {
 				fd.Severity, fd.Confidence = Low, Weak
 				fd.Why = "Printed as a message rather than run here; " + strings.ToLower(fd.Why[:1]) + fd.Why[1:]
+			}
+			// A pattern that looks for the behavior, such as a scanner's rule.
+			if fd.Severity != Low && inPattern(r.re, line) {
+				fd.Severity, fd.Confidence = Low, Weak
+				fd.Why = "Inside a regular expression, which matches text rather than running it; " + strings.ToLower(fd.Why[:1]) + fd.Why[1:]
 			}
 			out = append(out, fd)
 		}

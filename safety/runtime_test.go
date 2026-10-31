@@ -58,3 +58,19 @@ func TestRuntimeAdvisories(t *testing.T) {
 		t.Error("fixed version reported")
 	}
 }
+
+// Dockerfiles in test data are samples: RuntimeFiles leaves them out.
+func TestRuntimeFilesSkipsTestData(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, map[string]string{
+		"Dockerfile": "FROM php:8.1.2\n", "testdata/Dockerfile": "FROM php:8.1.2\n",
+		"test/fixtures/.php-version": "8.1.2\n", "web/__fixtures__/composer.json": "{}",
+	})
+	var got []string
+	for _, f := range RuntimeFiles(root) {
+		got = append(got, f.Path)
+	}
+	if len(got) != 1 || got[0] != "Dockerfile" {
+		t.Errorf("RuntimeFiles = %q, want only Dockerfile", got)
+	}
+}
