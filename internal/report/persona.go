@@ -40,7 +40,7 @@ type Role struct {
 	Title         string   `json:"title"`
 	Fit           int      `json:"fit"`
 	Repos         int      `json:"repositories,omitempty"`
-	Code          int      `json:"code,omitempty"`
+	Code          int      `json:"code_rating,omitempty"` // not "code": uploads refuse that key
 	CodeLanguages []string `json:"code_languages,omitempty"`
 	Since         string   `json:"since,omitempty"` // "2006-01"
 	Last          string   `json:"last,omitempty"`

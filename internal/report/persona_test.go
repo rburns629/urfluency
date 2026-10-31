@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rburns629/urfluency/analysis"
+	"github.com/rburns629/urfluency/upload"
 )
 
 func TestBuildPersona(t *testing.T) {
@@ -173,6 +174,16 @@ func TestPersonaWeighsCodeAndRecency(t *testing.T) {
 	writePersona(&b, p)
 	if !strings.Contains(b.String(), "= Backend and API engineering, fit 90 · 20 repos · code 84 in Go and TypeScript · 2019-04 to 2026-09, active 4 months:") {
 		t.Errorf("text:\n%s", b.String())
+	}
+	// Every persona field must pass the upload checks, which refuse keys such
+	// as "code" that could carry source.
+	s.Persona = p
+	summary, _ := json.Marshal(s)
+	combined, _ := json.Marshal(c)
+	payload := upload.Payload{Format: upload.Format, Tool: "test", Report: FormatVersion, Catalog: "test", Model: "test", Tier: upload.SelfReported, Since: "all",
+		Summary: summary, Combined: combined}
+	if err := upload.Validate(payload); err != nil {
+		t.Errorf("a persona with every field fails the upload checks: %v", err)
 	}
 	if w := buildPersona(s, c, "2025-10-30"); w.Window != "2025-10-30" {
 		t.Errorf("window = %q", w.Window)
