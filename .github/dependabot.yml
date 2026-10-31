@@ -1,0 +1,26 @@
+# Keeps the tree-sitter parsers current. They parse untrusted repositories in
+# the hosted scanner, and their C fixes rarely reach Go's vulnerability
+# database, so govulncheck alone would miss them. Updates wait two weeks after
+# release, per the supply-chain policy, and arrive as one pull request a week.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      go-modules:
+        patterns: ["*"]
+
+  # The actions the workflows pin by commit.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]
