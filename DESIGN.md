@@ -233,6 +233,14 @@ commits (`verified_share`). The Git sections (`languages`, `tools`, `design`) an
 `unversioned` are its traceable parts: they keep locations and show what was
 verified and what was declared. An upload is built from `combined`.
 
+`combined.written` counts the code lines the user's commits added, by UTC month,
+language, and tool, split by whether the commit names a coding tool in a
+`Co-authored-by` trailer. Owned lines are what survives at HEAD; written lines
+are what was added when, so a month keeps its count after the code is rewritten.
+It comes from Git history only, counts files the scan keeps as the user's code
+(or that are gone from HEAD), and is never scored. The service keeps it off
+public profiles.
+
 The summary (`summary` in JSON) is built from `combined` and the rest of the
 report, so it adds no data. It orders evidence the way a reviewer would read it:
 strengths first, then design trends and communication, then what holds the

@@ -188,6 +188,81 @@ type Combined struct {
 	Tools         []Tool       `json:"tools"`
 	Design        []DesignArea `json:"design"`
 	Platforms     []Platform   `json:"platforms"`
+	// Written is what the user's commits added, from Git history only.
+	Written *Written `json:"written,omitempty"`
+}
+
+// Written is the code the user's commits added, by month, language, and tool,
+// split into lines from commits marked AI-assisted and the rest. It counts
+// what was written when, including code since rewritten, and is context, never
+// scored.
+type Written struct {
+	HumanLines    int               `json:"human_lines"`
+	AssistedLines int               `json:"ai_assisted_lines"`
+	AssistedShare float64           `json:"ai_assisted_share"`
+	ByTool        map[string]int    `json:"ai_assisted_lines_by_tool"`
+	Languages     []WrittenLanguage `json:"languages"`
+	// Months runs from the first month with code to the last, with no gaps.
+	Months []WrittenMonth `json:"months"`
+}
+
+// WrittenMonth is one UTC month of added code lines.
+type WrittenMonth struct {
+	Month         string `json:"month"` // YYYY-MM
+	HumanLines    int    `json:"human_lines"`
+	AssistedLines int    `json:"ai_assisted_lines"`
+}
+
+// WrittenLanguage is one language's added code lines.
+type WrittenLanguage struct {
+	Language      string `json:"language"`
+	HumanLines    int    `json:"human_lines"`
+	AssistedLines int    `json:"ai_assisted_lines"`
+}
+
+// BuildWritten reports a result's written lines, or nil when there are none.
+func BuildWritten(w analysis.Written) *Written {
+	if len(w.Months) == 0 {
+		return nil
+	}
+	out := &Written{ByTool: map[string]int{}, Languages: []WrittenLanguage{}, Months: []WrittenMonth{}}
+	for tool, n := range w.Tools {
+		out.ByTool[tool] = n
+	}
+	for lang, l := range w.Languages {
+		out.Languages = append(out.Languages, WrittenLanguage{Language: lang, HumanLines: l.Other, AssistedLines: l.Assisted})
+		out.HumanLines += l.Other
+		out.AssistedLines += l.Assisted
+	}
+	sort.Slice(out.Languages, func(i, j int) bool {
+		a, b := out.Languages[i], out.Languages[j]
+		if x, y := a.HumanLines+a.AssistedLines, b.HumanLines+b.AssistedLines; x != y {
+			return x > y
+		}
+		return a.Language < b.Language
+	})
+	if total := out.HumanLines + out.AssistedLines; total > 0 {
+		out.AssistedShare = round2(float64(out.AssistedLines) / float64(total))
+	}
+	first, last := "", ""
+	for m := range w.Months {
+		if first == "" || m < first {
+			first = m
+		}
+		if m > last {
+			last = m
+		}
+	}
+	start, err := time.Parse("2006-01", first)
+	if err != nil {
+		return out
+	}
+	for at := start; at.Format("2006-01") <= last; at = at.AddDate(0, 1, 0) {
+		m := at.Format("2006-01")
+		l := w.Months[m]
+		out.Months = append(out.Months, WrittenMonth{Month: m, HumanLines: l.Other, AssistedLines: l.Assisted})
+	}
+	return out
 }
 
 // BuildCombined merges the Git and folder results and scores them as one.
@@ -205,6 +280,7 @@ func BuildCombined(git, folders analysis.Result) *Combined {
 	if len(parts) == 0 {
 		return c
 	}
+	c.Written = BuildWritten(git.Written)
 	all := analysis.Merge(labels, parts)
 	c.Tools = BuildTools(all)
 	c.Design = BuildDesign(all, c.Tools)

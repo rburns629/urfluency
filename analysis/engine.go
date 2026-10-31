@@ -133,6 +133,7 @@ type Result struct {
 	MarkedLines  int
 	MarkedByTool map[string]int
 	Durability   Durability
+	Written      Written
 	Tests        TestHabits
 	PerRepo      []RepoPractices
 	// SkippedSlow counts files skipped because attributing them took longer
@@ -250,6 +251,21 @@ func Scan(ctx context.Context, repo gitdata.Repo, opts Options) (Result, error) 
 	if result.Durability, err = durability(ctx, repo, added, commits, tools, touched, excluded, opts.Since, time.Now(), opts.progress); err != nil {
 		return Result{}, err
 	}
+	// A file still at HEAD counts only if the scan kept it as the user's code,
+	// so scaffolding, vendored, and oversized files are not written lines
+	// either. paths leaves oversized files out, so every tracked file is listed.
+	all, err := repo.TrackedFiles(ctx, 0)
+	if err != nil {
+		return Result{}, err
+	}
+	atHead, scanned := map[string]bool{}, map[string]bool{}
+	for _, p := range all {
+		atHead[p] = true
+	}
+	for _, p := range candidates {
+		scanned[p] = true
+	}
+	result.Written = written(added, commits, tools, func(p string) bool { return excluded(p) || atHead[p] && !scanned[p] }, opts.Since)
 	result.Tests = testHabits(added, commits, tools, opts.Since)
 	var scripts []string
 	for _, p := range paths {

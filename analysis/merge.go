@@ -9,7 +9,7 @@ func Merge(labels []string, parts []Result) Result {
 	if len(parts) == 1 {
 		return parts[0]
 	}
-	out := Result{MarkedByTool: map[string]int{}, Declared: len(parts) > 0, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}, Platforms: map[string]PlatformUse{}}
+	out := Result{MarkedByTool: map[string]int{}, Declared: len(parts) > 0, Tools: map[string]ToolUse{}, Design: map[string]DesignUse{}, Platforms: map[string]PlatformUse{}, Written: newWritten()}
 	byLanguage := map[string]*LanguageResult{}
 	frameworks := map[string]map[string]bool{}
 	for i, p := range parts {
@@ -72,6 +72,7 @@ func Merge(labels []string, parts []Result) Result {
 		out.Durability.AssistedFixed += p.Durability.AssistedFixed
 		out.Durability.OtherAdded += p.Durability.OtherAdded
 		out.Durability.OtherFixed += p.Durability.OtherFixed
+		out.Written.merge(p.Written)
 		out.Tests.AssistedCommits += p.Tests.AssistedCommits
 		out.Tests.AssistedWithTests += p.Tests.AssistedWithTests
 		out.Tests.OtherCommits += p.Tests.OtherCommits

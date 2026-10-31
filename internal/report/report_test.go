@@ -286,3 +286,24 @@ func TestUpgradeTo(t *testing.T) {
 		t.Errorf("an advisory with no fix: upgradeTo = %q, want none", got)
 	}
 }
+
+func TestBuildWritten(t *testing.T) {
+	if BuildWritten(analysis.Written{}) != nil {
+		t.Error("no history should give no written section")
+	}
+	w := BuildWritten(analysis.Written{
+		Months:    map[string]analysis.WrittenLines{"2025-11": {Other: 60}, "2026-02": {Assisted: 30, Other: 10}},
+		Languages: map[string]analysis.WrittenLines{"go": {Other: 50}, "python": {Assisted: 30, Other: 30}},
+		Tools:     map[string]int{"claude": 30},
+	})
+	var months []string
+	for _, m := range w.Months {
+		months = append(months, m.Month)
+	}
+	if strings.Join(months, ",") != "2025-11,2025-12,2026-01,2026-02" || w.Months[1].HumanLines != 0 || w.Months[3].AssistedLines != 30 {
+		t.Errorf("months = %+v, want every month from the first to the last", w.Months)
+	}
+	if w.HumanLines != 80 || w.AssistedLines != 30 || w.AssistedShare != 0.27 || w.Languages[0].Language != "python" || w.ByTool["claude"] != 30 {
+		t.Errorf("written = %+v", w)
+	}
+}
